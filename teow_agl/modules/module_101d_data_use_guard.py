@@ -124,6 +124,59 @@ class DataUseGuard:
         publishing = "publish" in op or "send" in op or "submit" in op
         return (has_socio and has_diff) or (has_pii and publishing)
 
+    # ----------------------------------------- C-tier understanding (gated LLM)
+    def lexicon_signals(self, text: str) -> dict:
+        """Deterministic A-tier read of a free-text goal — used to GATE the
+        C-tier LLM call: if the lexicon already resolves the data-use intent,
+        no LLM call is spent."""
+        t = _normalize(text)
+        return {
+            "socio": any(f in t for f in _SOCIO_FIELDS),
+            "diff": any(c in t for c in _DIFFERENTIAL_CUES),
+            "pii": any(f in t for f in _PUBLIC_PII),
+            "health": any(f in t for f in _HEALTH_FIELDS),
+        }
+
+    @staticmethod
+    def understand(llm, text: str) -> list[str]:
+        """C-tier understanding: ask an LLM to LABEL a free-text request with
+        closed-vocabulary data-use concepts. The LLM never decides the route —
+        101D's deterministic rules map the concepts to BLUE/GREEN/RED. Returns
+        [] on no key / mock backend / any failure, so the A-tier lexicon and the
+        fail-safe default still apply offline."""
+        if llm is None or getattr(llm, "backend", "mock") == "mock":
+            return []
+        system = (
+            "You are a data-use LABELLER for a school governance system. You do "
+            "NOT decide whether anything is allowed — you only label WHAT data a "
+            "request intends to use and HOW. Judge by meaning, not exact words. "
+            "Output a JSON object only."
+        )
+        user = (
+            f"Request: {text}\n\n"
+            "Return JSON with boolean fields:\n"
+            '{"socioeconomic_data": uses guardian/household/family income, '
+            "salary, occupation, wealth, or family background; "
+            '"differential_treatment": treats, prioritises, ranks, or '
+            "personalises people differently based on who they are; "
+            '"public_pii": exposes IC/MyKid/passport/phone/home address to a '
+            "public or external surface; "
+            '"health_or_discipline": uses health, discipline, or special-needs '
+            "records}.\nIf unsure, use false."
+        )
+        try:
+            data = llm.chat_json(system, user, max_tokens=200)
+        except Exception:
+            return []
+        if not isinstance(data, dict):
+            return []
+        out = []
+        for key in ("socioeconomic_data", "differential_treatment",
+                    "public_pii", "health_or_discipline"):
+            if data.get(key) is True:
+                out.append(key)
+        return out
+
     # ----------------------------------------------------------------- assess
     def assess(self, action) -> dict:
         md = getattr(action, "metadata", {}) or {}
@@ -142,16 +195,22 @@ class DataUseGuard:
         )))
         scope = str(md.get("output_scope", "")).lower()
         approval_boundary = str(md.get("approval_boundary", "")).lower()
+        # C-tier concepts: closed-vocabulary tags the LLM understanding layer
+        # (101D.understand) may have attached for this task. They AUGMENT the
+        # deterministic A-tier signals — the route is still decided by the rules
+        # below, never by the LLM.
+        concepts = md.get("data_use_concepts") or []
 
         # ── §F inert default: nothing to govern → change nothing ──
-        if not self._has_metadata(action) and not self._obvious_sensitive_use(text, op):
+        if (not self._has_metadata(action) and not concepts
+                and not self._obvious_sensitive_use(text, op)):
             return {"decision": "NO_OVERRIDE", "reasons": [],
                     "features": {"inert_default": True}}
 
-        has_socio = any(f in text for f in _SOCIO_FIELDS)
-        has_diff = any(c in text for c in _DIFFERENTIAL_CUES)
-        has_pii = any(f in text for f in _PUBLIC_PII)
-        has_health = any(f in text for f in _HEALTH_FIELDS)
+        has_socio = any(f in text for f in _SOCIO_FIELDS) or "socioeconomic_data" in concepts
+        has_diff = any(c in text for c in _DIFFERENTIAL_CUES) or "differential_treatment" in concepts
+        has_pii = any(f in text for f in _PUBLIC_PII) or "public_pii" in concepts
+        has_health = any(f in text for f in _HEALTH_FIELDS) or "health_or_discipline" in concepts
         is_public = (
             scope in _PUBLIC_SCOPES
             or "publish" in op or "send" in op or "submit" in op

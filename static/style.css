@@ -318,6 +318,11 @@ body {
   font-size: 12px; font-weight: 700; letter-spacing: .2px;
   color: #0d9488; margin-bottom: 6px; text-transform: uppercase;
 }
+.workflow-panel .wf-statusline {
+  display: inline-block; margin: 0 0 8px; padding: 3px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; color: #0d9488;
+  background: rgba(13,148,136,.12); border: 1px solid rgba(13,148,136,.32);
+}
 .workflow-panel .wf-head { font-size: 13px; color: var(--text); margin-bottom: 8px; }
 .workflow-panel .wf-meta { display: block; font-size: 11px; color: var(--text-mute); margin-top: 2px; }
 .workflow-panel .wf-steps { display: flex; flex-direction: column; gap: 2px; }

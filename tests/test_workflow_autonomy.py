@@ -399,3 +399,41 @@ def test_workflow_contains_self_block_step(isolated_workspace: Path):
                 if e.action_id == sb.action_id and getattr(e, "affected_resources", None)]
     # workflow not derailed: the external release still reaches the human gate
     assert any(d.route == "GREEN" for d in res.decisions)
+
+
+# ── C-tier LLM understanding layer (gated; never decides the route) ─────────
+
+class _StubUnderstandLLM:
+    """A non-mock chat LLM that labels everything socioeconomic+differential —
+    stands in for gpt-4o so the C-tier wiring is testable with no API key."""
+    backend = "openai"
+
+    def chat_json(self, system, user, *, max_tokens=200):
+        return {"socioeconomic_data": True, "differential_treatment": True}
+
+    def chat(self, system, user, *, max_tokens=1500):
+        return ""
+
+
+_C_TIER_GOAL = "Use household income data to shape our parent outreach approach."
+
+
+def test_c_tier_understanding_promotes_to_red(isolated_workspace: Path):
+    """A phrasing the A-tier lexicon does NOT fully resolve (socio mention, no
+    differential cue) is labelled socioeconomic+differential by the model →
+    101D's deterministic rules route RED. The LLM informs; it never decides."""
+    rt = _runtime(isolated_workspace)
+    rt.synthesizer.chat_llm = _StubUnderstandLLM()
+    cap = _capture(rt)
+    res = rt.run(raw_goal=_C_TIER_GOAL)
+    assert res.final_route == "RED", res.final_route
+    assert ("101D", "data_use_understood") in [(e["module"], e["event_type"]) for e in cap]
+
+
+def test_c_tier_offline_is_noop(isolated_workspace: Path):
+    """No live model (mock backend, zero key) → C-tier no-ops; the deterministic
+    A-tier governs and this phrasing is NOT forced to RED (no over-block)."""
+    rt = _runtime(isolated_workspace)
+    assert getattr(rt.synthesizer.chat_llm, "backend", "mock") == "mock"
+    res = rt.run(raw_goal=_C_TIER_GOAL)
+    assert res.final_route != "RED", res.final_route

@@ -62,23 +62,40 @@ Type one minimal goal:
 The agent detects the **`post_event_reporting` workflow** and shows a teal
 **Workflow panel** beside the governance card:
 
+The route row shows a teal **WORKFLOW ✓ 4 auto · 1 approval · 1 self-blocked**
+status (a self-blocked step reads as governed, not as a failed task):
+
 | # | Step | Route | Why |
 |---|------|-------|-----|
 | 1 | Extract results | **BLUE** | internal event data, auto-run |
 | 2 | Draft internal report | **BLUE** | name / class / result / award allowed internally |
 | 3 | Save internal draft | **BLUE** | stored under `outputs/` |
 | 4 | Draft public Facebook post | **BLUE** | IC / MyKid / phone / address / guardian-income **blocked** from public content |
-| 5 | Prepare public release | **GREEN** | external release waits for human approval (no real post in demo) |
+| 5 | Consider personalising outreach by family income | **RED** | the agent's **own** plan — 101D self-blocks it (see below) |
+| 6 | Prepare public release | **GREEN** | external release waits for human approval (no real post in demo) |
 
-Then the **self-governance** moment — the agent blocks its *own* plan:
-> Blocked internal action: *use guardian income to personalise which parents get called first* — **RED**
+Step 5 is the **self-governance** moment — the agent blocks its *own* plan, with
+no malicious user prompt required:
+> Blocked internal action: *personalise / prioritise which parents to contact first using guardian household income* — **RED**
 > *Sensitive socioeconomic data cannot be used for differential treatment in parent communication.*
 > Safe alternative: student progress, attendance, homework completion, or neutral communication preferences.
+
+The same RED also fires on free-text input (EN + 中文), e.g. *"Use guardian
+household income to personalise which parents get called first."*
 
 Mechanism: a config-driven **workflow resolver (102W)** builds the plan offline;
 every step still flows through the **same** governance pipeline (101B → 103 →
 105/107); a **data-use guard (101D)** governs what the agent itself intends to do
 with data. Add more workflows by dropping a JSON template under `configs/workflows/`.
+
+**Understanding vs deciding (open-ended input).** Free-form requests are handled
+in two separated layers: *understanding* may be smart — a deterministic concept
+lexicon offline, or **GPT-4o labelling** the request with closed-vocabulary
+data-use concepts when a key is present — but *deciding* the route (BLUE / GREEN /
+RED) is **always** the deterministic governance core. The model can mislabel or
+be jailbroken and still cannot authorise a forbidden data use; and anything the
+understanding layer is unsure of fails safe to human approval (GREEN), never to
+silent action. With no key the lexicon + fail-safe govern alone.
 
 ## Route matrix (school circular, one route each)
 | # | Prompt | Route | What you see |
@@ -98,8 +115,8 @@ tools are mock; after approval, execution is **simulated and labelled**, while
 the **audit trace and signed ticket are real**.
 
 ## Evidence (see [CLAIMS_CHECK.md](CLAIMS_CHECK.md) for the tiered, reproducible ledger)
-- **Public MAIC build (this repo):** `pytest` → 964 passed / 1 skipped / 0 failed (965 collected),
-  including the Workflow Autonomy layer (102W/101D) and its 15 tests. Pre-workflow
+- **Public MAIC build (this repo):** `pytest` → 969 passed / 1 skipped / 0 failed (970 collected),
+  including the Workflow Autonomy layer (102W/101D) and its 20 tests. Pre-workflow
   baseline on the same tree: 949 passed / 1 skipped / 0 failed.
 - **Offline governance eval:** `python -X utf8 scripts/run_evals.py` → pass rate **1.0**
   (32 cases: 29 evaluated incl. the public-school cases, 3 documented L2 skips).

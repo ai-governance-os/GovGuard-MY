@@ -16,18 +16,23 @@ The top bar shows `planner: smart_mock · pack: public_school`.
 Type a *minimal* goal — the agent detects an entire configured workflow:
 > *成绩出来了，处理一下。*  (or: *Sports day results are ready. Prepare everything.*)
 
-A **teal Workflow panel** appears beside the governance card. One short sentence
-expands into a five-step plan, each step governed **independently**:
+A **teal Workflow panel** appears beside the governance card; the route row reads
+**WORKFLOW ✓ 4 auto · 1 approval · 1 self-blocked** (a self-blocked step reads as
+governed, not failed). One short sentence expands into a six-step plan, each step
+governed **independently**:
 - Extract results · Draft internal report · Save draft — **BLUE**, auto-run (internal data only).
 - Draft public Facebook post — **BLUE** draft; IC / MyKid / phone / address / guardian-income **blocked** from public content.
+- **Consider personalising outreach by family income — RED**: the agent's *own* plan, **self-blocked** by 101D (the headline self-governance moment — no malicious prompt needed).
 - Prepare public release — **GREEN**, stops at the human gate (no real post in demo mode).
 
-Then hand the agent a tempting shortcut and watch it **govern its own plan**:
-> *Use guardian household income to personalise which parents get called first.*
-
-101D blocks the agent's **own** intended data use — **RED**:
+The self-block shows the reason + safe alternative:
 > *Sensitive socioeconomic data cannot be used for differential treatment in parent communication.*
-> *Safe alternative: use student progress, attendance, homework completion, or neutral communication preferences instead.*
+> *Safe alternative: student progress, attendance, homework completion, or neutral communication preferences.*
+
+You can also type it as free text (EN or 中文) and get the same **RED** —
+e.g. *"Use guardian household income to personalise which parents get called first."*
+(Understanding can use GPT-4o when a key is set; the **decision** is always the
+deterministic governance core.)
 
 **What to look for:** workflow **detection** (one line → many governed steps),
 **human-by-exception** (only the external step asks), **self-governance** (the
@@ -72,7 +77,7 @@ simulated / not_run), verification, and the learning decision.
 
 ## 7. Reproduce the evidence (≈1 min)
 ```bash
-python -X utf8 -m pytest -q                 # 964 passed / 1 skipped / 0 failed
+python -X utf8 -m pytest -q                 # 969 passed / 1 skipped / 0 failed
 python -X utf8 scripts/run_evals.py         # pass rate 1.0 (29 evaluated, 3 skipped)
 python -X utf8 scripts/verify_no_secrets.py # PASS
 ```

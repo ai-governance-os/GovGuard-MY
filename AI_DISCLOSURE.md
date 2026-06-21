@@ -38,6 +38,18 @@ approves, or blocks**. The public reproducible build runs the same workflow on
 offline. Even with a real key, `MAIC_DEMO_MODE=1` keeps every external publish or
 send **simulated** — no real Facebook post, email, or message is ever sent.
 
+**Understanding free-form input vs deciding the route.** For open-ended requests,
+*understanding* and *deciding* are separated. Understanding may use an LLM: with a
+key, GPT-4o **labels** a request with closed-vocabulary data-use concepts
+(socioeconomic data, differential treatment, public PII, health/discipline); with
+no key, a deterministic concept lexicon does the same offline. **Deciding** the
+route is always the deterministic governance core (101D + 103) — it maps the
+concepts to BLUE/GREEN/RED by fixed rules. The LLM can mislabel or be jailbroken
+and still cannot authorise a forbidden data use, and anything the understanding
+layer is unsure of fails safe to human approval (GREEN), never to silent action.
+The LLM understanding call is gated (only when the offline lexicon is uncertain)
+and runs at most once per task.
+
 **Data — synthetic only; student data excluded from learning.** All sample
 circulars, policies, and evaluation cases in this repository are **synthetic**.
 They contain no real student, parent, or staff personal data. By design, the

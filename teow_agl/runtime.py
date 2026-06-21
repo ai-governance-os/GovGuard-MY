@@ -1093,6 +1093,14 @@ class Runtime:
                     purpose="ask one clarifying question instead of guessing",
                 )
 
+        # ── Module 101D (C-tier): LLM understanding of data-use intent ──
+        # Gated: only when a live model is available AND the deterministic
+        # A-tier lexicon didn't already resolve the intent. Attaches closed-
+        # vocabulary concepts to the envelope; 101D's deterministic rules use
+        # them. No key → no-op (A-tier lexicon + fail-safe apply). Off the
+        # per-action hot path — one call per task.
+        self._understand_data_use(envelope, pre)
+
         # ── Module 102W: Workflow Resolver (runs BEFORE the task-tree fork) ──
         # If this goal matches a configured public-sector workflow, build the
         # workflow plan now. It only replaces the planner output source — the
@@ -1979,6 +1987,43 @@ class Runtime:
         ranks = {"BLUE": 0, "GREEN": 1, "INFEASIBLE": 2, "RED": 3}
         return max(result.decisions, key=lambda d: ranks[d.route]).route
 
+    def _understand_data_use(self, envelope: TaskEnvelope,
+                             pre: PreGovernanceAssessment) -> None:
+        """C-tier understanding (gated LLM). When a live chat model is present
+        AND the deterministic A-tier lexicon did NOT already resolve the goal's
+        data-use intent, ask the model to LABEL the goal with closed-vocabulary
+        data-use concepts. The concepts feed 101D's DETERMINISTIC rules — the
+        model never decides the route. No key / mock backend → no-op, so the
+        A-tier lexicon + fail-safe still govern offline. One call per task."""
+        guard = getattr(self, "data_use_guard", None)
+        if guard is None:
+            return
+        llm = getattr(getattr(self, "synthesizer", None), "chat_llm", None)
+        if llm is None or getattr(llm, "backend", "mock") == "mock":
+            return  # no live model — A-tier lexicon + fail-safe handle it
+        goal = envelope.normalized_goal
+        try:
+            sig = guard.lexicon_signals(goal)
+        except Exception:
+            return
+        # Already resolved deterministically → don't spend an LLM call.
+        if (sig["socio"] and sig["diff"]) or (sig["pii"] and sig["health"]):
+            return
+        # Only spend a call when there's a plausible sensitive / data-use angle.
+        sensitive = bool((pre.context_features or {}).get("sensitive_data_mention"))
+        if not (sensitive or sig["socio"] or sig["pii"] or sig["health"]):
+            return
+        try:
+            concepts = guard.understand(llm, goal)
+        except Exception:
+            concepts = []
+        if concepts:
+            envelope.metadata["data_use_concepts"] = concepts
+            self._emit("101D", "data_use_understood",
+                       envelope.task_id, envelope.session_id,
+                       summary=f"concepts={','.join(concepts)} (llm)",
+                       details={"concepts": concepts, "source": "c_tier_llm"})
+
     # ------------------------------------------------------------------
     # Per-action execution (extracted so the agent loop can reuse it).
     # ------------------------------------------------------------------
@@ -2001,6 +2046,10 @@ class Runtime:
             # Thread the task intent so 101D sees the agent's intended data use
             # even when the planner emitted a generic action.
             action.metadata.setdefault("user_intent", envelope.normalized_goal)
+            # Thread any C-tier LLM-understood data-use concepts to 101D.
+            if envelope.metadata.get("data_use_concepts"):
+                action.metadata.setdefault(
+                    "data_use_concepts", envelope.metadata["data_use_concepts"])
 
             # ── Module 101D — Data Use Guard (self-governance over data use) ──
             # Runs BEFORE 101B. Inert by default; only workflow/data-use or

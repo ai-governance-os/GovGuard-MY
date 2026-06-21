@@ -17,14 +17,36 @@ pytest                : 949 passed, 1 skipped, 0 failed   ← GREEN
 ## After patch
 - pytest after **Phase 3** (102W integrated): **957 passed, 1 skipped, 0 failed** (= 949 + 8).
 - pytest after **Phase 5** (101D integrated): **962 passed, 1 skipped, 0 failed** (= 949 + 13).
-- pytest after **Phase 9** (final, UI + output-quality): **964 passed, 1 skipped, 0 failed** (965 collected; = 949 + 15).
+- pytest after **Phase 9** (workflow build): **964 passed, 1 skipped, 0 failed** (965 collected; = 949 + 15).
+- pytest after **V2 critique fixes** (this folder): **969 passed, 1 skipped, 0 failed** (970 collected; = 949 + 20).
 - Offline governance eval: **pass rate 1.0** (29 evaluated, 3 documented L2 skips) — unchanged.
-- New workflow tests: `tests/test_workflow_autonomy.py` — 15 total (5 resolver-direct, 3 102W integration, 5 101D / data-use, 1 output-quality, 1 server panel).
+- New workflow tests: `tests/test_workflow_autonomy.py` — 20 total (5 resolver-direct, 3 102W integration, 5 101D / data-use, 1 output-quality, 1 server panel, 3 natural-language self-governance, 2 C-tier understanding).
 - New intentional skips: none.
 
 > Doc-number correction: the shipped docs previously claimed **932/933** — stale
 > from before the FIX_PLAN added ~17 tests without updating them. All judge docs
-> are now corrected to the measured **964/965** (pre-workflow baseline 949 noted).
+> are now corrected to the measured **969/970** (pre-workflow baseline 949 noted).
+
+## V2 critique fixes (after a mentor review of the natural-input behaviour)
+A reviewer found the flagship self-governance claim was real in unit tests but
+did NOT fire on natural UI input (101D term lists were underscore/metadata-shaped;
+the natural-language path never tagged data-use metadata, so 101D stayed inert and
+the route came from the P2.2 GREEN-failsafe, not a 101D RED). Fixed in two segments:
+- **Seg 1 (deterministic, A-tier):** 101D now normalizes text (underscore/space,
+  CJK) + a natural-language socio/PII/health lexicon, and inspects the threaded
+  `user_intent` — so guardian-income free text (EN + 中文) routes RED end-to-end.
+  AND-socio+differential gate kept tight (no new false REDs). Added an in-workflow
+  self-block step (`consider_income_personalisation`) so the headline workflow
+  itself shows the agent blocking its own income-based personalisation (RED).
+  Seeded `demo/sports_day_results.md` (+ server seeds `workspace/results.md`) so
+  step 1 no longer shows `not_found`.
+- **Seg 2 (C-tier + UI + docs):** added a gated **LLM understanding layer**
+  (`DataUseGuard.understand` + `Runtime._understand_data_use`) — when a live model
+  is present and the lexicon is uncertain, GPT-4o labels the request with
+  closed-vocabulary data-use concepts that feed 101D's *deterministic* rules (the
+  model never decides the route; no key → lexicon + fail-safe). Option-2 UI: a
+  workflow-aware route chip + panel status line ("4 auto · 1 approval · 1
+  self-blocked") so a self-blocked step reads as governed, not failed. Docs aligned.
 
 ### Phase log
 - **Phase 1** — `configs/workflows/public_school/post_event_reporting.json` (§5, verbatim; tool/op hints verified against `tool_catalog.json`).

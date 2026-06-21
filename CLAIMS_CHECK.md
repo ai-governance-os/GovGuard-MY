@@ -21,8 +21,8 @@ not test-trimmed relative to the 10.7.4 spine it derives from.
 
 ## Tier 2 — Public MAIC evaluation build (this repository)
 The exact, reproducible result of the public surface, in a clean zero-key env:
-- **pytest: 964 passed / 1 skipped / 0 failed** (965 collected).
-  - This includes the Workflow Autonomy layer (102W/101D) and its 15 new tests
+- **pytest: 969 passed / 1 skipped / 0 failed** (970 collected).
+  - This includes the Workflow Autonomy layer (102W/101D) and its 20 new tests
     in `tests/test_workflow_autonomy.py`. The pre-workflow baseline on this same
     tree was 949 passed / 1 skipped / 0 failed (950 collected).
   - The 1 skip is documented (`tests/test_qpatch.py:256` — an intentional
@@ -66,8 +66,17 @@ Behaviour eval over the seed + public-school cases (offline, `smart_mock`):
   config-driven workflow resolver (102W) + workflow metadata + the *normal*
   governance pipeline (101B → 103 → 105/107) + a data-use guard (101D). Low-risk
   steps auto-run (BLUE), the external release needs human approval (GREEN), and
-  the agent self-blocks using guardian income for differential treatment (RED).
+  the agent self-blocks using guardian income for differential treatment (RED) —
+  both as a step inside the workflow and on free-text input (EN + 中文).
   Extensible by adding more workflow templates under `configs/workflows/`.
+- **Understanding vs deciding (separated layers).** Free-form requests are
+  *understood* by a deterministic concept lexicon offline, or by GPT-4o labelling
+  closed-vocabulary data-use concepts when a key is present (gated: at most one
+  call per task, only when the lexicon is uncertain). The route is *decided* only
+  by the deterministic governance core — the LLM never authorises an action, and
+  uncertain cases fail safe to human approval. Verified with no key (lexicon path)
+  and with a stub model (the LLM-concept path); the live GPT-4o path is the
+  owner's to run.
 
 ## Not claimed
 - **No** live government deployment.

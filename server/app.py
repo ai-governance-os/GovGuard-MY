@@ -1106,6 +1106,15 @@ def _workflow_view(result) -> dict | None:
 
     if not wf and not steps and not blocked:
         return None
+    # Workflow-aware headline status (Option 2): summarise the steps so a
+    # self-blocked step reads as "1 self-blocked" inside a governed workflow,
+    # not as a failed task. Core route semantics are unchanged.
+    summary = {
+        "auto": sum(1 for s in steps if s["route"] == "BLUE"),
+        "approval": sum(1 for s in steps if s["route"] == "GREEN"),
+        "self_blocked": sum(1 for s in steps if s["route"] == "RED"),
+        "total": len(steps),
+    }
     return {
         "detected": bool(wf),
         "workflow_id": (wf or {}).get("workflow_id"),
@@ -1115,6 +1124,7 @@ def _workflow_view(result) -> dict | None:
         "confidence": (wf or {}).get("confidence"),
         "steps": steps,
         "blocked": blocked,
+        "summary": summary,
     }
 
 

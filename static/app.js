@@ -330,8 +330,21 @@ function renderWorkflowPanel(bubble, d) {
       + `</div>`;
   }).join("");
 
+  // Option 2 — workflow-aware status line so a self-blocked step reads as
+  // "1 self-blocked" inside a governed workflow, not a failed task.
+  let statusLine = "";
+  const sm = wf.summary || {};
+  if (wf.detected && (sm.total || 0) > 0) {
+    const bits = [];
+    if (sm.auto) bits.push(`${sm.auto} auto-run`);
+    if (sm.approval) bits.push(`${sm.approval} awaiting approval`);
+    if (sm.self_blocked) bits.push(`${sm.self_blocked} self-blocked`);
+    statusLine = `<div class="wf-statusline">Governed workflow — `
+      + `${esc(bits.join(" · "))}</div>`;
+  }
   el.innerHTML =
     `<div class="wf-title">Workflow autonomy — more autonomy, without loss of control</div>`
+    + statusLine
     + head
     + (rows ? `<div class="wf-steps">${rows}</div>` : "")
     + blockedHtml;
@@ -505,10 +518,30 @@ function renderAgentMessage(node, d) {
   const routes = bubble.querySelector(".route-row");
   routes.innerHTML = "";
   if (d.final_route) {
-    const chip = document.createElement("span");
-    chip.className = "chip " + d.final_route;
-    chip.textContent = d.final_route;
-    routes.appendChild(chip);
+    const wf = d.workflow;
+    if (wf && wf.detected) {
+      // Option 2 — workflow-aware headline. A self-blocked step reads as
+      // "1 self-blocked" inside a GOVERNED workflow, not a failed task. The
+      // per-step routes (incl. the RED self-block) live in the workflow panel.
+      const sm = wf.summary || {};
+      const bits = [];
+      if (sm.auto) bits.push(`${sm.auto} auto`);
+      if (sm.approval) bits.push(`${sm.approval} approval`);
+      if (sm.self_blocked) bits.push(`${sm.self_blocked} self-blocked`);
+      const chip = document.createElement("span");
+      chip.className = "chip WORKFLOW";
+      chip.textContent = "WORKFLOW ✓ " + (bits.join(" · ") || "governed");
+      chip.title = "Ran under governance — planner proposes, governance decides."
+        + (sm.self_blocked
+            ? "\nOne step was self-blocked by the agent's own data-use guard (see panel)."
+            : "");
+      routes.appendChild(chip);
+    } else {
+      const chip = document.createElement("span");
+      chip.className = "chip " + d.final_route;
+      chip.textContent = d.final_route;
+      routes.appendChild(chip);
+    }
   }
   // mark CACHE if cached this run
   const cached = (d.events || []).some(e => e.module === "CACHE" && e.event_type === "cache_hit");
@@ -527,17 +560,8 @@ function renderAgentMessage(node, d) {
     chip.textContent = "AGENT-LOOP";
     routes.appendChild(chip);
   }
-  // Workflow Autonomy — mark WORKFLOW when 102W detected a configured
-  // workflow. The chip tooltip shows the workflow name + priority.
-  const wfChipData = d.workflow;
-  if (wfChipData && wfChipData.detected) {
-    const chip = document.createElement("span");
-    chip.className = "chip WORKFLOW";
-    chip.textContent = `WORKFLOW ${(wfChipData.steps || []).length}`;
-    chip.title = `${wfChipData.workflow_name || wfChipData.workflow_id}`
-      + `\npriority: ${wfChipData.priority || "—"}`;
-    routes.appendChild(chip);
-  }
+  // (Workflow status is shown as the headline route chip above — see the
+  // Option-2 workflow-aware block at the top of the route row.)
   // Phase 13 — mark TREE when 102T decomposed this task. The chip
   // tooltip shows the sub-goal count + how many completed.
   const tree = d.task_tree;

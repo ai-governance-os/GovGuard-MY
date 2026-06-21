@@ -18,22 +18,25 @@ a minimal goal:
 > *成绩出来了,处理一下。*  (or in English: *Sports day results are ready. Prepare everything.*)
 
 "I gave it one line. It detected the **post-event reporting workflow** and built a
-five-step plan — and look at the **teal Workflow panel**: it governs each step on
-its own. Extracting results, drafting the internal report, saving the draft —
-**BLUE**, done automatically. Drafting the public Facebook post — **BLUE**, but
+six-step plan — the route row reads **WORKFLOW ✓ 4 auto · 1 approval · 1
+self-blocked**. Extracting results, drafting the internal report, saving the draft
+— **BLUE**, done automatically. Drafting the public Facebook post — **BLUE**, but
 IC, MyKid, phone, address and guardian income are **blocked** from anything
-public. And preparing the public release — **GREEN**: it stops and asks me,
+public. Then preparing the public release — **GREEN**: it stops and asks me,
 because anything that leaves the school needs a human. Low-risk work automated,
 the risky step asks — *human by exception*."
 
-**Beat W2 — the agent governs its OWN plan (20 s).** Type:
-> *Use guardian household income to personalise which parents get called first.*
+**Beat W2 — the agent governs its OWN plan (20 s, the moment that matters).** Point
+at the **RED** step already in the panel — *Consider personalising outreach by
+family income*:
 
-"Now the moment that matters. This isn't a user attack — it's the agent's *own*
-plan proposing to use family income to treat parents differently. Module 101D
-blocks it — **RED: sensitive socioeconomic data cannot be used for differential
-treatment in parent communication** — and it offers the safe alternative: student
-progress, attendance, homework completion. The agent governs **itself**."
+"This isn't a user attack — it's the agent's *own* plan, inside the workflow,
+proposing to use family income to treat parents differently. Module 101D blocks
+it — **RED: sensitive socioeconomic data cannot be used for differential treatment
+in parent communication** — and offers the safe alternative: student progress,
+attendance, homework completion. The agent governs **itself**. (You can also type
+that request as free text, EN or 中文, and get the same RED — with a key, GPT-4o
+*understands* the request, but the deterministic core still *decides*.)"
 
 > The five route beats below (A–E) are the per-route matrix — show them if time allows.
 
