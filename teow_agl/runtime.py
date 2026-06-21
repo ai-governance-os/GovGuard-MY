@@ -22,6 +22,7 @@ from .modules.module_102_planner import PlannerModule
 from .modules.module_102b_synthesizer import ContentSynthesizer
 from .modules.module_102r_refusal_recovery import RefusalRecoveryModule
 from .modules.module_102t_task_tree import TaskTreeModule
+from .modules.module_102w_workflow_resolver import WorkflowResolver
 from .modules.module_109_reflector import ReflectorModule
 from .modules.module_110_verifier import VerifierModule
 from .modules.module_curator import CuratorModule
@@ -829,6 +830,20 @@ class Runtime:
         if rag_index_path is not None:
             self.retriever = Retriever(Path(rag_index_path))
 
+        # Module 102W — Workflow Resolver (config-driven, offline). Detects a
+        # configured public-sector workflow and builds its plan. Degrades
+        # gracefully: if configs/workflows/ is absent it simply never fires,
+        # and the runtime behaves exactly as before. It only changes WHERE a
+        # plan comes from — workflow actions still flow through 101B/103/105/107.
+        try:
+            self.workflow_resolver: WorkflowResolver | None = WorkflowResolver(
+                config_dir=self.config_dir,
+                domain=(self.domain_context or {}).get("domain")
+                if self.domain_context else None,
+            )
+        except Exception:
+            self.workflow_resolver = None
+
     def run(
         self,
         *,
@@ -1067,6 +1082,31 @@ class Runtime:
                     purpose="ask one clarifying question instead of guessing",
                 )
 
+        # ── Module 102W: Workflow Resolver (runs BEFORE the task-tree fork) ──
+        # If this goal matches a configured public-sector workflow, build the
+        # workflow plan now. It only replaces the planner output source — the
+        # actions still flow through 101B/103/105/107. Detection is offline.
+        # Skipped for clarify plans and for decomposition sub-goals so the
+        # workflow engine and the task tree can never fight over a task.
+        workflow_resolution: dict | None = None
+        workflow_plan: CandidatePlan | None = None
+        if (self.workflow_resolver is not None
+                and semantic_clarify_plan is None
+                and not envelope.metadata.get("_is_subgoal")):
+            workflow_resolution = self.workflow_resolver.resolve(
+                envelope, pre, self.domain_context)
+            if workflow_resolution:
+                envelope.metadata["workflow"] = workflow_resolution
+                self._emit(
+                    "102W", "workflow_detected",
+                    envelope.task_id, envelope.session_id,
+                    summary=(f"workflow={workflow_resolution.get('workflow_id')} "
+                             f"confidence={workflow_resolution.get('confidence')}"),
+                    details=workflow_resolution,
+                )
+                workflow_plan = self.workflow_resolver.build_plan(
+                    workflow_resolution, envelope, pre, self.tool_catalog)
+
         # ── Phase 13: Task Tree fork ──────────────────────────────────
         # Before single-shot planning, ask 102T whether this goal is
         # complex enough to warrant decomposition. If yes, runtime
@@ -1075,8 +1115,11 @@ class Runtime:
         #
         # Sub-tasks themselves are marked with envelope.metadata
         # `_is_subgoal=True` so this fork is skipped at depth 2+ —
-        # decomposition is single-level by design (per config).
+        # decomposition is single-level by design (per config). The
+        # `workflow_plan is None` guard means a detected workflow keeps
+        # its plan — the tree can't intercept a workflow task (§E).
         if (self.task_tree is not None
+                and workflow_plan is None
                 and semantic_clarify_plan is None
                 and not envelope.metadata.get("_is_subgoal")
                 and self._should_use_task_tree(envelope, pre)):
@@ -1091,6 +1134,17 @@ class Runtime:
         # is rate-limited or rejects a large PlanningBrief).
         plan_from_cache: CandidatePlan | None = None
         cache_entry_used: dict | None = None
+        # 102W workflow plan stands in for the planner output — no remote
+        # planner call. Governance (101B/103/105/107) still runs on it.
+        if workflow_plan is not None:
+            plan_from_cache = workflow_plan
+            self._emit(
+                "102", "planner_skipped",
+                envelope.task_id, envelope.session_id,
+                summary=(f"workflow plan by 102W: "
+                         f"{workflow_resolution.get('workflow_id')}"),
+                details={"workflow_resolution": workflow_resolution},
+            )
         # 101C clarify path — stands in for the planner exactly like the
         # identity/greeting direct plans below (no remote LLM call).
         if semantic_clarify_plan is not None:

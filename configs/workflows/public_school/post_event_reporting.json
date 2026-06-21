@@ -1,0 +1,50 @@
+{
+  "workflow_id": "post_event_reporting",
+  "display_name": "Post-event Reporting Workflow",
+  "domain": "public_school",
+  "version": "1.0.0",
+  "description": "Autonomously prepare post-event school reporting outputs after results are available, while blocking sensitive data leakage and requiring approval before public release.",
+
+  "_trigger_rule": "Trigger if a strong_trigger_phrase matches OR (>=1 anchor_term AND >=1 action_cue co-occur). NEVER trigger on an action_cue alone.",
+  "strong_trigger_phrases": [
+    "成绩出来了，处理一下",
+    "成绩出来了",
+    "比赛成绩出来了",
+    "运动会成绩出来了",
+    "sports day results are ready",
+    "event results are ready",
+    "prepare post event report"
+  ],
+  "anchor_terms": [
+    "成绩", "比赛成绩", "运动会", "活动结束", "活动结束了",
+    "results", "event results", "sports day", "competition results", "after the event"
+  ],
+  "action_cues": [
+    "处理一下", "帮我处理", "帮我出报告", "做报告", "出报告", "FB文案", "fb 文案",
+    "prepare everything", "prepare the report", "generate report and fb post", "prepare the public post"
+  ],
+  "minimal_goal_examples": [
+    "成绩出来了，处理一下。",
+    "Sports day results are ready. Prepare everything.",
+    "活动结束了，帮我做报告和FB文案。"
+  ],
+
+  "deadline_hours": 24,
+  "default_priority": "high",
+  "standing_authorization": {
+    "auto_allowed": ["read_uploaded_results", "extract_results", "draft_internal_report", "draft_public_post", "save_drafts_under_outputs"],
+    "approval_required": ["publish_public_post", "send_official_notice", "submit_official_report", "use_sensitive_data"],
+    "always_blocked": ["publish_ic_number", "publish_mykid_number", "publish_phone_number", "publish_home_address", "use_guardian_income_for_differential_treatment", "use_family_background_for_differential_treatment", "fake_human_approval", "send_without_approval"]
+  },
+  "sensitive_data": {
+    "public_blocked": ["ic_number", "mykid_number", "passport_number", "phone_number", "home_address", "guardian_income", "family_background", "health_data", "discipline_record", "special_needs_detail"],
+    "internal_allowed_with_reason": ["student_name", "class", "event_name", "event_result", "award", "attendance_summary"]
+  },
+  "steps": [
+    {"step_id": "extract_results", "display_name": "Extract results", "goal": "Extract event results, winners, classes, and award categories from uploaded or available result data.", "tool_hint": "fs", "operation_hint": "read_safe", "route_hint": "BLUE", "priority": "high", "time_rule": "immediate_after_results_available", "output_scope": "internal", "allowed_data": ["student_name", "class", "event_name", "event_result", "award"], "blocked_data": ["guardian_income", "phone_number", "home_address", "health_data"], "approval_boundary": "none"},
+    {"step_id": "draft_internal_report", "display_name": "Draft internal report", "goal": "Draft a complete internal school activity report based on event information and results.", "tool_hint": "report", "operation_hint": "draft_report", "route_hint": "BLUE", "priority": "high", "time_rule": "within_24h_after_event", "output_scope": "internal", "allowed_data": ["student_name", "class", "event_name", "event_result", "award", "attendance_summary"], "blocked_data": ["guardian_income", "family_background"], "approval_boundary": "none"},
+    {"step_id": "save_internal_report", "display_name": "Save internal report draft", "goal": "Save the internal report draft under outputs for teacher review.", "tool_hint": "fs", "operation_hint": "save_under_outputs", "route_hint": "BLUE", "priority": "medium", "time_rule": "after_internal_report_draft", "output_scope": "internal", "allowed_data": ["student_name", "class", "event_name", "event_result", "award"], "blocked_data": ["guardian_income", "phone_number", "home_address"], "approval_boundary": "none"},
+    {"step_id": "draft_public_fb_post", "display_name": "Draft public Facebook post", "goal": "Draft a bilingual public Facebook post that celebrates the event and winners without exposing sensitive data.", "tool_hint": "fs", "operation_hint": "save_under_outputs", "route_hint": "BLUE", "priority": "medium", "time_rule": "same_day_or_within_24h", "output_scope": "public_draft", "allowed_data": ["student_name", "class", "event_name", "event_result", "award"], "blocked_data": ["ic_number", "mykid_number", "phone_number", "home_address", "guardian_income", "health_data", "discipline_record"], "approval_boundary": "draft_only"},
+    {"step_id": "prepare_public_release", "display_name": "Prepare public release approval", "goal": "Prepare the public release action for human review. Do not actually publish in demo mode.", "tool_hint": "chat", "operation_hint": "answer", "route_hint": "GREEN", "priority": "medium", "time_rule": "after_public_draft_ready", "output_scope": "public_release", "allowed_data": ["approved_public_draft"], "blocked_data": ["ic_number", "mykid_number", "phone_number", "home_address", "guardian_income"], "approval_boundary": "human_required_before_external_action"}
+  ]
+}
