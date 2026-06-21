@@ -21,6 +21,7 @@ from .modules.module_101b_action_risk import ActionRiskModule
 from .modules.module_102_planner import PlannerModule
 from .modules.module_102b_synthesizer import ContentSynthesizer
 from .modules.module_102r_refusal_recovery import RefusalRecoveryModule
+from .modules.module_101d_data_use_guard import DataUseGuard
 from .modules.module_102t_task_tree import TaskTreeModule
 from .modules.module_102w_workflow_resolver import WorkflowResolver
 from .modules.module_109_reflector import ReflectorModule
@@ -843,6 +844,16 @@ class Runtime:
             )
         except Exception:
             self.workflow_resolver = None
+
+        # Module 101D — Data Use Guard. Governs the agent's OWN intended data
+        # use (a layer on top of 101A/101B). Inert by default: any action with
+        # no workflow/data-use metadata and no obvious sensitive use returns
+        # NO_OVERRIDE, so the legacy hot path is unchanged.
+        try:
+            self.data_use_guard: DataUseGuard | None = DataUseGuard(
+                config_dir=self.config_dir)
+        except Exception:
+            self.data_use_guard = None
 
     def run(
         self,
@@ -1987,6 +1998,44 @@ class Runtime:
         """
         for action in plan.actions:
             action.metadata.setdefault("task_id", envelope.task_id)
+
+            # ── Module 101D — Data Use Guard (self-governance over data use) ──
+            # Runs BEFORE 101B. Inert by default; only workflow/data-use or
+            # obviously-sensitive actions are judged. RED short-circuits the
+            # action (no execution); GREEN elevates a BLUE after 101B.
+            data_use = (self.data_use_guard.assess(action) if self.data_use_guard
+                        else {"decision": "NO_OVERRIDE", "reasons": []})
+            action.metadata["data_use_decision"] = data_use.get("decision")
+            action.metadata["data_use_reasons"] = data_use.get("reasons", [])
+            action.metadata["data_use_features"] = data_use.get("features", {})
+            if (data_use.get("decision") not in (None, "NO_OVERRIDE")
+                    or action.metadata.get("workflow_id")):
+                self._emit("101D", "data_use_assessed",
+                           envelope.task_id, envelope.session_id,
+                           summary=f"data_use={data_use.get('decision')}",
+                           details={"action_id": action.action_id,
+                                    "data_use": data_use})
+            if data_use.get("decision") == "RED":
+                risk = ActionRiskAssessment(
+                    task_id=envelope.task_id, action_id=action.action_id,
+                    risk_score=1.0, risk_level="critical",
+                    features={"data_use_guard": data_use},
+                    recommended_route="RED", reasons=data_use.get("reasons", []))
+                result.risk_assessments.append(risk)
+                decision = GovernanceDecision(
+                    task_id=envelope.task_id, action_id=action.action_id,
+                    route="RED",
+                    reasons=["data_use_guard_red", *data_use.get("reasons", [])],
+                    ticket_required=False, approval_required=False,
+                    policy_version=self.cfg.policy_version())
+                self._emit("103", "governance_decision",
+                           envelope.task_id, envelope.session_id,
+                           summary="route=RED (data_use_guard)",
+                           details={"decision_id": decision.decision_id})
+                # _on_red appends to result.decisions — do not append again (§H).
+                self._on_red(envelope, decision, result)
+                continue
+
             risk = self.risk.assess(
                 action=action, profile=self.profile,
                 backup_status=backup_status or self.profile.backup_default_status,
@@ -1994,6 +2043,15 @@ class Runtime:
                 task_category=pre.task_category,
             )
             risk.task_id = envelope.task_id
+            # GREEN elevation (after 101B; only raise, never lower; this action
+            # only). 101D GREEN while risk says BLUE → elevate to GREEN (§G).
+            if (data_use.get("decision") == "GREEN"
+                    and risk.recommended_route == "BLUE"):
+                risk.recommended_route = "GREEN"
+                risk.risk_level = "medium"
+                risk.risk_score = max(risk.risk_score, 0.55)
+                risk.reasons.append("data_use_guard_green: human approval required")
+                risk.features["data_use_guard"] = data_use
             self._emit("101B", "action_risk_assessed",
                        envelope.task_id, envelope.session_id,
                        summary=f"score={risk.risk_score} level={risk.risk_level} "

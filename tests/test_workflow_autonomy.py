@@ -15,10 +15,11 @@ from pathlib import Path
 import pytest
 
 from teow_agl.adapters.smart_mock_planner import SmartMockPlanner
-from teow_agl.models import TaskEnvelope
+from teow_agl.models import CandidateAction, CandidatePlan, TaskEnvelope
+from teow_agl.modules.module_101d_data_use_guard import DataUseGuard
 from teow_agl.modules.module_102w_workflow_resolver import WorkflowResolver
 from teow_agl.modules.module_105_human_gate import HumanGate
-from teow_agl.runtime import Runtime
+from teow_agl.runtime import Runtime, TaskRunResult
 from teow_agl.tools.chat_tool import ChatTool
 from teow_agl.tools.filesystem_tools import FilesystemTool
 from teow_agl.tools.mock_tools import MockTool
@@ -176,3 +177,111 @@ def test_task_tree_cannot_steal_workflow(isolated_workspace: Path, monkeypatch):
     assert ("102W", "workflow_detected") in mods
     assert result.plan is not None
     assert result.plan.planner_id == "102W_workflow_resolver"
+
+
+# ── 101D Data Use Guard tests (Phase 5) ─────────────────────────────────────
+
+def _decision_for(result, step_id: str):
+    action = next(a for a in result.plan.actions
+                  if a.metadata.get("workflow_step_id") == step_id)
+    return next(d for d in result.decisions if d.action_id == action.action_id)
+
+
+def test_external_release_step_is_green(isolated_workspace: Path):
+    """The external public-release step elevates to GREEN (needs human
+    approval) via 101D, and with reject_all it never executes (test 5)."""
+    rt = _runtime(isolated_workspace, gate="reject_all")
+    result = rt.run(raw_goal=WORKFLOW_GOAL_CN)
+    dec = _decision_for(result, "prepare_public_release")
+    assert dec.route == "GREEN"
+    assert dec.approval_required
+    # internal steps stay BLUE (101D inert / NO_OVERRIDE for internal scope)
+    assert _decision_for(result, "draft_internal_report").route == "BLUE"
+    # no real external side effect in demo / rejected approval
+    assert not any(getattr(e, "affected_resources", None) for e in result.executions)
+
+
+def _one_action_result(rt: Runtime, goal: str, action: CandidateAction):
+    env = TaskEnvelope(session_id="s", user_id="u", raw_goal=goal,
+                       normalized_goal=goal)
+    pre = rt.pre_gov.assess(env, rt.profile)
+    result = TaskRunResult(envelope=env, pre_assessment=pre)
+    plan = CandidatePlan(task_id=env.task_id, planner_id="test",
+                         planning_mode="direct", actions=[action])
+    rt._execute_actions(plan, env, pre, None, result)
+    return result
+
+
+def test_guardian_income_differential_is_red_exactly_once(isolated_workspace: Path):
+    """The flagship self-governance RED: the agent's OWN plan proposes using
+    guardian income to differentiate parent communication → 101D RED, with
+    EXACTLY ONE RED decision recorded (§H), blocked before execution."""
+    rt = _runtime(isolated_workspace)
+    action = CandidateAction(
+        tool="chat", operation="answer",
+        purpose="personalise parent replies using guardian household income",
+        metadata={
+            "data_categories": ["guardian_income"],
+            "data_use_purpose": ("use guardian household income to personalise "
+                                 "parent replies"),
+            "output_scope": "internal",
+        })
+    result = _one_action_result(
+        rt, "personalise parent replies by household income", action)
+    reds = [d for d in result.decisions if d.route == "RED"]
+    assert len(reds) == 1, f"expected exactly one RED, got {result.routes}"
+    assert any("differential treatment" in r for r in reds[0].reasons)
+    assert not any(getattr(e, "affected_resources", None) for e in result.executions)
+
+
+def test_safe_alternative_is_not_red(isolated_workspace: Path):
+    """Using student progress / homework completion (the safe alternative) for
+    the same personalisation goal must NOT be RED (test 7)."""
+    rt = _runtime(isolated_workspace)
+    action = CandidateAction(
+        tool="chat", operation="answer",
+        purpose=("personalise parent replies using student progress and "
+                 "homework completion"),
+        metadata={
+            "data_categories": ["student_progress", "homework_completion"],
+            "data_use_purpose": ("use student progress and homework completion "
+                                 "to personalise parent replies"),
+            "output_scope": "internal",
+        })
+    result = _one_action_result(rt, "personalise parent replies safely", action)
+    assert not any(d.route == "RED" for d in result.decisions), result.routes
+
+
+def test_guard_assess_red_and_safe_directly(isolated_workspace: Path):
+    """Unit-level: assess() RED on socio+differential, NO_OVERRIDE on the safe
+    variant, and inert NO_OVERRIDE on a plain legacy action."""
+    g = DataUseGuard(config_dir=isolated_workspace / "configs")
+
+    red = g.assess(CandidateAction(
+        tool="chat", operation="answer",
+        purpose="differentiate parent messages by guardian income",
+        metadata={"data_categories": ["guardian_income"], "output_scope": "internal"}))
+    assert red["decision"] == "RED"
+
+    safe = g.assess(CandidateAction(
+        tool="chat", operation="answer",
+        purpose="differentiate parent messages by student progress",
+        metadata={"data_categories": ["student_progress"], "output_scope": "internal"}))
+    assert safe["decision"] != "RED"
+
+    # legacy action, no workflow/data-use metadata, nothing sensitive → inert
+    inert = g.assess(CandidateAction(
+        tool="fs", operation="save_under_outputs",
+        purpose="save the sports day schedule as a word file", metadata={}))
+    assert inert["decision"] == "NO_OVERRIDE"
+    assert inert["features"].get("inert_default") is True
+
+
+def test_trace_has_102w_and_101d(isolated_workspace: Path):
+    """The audit trail surfaces both new modules for a workflow task (test 8)."""
+    rt = _runtime(isolated_workspace)
+    cap = _capture(rt)
+    rt.run(raw_goal=WORKFLOW_GOAL_CN)
+    mods = [(e["module"], e["event_type"]) for e in cap]
+    assert ("102W", "workflow_detected") in mods
+    assert ("101D", "data_use_assessed") in mods
