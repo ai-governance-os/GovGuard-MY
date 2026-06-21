@@ -54,6 +54,24 @@ PLAN_CACHE_PATH = STATE_DIR / "plan_cache.jsonl"
 USER_MEMORY_DIR = STATE_DIR / "memory"
 SKILLS_DIR = STATE_DIR / "skills"
 SESSION_INDEX_PATH = STATE_DIR / "session_index.db"
+DEMO_DIR = ROOT / "demo"
+
+
+def _seed_demo_results() -> None:
+    """Seed a sample results file into the workspace so the post-event workflow's
+    first step (extract results) reads real data instead of showing `not_found`
+    in a fresh clone. Demo convenience only — never overwrites a real upload."""
+    try:
+        sample = DEMO_DIR / "sports_day_results.md"
+        target = WORKSPACE_DIR / "results.md"
+        if sample.exists() and not target.exists():
+            WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+            target.write_text(sample.read_text(encoding="utf-8"), encoding="utf-8")
+    except OSError:
+        pass
+
+
+_seed_demo_results()
 
 
 def _demo_mode() -> bool:

@@ -27,32 +27,57 @@ existing RED stays RED, existing GREEN never downgrades, 101D RED → RED,
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
+# Matching runs on NORMALIZED text (lower-cased, underscores/hyphens → spaces,
+# whitespace collapsed) so that the metadata form ("guardian_income") and the
+# natural-language form ("guardian household income", "家长收入") match the same
+# lexicon entries. This is the "A-tier" deterministic understanding layer: it
+# never decides safety, it only maps phrasings to concepts for the governance
+# core. Terms below are therefore written in space form.
+_WS = re.compile(r"\s+")
+
+
+def _normalize(text: Any) -> str:
+    t = str(text or "").lower().replace("_", " ").replace("-", " ")
+    return _WS.sub(" ", t).strip()
+
+
 # Sensitive socioeconomic fields that must never drive differential treatment.
 _SOCIO_FIELDS = (
-    "guardian_income", "household_income", "parent_income", "family_income",
-    "family_background", "parent_occupation", "guardian_occupation",
-    "occupation", "salary", "socioeconomic",
+    "guardian income", "household income", "family income", "parent income",
+    "parents income", "income", "salary", "wage", "socioeconomic",
+    "socio economic", "family background", "household background",
+    "guardian occupation", "parent occupation", "occupation",
+    "家庭收入", "家长收入", "父母收入", "家长薪水", "薪水", "收入",
+    "家庭背景", "家境", "收入水平", "父母职业", "家长职业", "社会经济",
 )
 # Personally-identifying numbers / contacts that must never be published.
 _PUBLIC_PII = (
-    "ic_number", "mykid_number", "passport_number", "phone_number",
-    "home_address", "ic number", "mykid number", "phone number", "home address",
+    "ic number", "mykid number", "mykid", "passport number",
+    "phone number", "home address", "contact number",
+    "身份证", "证件号码", "电话号码", "联络号码", "家庭住址", "住家地址",
 )
 # Categories that must not appear in public content by default.
 _HEALTH_FIELDS = (
-    "health_data", "discipline_record", "special_needs_detail",
-    "health record", "disciplinary record",
+    "health data", "health record", "medical record", "discipline record",
+    "disciplinary record", "special needs", "special needs detail",
+    "健康记录", "病历", "纪律记录", "特殊需要", "残障",
 )
 # Cues that the agent intends to treat people DIFFERENTLY using the data.
 _DIFFERENTIAL_CUES = (
     "differential", "differentiate", "personalize", "personalise",
     "personalised", "personalized", "tailor", "treat differently",
     "prioritise", "prioritize", "segment", "by income", "based on income",
-    "according to income", "based on family", "rank parents",
-    "差异", "差别", "区别对待", "按收入", "依收入", "个性化",
+    "according to income", "based on family", "rank parents", "called first",
+    "who gets called", "contact first", "call order", "contact order",
+    "single out", "target parents",
+    # CJK kept narrow — only phrases that clearly mean differential treatment
+    # or contact-ordering, not generic task-priority words like 优先/排序/针对.
+    "区别对待", "差别对待", "按收入", "依收入", "按家庭", "个性化对待",
+    "先打电话", "先联系", "优先联系", "优先打给",
 )
 _PUBLIC_SCOPES = ("public", "public_release", "external")
 
@@ -102,15 +127,19 @@ class DataUseGuard:
     # ----------------------------------------------------------------- assess
     def assess(self, action) -> dict:
         md = getattr(action, "metadata", {}) or {}
-        op = str(getattr(action, "operation", "")).lower()
-        text = " ".join((
+        op = _normalize(getattr(action, "operation", ""))
+        # Inspect the agent's intended data use: the action itself PLUS the
+        # task intent threaded into metadata (so a planner that produced a
+        # generic action still surfaces the goal's data-use intent to 101D).
+        text = _normalize(" ".join((
             str(getattr(action, "purpose", "")),
             str(getattr(action, "expected_effect", "")),
             str(getattr(action, "target", "")),
             str(md.get("data_use_purpose", "")),
+            str(md.get("user_intent", "")),
             _norm_list(md.get("data_categories")),
             _norm_list(md.get("allowed_data")),
-        )).lower()
+        )))
         scope = str(md.get("output_scope", "")).lower()
         approval_boundary = str(md.get("approval_boundary", "")).lower()
 

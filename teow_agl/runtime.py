@@ -1998,6 +1998,9 @@ class Runtime:
         """
         for action in plan.actions:
             action.metadata.setdefault("task_id", envelope.task_id)
+            # Thread the task intent so 101D sees the agent's intended data use
+            # even when the planner emitted a generic action.
+            action.metadata.setdefault("user_intent", envelope.normalized_goal)
 
             # ── Module 101D — Data Use Guard (self-governance over data use) ──
             # Runs BEFORE 101B. Inert by default; only workflow/data-use or
