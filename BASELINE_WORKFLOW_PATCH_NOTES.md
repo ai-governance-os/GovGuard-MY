@@ -17,8 +17,14 @@ pytest                : 949 passed, 1 skipped, 0 failed   ← GREEN
 ## After patch
 - pytest after **Phase 3** (102W integrated): **957 passed, 1 skipped, 0 failed** (= 949 + 8).
 - pytest after **Phase 5** (101D integrated): **962 passed, 1 skipped, 0 failed** (= 949 + 13).
-- New workflow tests: `tests/test_workflow_autonomy.py` — 13 total (5 resolver-direct, 3 102W integration, 5 101D / data-use).
+- pytest after **Phase 9** (final, UI + output-quality): **964 passed, 1 skipped, 0 failed** (965 collected; = 949 + 15).
+- Offline governance eval: **pass rate 1.0** (29 evaluated, 3 documented L2 skips) — unchanged.
+- New workflow tests: `tests/test_workflow_autonomy.py` — 15 total (5 resolver-direct, 3 102W integration, 5 101D / data-use, 1 output-quality, 1 server panel).
 - New intentional skips: none.
+
+> Doc-number correction: the shipped docs previously claimed **932/933** — stale
+> from before the FIX_PLAN added ~17 tests without updating them. All judge docs
+> are now corrected to the measured **964/965** (pre-workflow baseline 949 noted).
 
 ### Phase log
 - **Phase 1** — `configs/workflows/public_school/post_event_reporting.json` (§5, verbatim; tool/op hints verified against `tool_catalog.json`).
@@ -26,6 +32,10 @@ pytest                : 949 passed, 1 skipped, 0 failed   ← GREEN
 - **Phase 3** — runtime integration (§E): resolver init in `__init__` (graceful degrade); 102W resolver runs BEFORE the Phase-13 task-tree fork; fork gets the `workflow_plan is None` guard; `plan_from_cache = workflow_plan` + `102 planner_skipped`. Verified: CN/EN goals fire 102W, planner skipped (never called), task tree cannot steal a workflow task.
 - **Phase 4** — `teow_agl/modules/module_101d_data_use_guard.py` (§8/§F/§I): deterministic self-governance over the agent's OWN data use. Inert by default (no metadata + no obvious sensitive use → NO_OVERRIDE). RED on socio+differential / public-PII / health-in-public; GREEN on external release or unclear sensitive use; NO_OVERRIDE on internal/draft. `_obvious_sensitive_use` kept narrow so legacy actions are never perturbed.
 - **Phase 5** — integrated 101D into `_execute_actions` (§8): runs before 101B; inert default; RED short-circuit builds one decision + `_on_red` (no pre-append → exactly one RED, §H); GREEN elevation after 101B raises BLUE→GREEN only (§G). Verified vs §19 expected: internal/draft steps BLUE, external release GREEN; flagship guardian-income action → RED once with the §I reason + safe alternative, blocked before execution. 103 honors `risk.recommended_route` (line 89) so the GREEN elevation works on this build.
+- **Phase 6** — trace/UI data: server builds a `workflow` view (`server/app.py _workflow_view`) from the result — per-step route + status + data-use decision, plus any 101D self-blocked action — round-tripped through `_state_to_dict` + persistence like `task_tree`.
+- **Phase 7** — UI: `renderWorkflowPanel` + a teal **Workflow panel** beside the governance card (each step + route + status + note, and the RED self-block with reason + safe alternative) + a `WORKFLOW n` chip (`static/app.js`, `static/style.css`). Additive; ordinary tasks show nothing new.
+- **Phase 8** — docs (§M-docs): repositioned README_MAIC + DEMO_SCRIPT + JUDGE_GUIDE to lead with the workflow (the §I flagship RED appears in all three); CLAIMS_CHECK + AI_DISCLOSURE updated (one-workflow claim discipline, real-LLM vs smart_mock); all test-count claims corrected 932→964.
+- **Phase 9** — output quality (§C): the 102B synthesizer now has a workflow-aware fallback (`_workflow_fallback_body`) so zero-key steps produce real bilingual drafts, never an apology; `build_plan` emits absolute outputs targets (a bare filename resolved to CWD and was denied by the FilesystemTool). Eyeballed: 4 BLUE + 1 GREEN, two substantive deliverables written (internal report ~600 chars, FB post ~500 chars). Full suite green; evals 1.0.
 
 ## Hard rules being followed (from the brief)
 - Additive only; never rewrite. Existing runtime/modules/contracts preserved.

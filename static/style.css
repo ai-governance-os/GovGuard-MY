@@ -303,6 +303,47 @@ body {
 .gov-pipeline .gp-route.RED        { color: var(--red); }
 .gov-pipeline .gp-route.INFEASIBLE { color: var(--orange); }
 .chip.NONE       { background: rgba(154,160,166,.10); color: var(--text-mute); border-color: rgba(154,160,166,.30); }
+.chip.WORKFLOW   { background: rgba(13,148,136,.12);  color: #0d9488; border-color: rgba(13,148,136,.32); font-weight: 700; }
+
+/* Workflow Autonomy panel (102W/101D) — beside the governance card */
+.workflow-panel {
+  margin: 8px 0 4px;
+  border: 1px solid rgba(13,148,136,.30);
+  border-left: 3px solid #0d9488;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(13,148,136,.04);
+}
+.workflow-panel .wf-title {
+  font-size: 12px; font-weight: 700; letter-spacing: .2px;
+  color: #0d9488; margin-bottom: 6px; text-transform: uppercase;
+}
+.workflow-panel .wf-head { font-size: 13px; color: var(--text); margin-bottom: 8px; }
+.workflow-panel .wf-meta { display: block; font-size: 11px; color: var(--text-mute); margin-top: 2px; }
+.workflow-panel .wf-steps { display: flex; flex-direction: column; gap: 2px; }
+.workflow-panel .wf-step {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 3px 0; font-size: 13px; line-height: 1.4;
+}
+.workflow-panel .wf-n {
+  flex: 0 0 18px; font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px; font-weight: 700; color: var(--text-mute); text-align: right;
+}
+.workflow-panel .wf-name { flex: 0 0 200px; font-weight: 600; color: var(--text); }
+.workflow-panel .wf-route { flex: 0 0 78px; font-weight: 800; letter-spacing: .3px; }
+.workflow-panel .wf-status { flex: 0 0 116px; color: var(--text-soft); }
+.workflow-panel .wf-note { flex: 1 1 auto; color: var(--text-mute); font-size: 12px; }
+.workflow-panel .gp-route.BLUE       { color: var(--accent); }
+.workflow-panel .gp-route.GREEN      { color: var(--green); }
+.workflow-panel .gp-route.RED        { color: var(--red); }
+.workflow-panel .gp-route.INFEASIBLE { color: var(--orange); }
+.workflow-panel .wf-blocked {
+  margin-top: 8px; padding: 8px 10px; border-radius: 8px;
+  background: rgba(211,58,58,.06); border: 1px solid rgba(211,58,58,.22);
+}
+.workflow-panel .wf-blocked-head { font-size: 13px; font-weight: 600; color: var(--text); }
+.workflow-panel .wf-blocked-reason { font-size: 12.5px; color: var(--red); margin-top: 3px; }
+.workflow-panel .wf-blocked-alt { font-size: 12px; color: var(--green); margin-top: 3px; }
 
 /* Attached artifacts inside agent bubble */
 .artifact { display: inline-flex; align-items: center; gap: 8px;

@@ -10,7 +10,32 @@ trilingual notice template). Start: `python -X utf8 -m server.app` →
 > **Opening line (5 s):** "GovGuard MY governs an AI agent for Malaysian
 > public-service work — first, school administration. The planner proposes,
 > an independent governance runtime decides, a human approves, everything is
-> traced. Each answer shows its **governance pipeline**. Watch four routes."
+> traced. First watch one sentence become a whole governed workflow — then the
+> four routes."
+
+**Beat W — one sentence becomes a governed workflow (40 s, the headline).** Type
+a minimal goal:
+> *成绩出来了,处理一下。*  (or in English: *Sports day results are ready. Prepare everything.*)
+
+"I gave it one line. It detected the **post-event reporting workflow** and built a
+five-step plan — and look at the **teal Workflow panel**: it governs each step on
+its own. Extracting results, drafting the internal report, saving the draft —
+**BLUE**, done automatically. Drafting the public Facebook post — **BLUE**, but
+IC, MyKid, phone, address and guardian income are **blocked** from anything
+public. And preparing the public release — **GREEN**: it stops and asks me,
+because anything that leaves the school needs a human. Low-risk work automated,
+the risky step asks — *human by exception*."
+
+**Beat W2 — the agent governs its OWN plan (20 s).** Type:
+> *Use guardian household income to personalise which parents get called first.*
+
+"Now the moment that matters. This isn't a user attack — it's the agent's *own*
+plan proposing to use family income to treat parents differently. Module 101D
+blocks it — **RED: sensitive socioeconomic data cannot be used for differential
+treatment in parent communication** — and it offers the safe alternative: student
+progress, attendance, homework completion. The agent governs **itself**."
+
+> The five route beats below (A–E) are the per-route matrix — show them if time allows.
 
 **Beat A — GREEN, the human gate (25 s).** Click the first example, or type:
 > *Prepare a trilingual sports-day parent notice from this circular and queue it for release to parents after approval.*

@@ -20,6 +20,14 @@ HMAC-signed ticket authorises execution, and a full audit trace is written for
 every task — including a **governance↔learning boundary** that keeps student
 personal data out of reusable learning.
 
+**More than moderating human input — the agent governs its own actions.** Given a
+*minimal* goal (*"成绩出来了,处理一下。"* — "results are in, handle it"), GovGuard MY
+detects a configured **workflow**, attaches priority + deadline, auto-runs the
+low-risk steps (BLUE), asks human approval for the external release (GREEN), and
+**self-blocks** a forbidden internal data use — using guardian income to
+differentiate parent communication (RED) — all on one audit trace. One sentence
+in; a fully governed multi-step plan out. *More autonomy, without loss of control.*
+
 ## Why this, not a prompt-only agent
 A prompt-only agent decides and acts in the same breath; "be safe" is a request
 the model can ignore. Here, **safety is structural**:
@@ -47,7 +55,32 @@ Open <http://127.0.0.1:8765>. Defaults: planner `smart_mock` (offline, no key),
 mode. See [JUDGE_GUIDE.md](JUDGE_GUIDE.md) for the 5-minute path and
 [DEMO_SCRIPT.md](DEMO_SCRIPT.md) for the 60–90 s narration.
 
-## The 60–90 s demo (school circular)
+## Headline demo — the post-event reporting workflow (≈90 s)
+Type one minimal goal:
+> *成绩出来了,处理一下。*  ·  *Sports day results are ready. Prepare everything.*
+
+The agent detects the **`post_event_reporting` workflow** and shows a teal
+**Workflow panel** beside the governance card:
+
+| # | Step | Route | Why |
+|---|------|-------|-----|
+| 1 | Extract results | **BLUE** | internal event data, auto-run |
+| 2 | Draft internal report | **BLUE** | name / class / result / award allowed internally |
+| 3 | Save internal draft | **BLUE** | stored under `outputs/` |
+| 4 | Draft public Facebook post | **BLUE** | IC / MyKid / phone / address / guardian-income **blocked** from public content |
+| 5 | Prepare public release | **GREEN** | external release waits for human approval (no real post in demo) |
+
+Then the **self-governance** moment — the agent blocks its *own* plan:
+> Blocked internal action: *use guardian income to personalise which parents get called first* — **RED**
+> *Sensitive socioeconomic data cannot be used for differential treatment in parent communication.*
+> Safe alternative: student progress, attendance, homework completion, or neutral communication preferences.
+
+Mechanism: a config-driven **workflow resolver (102W)** builds the plan offline;
+every step still flows through the **same** governance pipeline (101B → 103 →
+105/107); a **data-use guard (101D)** governs what the agent itself intends to do
+with data. Add more workflows by dropping a JSON template under `configs/workflows/`.
+
+## Route matrix (school circular, one route each)
 | # | Prompt | Route | What you see |
 |---|--------|-------|--------------|
 | A | "Prepare a trilingual sports-day parent notice from this circular and queue it for release to parents after approval." | **GREEN** | trilingual draft → approval card → approve → signed ticket + `.docx` |
@@ -65,14 +98,17 @@ tools are mock; after approval, execution is **simulated and labelled**, while
 the **audit trace and signed ticket are real**.
 
 ## Evidence (see [CLAIMS_CHECK.md](CLAIMS_CHECK.md) for the tiered, reproducible ledger)
-- **Public MAIC build (this repo):** `pytest` → 932 passed / 1 skipped / 0 failed (933 collected).
+- **Public MAIC build (this repo):** `pytest` → 964 passed / 1 skipped / 0 failed (965 collected),
+  including the Workflow Autonomy layer (102W/101D) and its 15 tests. Pre-workflow
+  baseline on the same tree: 949 passed / 1 skipped / 0 failed.
 - **Offline governance eval:** `python -X utf8 scripts/run_evals.py` → pass rate **1.0**
   (32 cases: 29 evaluated incl. the public-school cases, 3 documented L2 skips).
 - **Secret scan:** `python -X utf8 scripts/verify_no_secrets.py` → PASS.
 
 **Not claimed:** no live government deployment, no live pilot impact metric, no
-autonomous external action. Numbers are tiered and each is reproducible from the
-build it describes.
+autonomous external action, and **no universal workflow autonomy** — *one*
+configured workflow is demonstrated, not a general agent for all public-service
+tasks. Numbers are tiered and each is reproducible from the build it describes.
 
 ## Docs
 [JUDGE_GUIDE.md](JUDGE_GUIDE.md) · [DEMO_SCRIPT.md](DEMO_SCRIPT.md) ·

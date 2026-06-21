@@ -189,16 +189,21 @@ def _decision_for(result, step_id: str):
 
 def test_external_release_step_is_green(isolated_workspace: Path):
     """The external public-release step elevates to GREEN (needs human
-    approval) via 101D, and with reject_all it never executes (test 5)."""
+    approval) via 101D, and with reject_all it never executes (test 5).
+    Internal BLUE save steps legitimately write drafts under outputs/ — only
+    the GREEN external step must produce no side effect."""
     rt = _runtime(isolated_workspace, gate="reject_all")
     result = rt.run(raw_goal=WORKFLOW_GOAL_CN)
+    ext = next(a for a in result.plan.actions
+               if a.metadata.get("workflow_step_id") == "prepare_public_release")
     dec = _decision_for(result, "prepare_public_release")
     assert dec.route == "GREEN"
     assert dec.approval_required
     # internal steps stay BLUE (101D inert / NO_OVERRIDE for internal scope)
     assert _decision_for(result, "draft_internal_report").route == "BLUE"
-    # no real external side effect in demo / rejected approval
-    assert not any(getattr(e, "affected_resources", None) for e in result.executions)
+    # the rejected GREEN external step itself executes no side effect
+    assert not [e for e in result.executions
+                if e.action_id == ext.action_id and getattr(e, "affected_resources", None)]
 
 
 def _one_action_result(rt: Runtime, goal: str, action: CandidateAction):
@@ -277,6 +282,22 @@ def test_guard_assess_red_and_safe_directly(isolated_workspace: Path):
     assert inert["features"].get("inert_default") is True
 
 
+def test_workflow_outputs_are_non_empty(isolated_workspace: Path):
+    """§C / §N.9 — the workflow produces non-empty, recognisable deliverables in
+    smart_mock mode: real bilingual drafts, never an apology or a blank file.
+    BLUE save steps execute regardless of the GREEN gate, so reject_all is fine."""
+    rt = _runtime(isolated_workspace)
+    rt.run(raw_goal=WORKFLOW_GOAL_CN)
+    files = [p for p in (isolated_workspace / "outputs").rglob("*.md") if p.is_file()]
+    assert files, "workflow wrote no output files"
+    bodies = [p.read_text(encoding="utf-8") for p in files]
+    assert any(len(b) >= 200 for b in bodies), [len(b) for b in bodies]
+    joined = "\n".join(bodies)
+    assert "很抱歉" not in joined and "Sorry — I couldn't" not in joined, "apology leaked into a deliverable"
+    assert any(("报告" in b or "Report" in b or "Facebook" in b) for b in bodies), \
+        "no recognisable workflow content in the deliverables"
+
+
 def test_trace_has_102w_and_101d(isolated_workspace: Path):
     """The audit trail surfaces both new modules for a workflow task (test 8)."""
     rt = _runtime(isolated_workspace)
@@ -285,3 +306,49 @@ def test_trace_has_102w_and_101d(isolated_workspace: Path):
     mods = [(e["module"], e["event_type"]) for e in cap]
     assert ("102W", "workflow_detected") in mods
     assert ("101D", "data_use_assessed") in mods
+
+
+# ── UI plumbing: server serves the workflow panel (Phase 6/7) ───────────────
+
+def test_server_exposes_workflow_panel(monkeypatch):
+    """The server builds + serves the workflow view the UI panel renders:
+    detected workflow, five steps with real routes (incl. the GREEN external
+    release), so the judge-visible panel is never empty for a workflow task."""
+    import time
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("TEOW_AGL_PLANNER", "smart_mock")
+    from fastapi.testclient import TestClient
+    from server.app import app
+
+    c = TestClient(app)
+    tid = c.post("/api/tasks", json={"raw_goal": WORKFLOW_GOAL_CN}).json()["task_id"]
+
+    def _poll(*want, timeout=15):
+        dl = time.time() + timeout
+        st = None
+        while time.time() < dl:
+            st = c.get(f"/api/tasks/{tid}").json()
+            if st["status"] in want:
+                return st
+            time.sleep(0.2)
+        return st
+
+    # The external-release step is GREEN → the runner blocks for human
+    # approval. Reject it (demo: no real external action) so the run completes
+    # and the server builds the workflow view.
+    state = _poll("awaiting_approval", "done", "error")
+    if state["status"] == "awaiting_approval":
+        appr = state["pending_approvals"][0]
+        c.post(f"/api/tasks/{tid}/decide",
+               json={"approval_id": appr["approval_id"], "status": "rejected",
+                     "note": "demo: no real external publish"})
+        state = _poll("done", "error")
+    assert state is not None and state["status"] == "done", f"final: {state}"
+    wf = state.get("workflow")
+    assert wf and wf["detected"] is True
+    assert wf["workflow_id"] == "post_event_reporting"
+    assert len(wf["steps"]) == 5
+    routes = [s["route"] for s in wf["steps"]]
+    assert "GREEN" in routes, routes  # external release elevated by 101D
+    assert all(r in ("BLUE", "GREEN") for r in routes), routes

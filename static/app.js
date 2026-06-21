@@ -263,6 +263,81 @@ function renderGovPipeline(bubble, d) {
   el.hidden = false;
 }
 
+// Workflow Autonomy panel (102W/101D). Extends the governance card, never
+// replaces it: workflow name + priority + deadline, each step with its actual
+// route + status, and any internal action the agent self-blocked on its own
+// data use (the RED reason + safe alternative). Hidden for ordinary tasks.
+function renderWorkflowPanel(bubble, d) {
+  const el = bubble.querySelector(".workflow-panel");
+  if (!el) return;
+  const wf = d && d.workflow;
+  if (!wf || d.status === "running") { el.hidden = true; el.innerHTML = ""; return; }
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g,
+    c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const steps = wf.steps || [];
+  const blocked = wf.blocked || [];
+  if (!wf.detected && !blocked.length && !steps.length) {
+    el.hidden = true; el.innerHTML = ""; return;
+  }
+
+  let head;
+  if (wf.detected) {
+    const dl = wf.deadline_hours ? `within ${esc(wf.deadline_hours)}h` : "—";
+    head = `<div class="wf-head">Workflow detected: `
+      + `<b>${esc(wf.workflow_name || wf.workflow_id)}</b>`
+      + `<span class="wf-meta">priority: ${esc(wf.priority || "—")} · `
+      + `deadline: ${dl}`
+      + (wf.confidence != null ? ` · confidence: ${esc(wf.confidence)}` : "")
+      + `</span></div>`;
+  } else {
+    head = `<div class="wf-head">Agent self-governance — data-use check</div>`;
+  }
+
+  const statusLabel = s => {
+    if (s === "success") return "done";
+    if (s === "denied" || s === "skipped") return "waiting approval";
+    if (s === "failed") return "not run";
+    return s || "pending";
+  };
+  const rows = steps.map((s, i) => {
+    const route = s.route || "—";
+    const note = route === "GREEN" ? "external release — needs approval"
+      : (s.output_scope === "public_draft"
+          ? "public draft — sensitive fields blocked"
+          : (s.output_scope === "internal" ? "internal data allowed" : ""));
+    const st = route === "GREEN" ? "waiting approval" : statusLabel(s.status);
+    return `<div class="wf-step">`
+      + `<span class="wf-n">${i + 1}</span>`
+      + `<span class="wf-name">${esc(s.step_name || s.step_id)}</span>`
+      + `<span class="wf-route gp-route ${esc(route)}">${esc(route)}</span>`
+      + `<span class="wf-status">${esc(st)}</span>`
+      + `<span class="wf-note">${esc(note)}</span></div>`;
+  }).join("");
+
+  const blockedHtml = blocked.map(b => {
+    const reasons = (b.reasons || []);
+    const main = reasons.filter(r =>
+      !String(r).startsWith("safe_alternative:") && r !== "data_use_guard_red");
+    const alt = reasons.find(r => String(r).startsWith("safe_alternative:"));
+    return `<div class="wf-blocked">`
+      + `<div class="wf-blocked-head">`
+      + `<span class="wf-route gp-route RED">RED</span> `
+      + `Blocked internal action: ${esc(b.purpose)}</div>`
+      + (main.length ? `<div class="wf-blocked-reason">${esc(main.join(" "))}</div>` : "")
+      + (alt ? `<div class="wf-blocked-alt">`
+          + esc(alt.replace(/^safe_alternative:\s*/, "Safe alternative: "))
+          + `</div>` : "")
+      + `</div>`;
+  }).join("");
+
+  el.innerHTML =
+    `<div class="wf-title">Workflow autonomy — more autonomy, without loss of control</div>`
+    + head
+    + (rows ? `<div class="wf-steps">${rows}</div>` : "")
+    + blockedHtml;
+  el.hidden = false;
+}
+
 function appendAgentMessage(task_id) {
   const wrap = document.createElement("div");
   wrap.className = "msg agent";
@@ -277,6 +352,7 @@ function appendAgentMessage(task_id) {
       <div class="summary">Thinking…</div>
       <div class="route-row"></div>
       <div class="gov-pipeline" hidden></div>
+      <div class="workflow-panel" hidden></div>
       <div class="artifacts"></div>
       <div class="approval-area"></div>
       <details class="task-tree-block" hidden>
@@ -451,6 +527,17 @@ function renderAgentMessage(node, d) {
     chip.textContent = "AGENT-LOOP";
     routes.appendChild(chip);
   }
+  // Workflow Autonomy — mark WORKFLOW when 102W detected a configured
+  // workflow. The chip tooltip shows the workflow name + priority.
+  const wfChipData = d.workflow;
+  if (wfChipData && wfChipData.detected) {
+    const chip = document.createElement("span");
+    chip.className = "chip WORKFLOW";
+    chip.textContent = `WORKFLOW ${(wfChipData.steps || []).length}`;
+    chip.title = `${wfChipData.workflow_name || wfChipData.workflow_id}`
+      + `\npriority: ${wfChipData.priority || "—"}`;
+    routes.appendChild(chip);
+  }
   // Phase 13 — mark TREE when 102T decomposed this task. The chip
   // tooltip shows the sub-goal count + how many completed.
   const tree = d.task_tree;
@@ -521,6 +608,8 @@ function renderAgentMessage(node, d) {
   // authority: planner proposes -> governance decides -> human approves ->
   // execution -> verification, with the route + reason in plain view.
   renderGovPipeline(bubble, d);
+  // Workflow Autonomy panel (102W/101D) — beside the governance card.
+  renderWorkflowPanel(bubble, d);
   // Phase 14 — SELF-FIX chip when the runtime re-ran the pipeline
   // because the judge initially failed. Green when recovered, red
   // when exhausted.

@@ -112,6 +112,67 @@ def _fallback_body(user_intent: str, kind: str) -> str:
     )
 
 
+def _workflow_fallback_body(user_intent: str, meta: dict) -> str:
+    """Deterministic bilingual DRAFT for a workflow step (102W) when no chat
+    LLM is available (the zero-key judging build) or the LLM returned empty.
+
+    Mirrors P0.1 / `_school_notice_fallback_body`: a workflow step must always
+    produce a real, readable draft — never an apology written into the file.
+    With a live provider (GPT-4o) these steps are written by the model for
+    richer content; this only fires when the model returns nothing. The body is
+    chosen by the step's `output_scope` so the internal report, the public
+    Facebook draft, and the public-release summary each read appropriately.
+    """
+    scope = str((meta or {}).get("output_scope") or "").lower()
+    step = str((meta or {}).get("workflow_step_name") or "").lower()
+    intent = (user_intent or "").strip()[:200]
+    if scope == "public_release" or "release" in step:
+        return (
+            "【对外发布 — 待人工批准 / Public release — pending human approval】\n\n"
+            "以下内容已准备好,只有在校方人员批准后才会对外发布"
+            "(示范模式下不会真的发出)。\n"
+            "The following is ready and will be published ONLY after an educator "
+            "approves it (nothing is actually sent in demo mode).\n\n"
+            f"• 原始请求 / Original request: {intent}\n"
+            "• 已附:内部活动报告草稿 + 公开版 Facebook 文案草稿。\n"
+            "  Attached: internal activity-report draft + public Facebook-post draft.\n"
+            "• 对外发布属于 GREEN —— 需人工批准后才会有任何对外动作。\n"
+            "  Publishing externally is GREEN: it requires human approval before "
+            "any outside action."
+        )
+    if scope == "public_draft":
+        return (
+            "【公开草稿 — Facebook / Public draft — Facebook】\n\n"
+            "🎉 我们的活动圆满结束!恭喜所有获奖的班级与同学,也感谢老师与家长的支持与配合。\n"
+            "Our event was a wonderful success! Congratulations to every winning "
+            "class and student, and a big thank-you to our teachers and parents.\n\n"
+            "📸 更多精彩照片与花絮将陆续上传,敬请关注本校官方专页。\n"
+            "More photos and highlights will be shared on our official page soon.\n\n"
+            "(本公开草稿不含身份证号、MyKid、电话、住址或家庭收入等敏感资料,"
+            "需经校方批准后才发布。 / This public draft contains no IC, MyKid, "
+            "phone, home-address or household-income data, and is released only "
+            "after school approval.)"
+        )
+    # default — internal activity report
+    return (
+        "【内部活动报告草稿 / Internal Activity Report — Draft】\n\n"
+        f"一、缘起 / Request:\n  {intent}\n\n"
+        "二、活动概况 / Overview:\n"
+        "  本次活动已顺利完成,成绩与获奖名单已整理完毕,详见随附数据。\n"
+        "  The event was completed successfully; results and the award list have "
+        "been compiled (see attached data).\n\n"
+        "三、成绩与获奖 / Results & awards:\n"
+        "  各项目的优胜班级与同学名单已按项目整理存档。\n"
+        "  Winning classes and students are recorded per event.\n\n"
+        "四、后续 / Next steps:\n"
+        "  内部报告存档供校方审阅;公开版文案另行草拟,经批准后才对外发布。\n"
+        "  The internal report is filed for educator review; a public post is "
+        "drafted separately and released only after approval.\n\n"
+        "(仅供校内审阅,不含敏感个人资料 / For internal review only — no "
+        "sensitive personal data included.)"
+    )
+
+
 def _school_notice_fallback_body(user_intent: str) -> str:
     """Deterministic trilingual (BM / 中文 / English) parent-notice DRAFT.
 
@@ -857,8 +918,12 @@ class ContentSynthesizer:
             return self._status(action, "synthesized", chars=len(new_body),
                                 grounded=bool(web_hits))
         # P0.2 — chat_llm empty even after retry. Better an honest
-        # "couldn't generate" body than a blank chat bubble.
-        meta["body"] = _fallback_body(user_intent, "chat")
+        # "couldn't generate" body than a blank chat bubble. For a workflow
+        # step, write the presentable bilingual draft instead of an apology.
+        if meta.get("workflow_id"):
+            meta["body"] = _workflow_fallback_body(user_intent, meta)
+        else:
+            meta["body"] = _fallback_body(user_intent, "chat")
         return self._status(action, "synth_failed_fallback_body_written",
                             chars=len(meta["body"]))
 
@@ -985,6 +1050,9 @@ class ContentSynthesizer:
             # P0.1 — deterministic trilingual notice so the zero-key build
             # (and any LLM failure) produces a real DRAFT, never an apology.
             meta["body"] = _school_notice_fallback_body(user_intent)
+        elif meta.get("workflow_id"):
+            # Workflow step (102W) — presentable bilingual draft, never apology.
+            meta["body"] = _workflow_fallback_body(user_intent, meta)
         else:
             meta["body"] = _fallback_body(user_intent, "docx")
         if title_hint and not meta.get("title"):
@@ -1136,7 +1204,11 @@ class ContentSynthesizer:
             meta["content"] = new_body
             return self._status(action, "synthesized", chars=len(new_body))
         # P0.2 — honest fallback so the .md/.txt file isn't silently empty.
-        meta["content"] = _fallback_body(user_intent, "chat")
+        # For a workflow step, write the presentable bilingual draft.
+        if meta.get("workflow_id"):
+            meta["content"] = _workflow_fallback_body(user_intent, meta)
+        else:
+            meta["content"] = _fallback_body(user_intent, "chat")
         return self._status(action, "synth_failed_fallback_body_written",
                             chars=len(meta["content"]))
 

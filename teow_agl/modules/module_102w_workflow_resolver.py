@@ -146,7 +146,7 @@ class WorkflowResolver:
                 tool, op = "chat", "answer"
             route_hint = step.get("route_hint", "BLUE")
             output_scope = step.get("output_scope", "internal")
-            target = self._target_for(op, step)
+            target = self._target_for(op, step, envelope)
             md: dict = {
                 "workflow_id": resolution.get("workflow_id"),
                 "workflow_step_id": step.get("step_id"),
@@ -168,11 +168,11 @@ class WorkflowResolver:
                 "approval_boundary": step.get("approval_boundary", "none"),
                 "route_hint": route_hint,
             }
-            # Seed non-empty draft content for save steps so workflow outputs
-            # are never empty placeholders (brief §C). The 102B synthesizer
-            # may further enrich this before execution.
+            # Content is produced by the 102B synthesizer (a presentable
+            # bilingual workflow draft with no key, or richer text under a live
+            # provider) — see `_workflow_fallback_body`. We only fix the output
+            # filename here so the saved draft lands predictably under outputs/.
             if op == "save_under_outputs":
-                md.setdefault("content", self._seed_content(step, resolution, envelope))
                 md.setdefault("filename", f"{step.get('step_id', 'draft')}.md")
             actions.append(
                 CandidateAction(
@@ -211,32 +211,19 @@ class WorkflowResolver:
         return (datetime.now(timezone.utc) + timedelta(hours=hrs)).isoformat()
 
     @staticmethod
-    def _target_for(op: str, step: dict) -> str:
+    def _target_for(op: str, step: dict, envelope) -> str:
+        """Build a target the FilesystemTool will accept — an absolute path
+        under the task's workspace/outputs roots. A bare relative name would
+        resolve to the CWD (outside the roots) and be denied."""
+        roots = list(getattr(envelope, "workspace_roots", []) or [])
+        outputs = Path(roots[1]) if len(roots) > 1 else (
+            Path(roots[0]) if roots else Path("outputs"))
+        inputs = Path(roots[0]) if roots else Path("workspace")
+        step_id = step.get("step_id", "draft")
         if op == "read_safe":
-            return "results.md"
+            return str(inputs / "results.md")
         if op == "save_under_outputs":
-            return f"{step.get('step_id', 'draft')}.md"
+            return str(outputs / f"{step_id}.md")
         if op == "draft_report":
-            return str(step.get("step_id", "report"))
+            return str(outputs / f"{step_id}.md")
         return ""
-
-    @staticmethod
-    def _seed_content(step: dict, resolution: dict, envelope) -> str:
-        scope = step.get("output_scope", "internal")
-        goal = getattr(envelope, "normalized_goal", "") or ""
-        if scope == "public_draft":
-            return (
-                "【公开草稿 / Public Draft — Facebook】\n"
-                "🎉 我们的活动圆满结束!恭喜所有获奖班级与同学。\n"
-                "Our event was a great success! Congratulations to all winning "
-                "classes and students.\n\n"
-                "(本草稿不含任何身份证号、MyKid、电话或地址等敏感资料 / "
-                "This draft contains no IC, MyKid, phone or address data.)"
-            )
-        return (
-            "【内部报告草稿 / Internal Report Draft】\n"
-            f"任务 / Task: {goal}\n"
-            "成绩与获奖名单已整理,详见附表。\n"
-            "Results and award list compiled; see attached table.\n"
-            "(仅供校内审阅 / For internal review only.)"
-        )

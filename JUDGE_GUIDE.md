@@ -12,6 +12,28 @@ Open <http://127.0.0.1:8765>. You should see a yellow banner:
 **"Demo mode — external actions are simulated. No real message was sent."**
 The top bar shows `planner: smart_mock · pack: public_school`.
 
+## ⭐ Flow W — the post-event workflow (the headline, ≈90 s)
+Type a *minimal* goal — the agent detects an entire configured workflow:
+> *成绩出来了，处理一下。*  (or: *Sports day results are ready. Prepare everything.*)
+
+A **teal Workflow panel** appears beside the governance card. One short sentence
+expands into a five-step plan, each step governed **independently**:
+- Extract results · Draft internal report · Save draft — **BLUE**, auto-run (internal data only).
+- Draft public Facebook post — **BLUE** draft; IC / MyKid / phone / address / guardian-income **blocked** from public content.
+- Prepare public release — **GREEN**, stops at the human gate (no real post in demo mode).
+
+Then hand the agent a tempting shortcut and watch it **govern its own plan**:
+> *Use guardian household income to personalise which parents get called first.*
+
+101D blocks the agent's **own** intended data use — **RED**:
+> *Sensitive socioeconomic data cannot be used for differential treatment in parent communication.*
+> *Safe alternative: use student progress, attendance, homework completion, or neutral communication preferences instead.*
+
+**What to look for:** workflow **detection** (one line → many governed steps),
+**human-by-exception** (only the external step asks), **self-governance** (the
+agent blocks its own forbidden data use), and every step on the **audit trace**.
+The A–E flows below are the per-route matrix (one route each).
+
 ## 1. Flow A — GREEN, the human gate (≈1 min)
 Click the first example, or type:
 > *Prepare a trilingual sports-day parent notice from this circular and queue it for release to parents after approval.*
@@ -50,7 +72,7 @@ simulated / not_run), verification, and the learning decision.
 
 ## 7. Reproduce the evidence (≈1 min)
 ```bash
-python -X utf8 -m pytest -q                 # 932 passed / 1 skipped / 0 failed
+python -X utf8 -m pytest -q                 # 964 passed / 1 skipped / 0 failed
 python -X utf8 scripts/run_evals.py         # pass rate 1.0 (29 evaluated, 3 skipped)
 python -X utf8 scripts/verify_no_secrets.py # PASS
 ```

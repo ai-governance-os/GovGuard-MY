@@ -21,7 +21,10 @@ not test-trimmed relative to the 10.7.4 spine it derives from.
 
 ## Tier 2 — Public MAIC evaluation build (this repository)
 The exact, reproducible result of the public surface, in a clean zero-key env:
-- **pytest: 932 passed / 1 skipped / 0 failed** (933 collected).
+- **pytest: 964 passed / 1 skipped / 0 failed** (965 collected).
+  - This includes the Workflow Autonomy layer (102W/101D) and its 15 new tests
+    in `tests/test_workflow_autonomy.py`. The pre-workflow baseline on this same
+    tree was 949 passed / 1 skipped / 0 failed (950 collected).
   - The 1 skip is documented (`tests/test_qpatch.py:256` — an intentional
     precision case).
 - **Task 5 fix is real and verified.** Before it, a clean-env run *failed* on
@@ -58,11 +61,21 @@ Behaviour eval over the seed + public-school cases (offline, `smart_mock`):
   (demo Flow D; `public_school` learning-exclusion pack).
 - Demo-mode lockout: zero real external actions when `MAIC_DEMO_MODE=1`
   (external tools are mock; execution simulated and labelled).
+- **Workflow Autonomy (one configured workflow demonstrated).** Implemented and
+  demoed: one configured `post_event_reporting` workflow. Mechanism: a
+  config-driven workflow resolver (102W) + workflow metadata + the *normal*
+  governance pipeline (101B → 103 → 105/107) + a data-use guard (101D). Low-risk
+  steps auto-run (BLUE), the external release needs human approval (GREEN), and
+  the agent self-blocks using guardian income for differential treatment (RED).
+  Extensible by adding more workflow templates under `configs/workflows/`.
 
 ## Not claimed
 - **No** live government deployment.
 - **No** live pilot impact metric (e.g. "X hours saved" in a real school).
 - **No** autonomous external action of any kind.
+- **No** universal workflow autonomy — one configured workflow is demonstrated,
+  not a general autonomous agent for all public-service tasks, and no real
+  external publication occurs in the judging build.
 - No accuracy/quality claim about LLM-generated content beyond route, shape, and
   governance behaviour (content generation with a live provider is out of scope
   for the offline judging build).

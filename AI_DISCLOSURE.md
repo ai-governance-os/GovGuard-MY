@@ -25,6 +25,19 @@ no API key, so judges can run the entire build with zero secrets. Optional
 providers (Groq, Gemini, Ollama, OpenAI, Anthropic) are opt-in via environment
 variables only and are not required for any claim in this repository.
 
+**Workflow content vs governance — who does what.** The Workflow Autonomy layer
+(modules 102W workflow resolver, 101D data-use guard) is **deterministic and
+offline**: workflow detection, routing (BLUE/GREEN/RED/INFEASIBLE), the human
+gate, and the guardian-income self-block are decided by the governance layer, not
+by any LLM. A real provider (the owner uses **GPT-4o** for the live demo) only
+changes **who drafts the text** inside a step — the internal report and the
+bilingual Facebook post read more richly. It never changes **who routes,
+approves, or blocks**. The public reproducible build runs the same workflow on
+`smart_mock` with no key (plainer content, identical governance); switching
+`TEOW_AGL_PLANNER=smart_mock` is the one-key fallback if the live API is slow or
+offline. Even with a real key, `MAIC_DEMO_MODE=1` keeps every external publish or
+send **simulated** — no real Facebook post, email, or message is ever sent.
+
 **Data — synthetic only; student data excluded from learning.** All sample
 circulars, policies, and evaluation cases in this repository are **synthetic**.
 They contain no real student, parent, or staff personal data. By design, the

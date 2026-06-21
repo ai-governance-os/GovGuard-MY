@@ -122,6 +122,10 @@ class TaskState:
     # The UI renders this as a tree view of sub-goal leaves with their
     # statuses + summaries.
     task_tree: dict | None = None
+    # Workflow Autonomy (102W/101D) — None unless a configured workflow was
+    # detected OR the agent self-blocked a sensitive data use. The UI renders
+    # this as a workflow panel beside the governance pipeline card.
+    workflow: dict | None = None
 
 
 _tasks_store = JsonlStore(STATE_DIR / "tasks.jsonl")
@@ -147,6 +151,7 @@ def _load_initial_state() -> tuple[dict, dict]:
             reflection=rec.get("reflection"),
             verification=rec.get("verification"),
             task_tree=rec.get("task_tree"),
+            workflow=rec.get("workflow"),
         )
     proposals: dict[str, dict] = _proposals_store.latest_by_id("patch_id")
     return tasks, proposals
@@ -468,6 +473,8 @@ def start_task(req: StartTaskRequest) -> dict:
                     result.task_tree.model_dump()
                     if result.task_tree is not None else None
                 )
+                # Workflow Autonomy panel (102W/101D). None for ordinary tasks.
+                state.workflow = _workflow_view(result)
                 state.status = "done"
                 state.finished_at = datetime.now(timezone.utc).isoformat()
                 state.pending_approvals = []
@@ -1034,6 +1041,65 @@ def serve_output(filename: str) -> FileResponse:
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+def _workflow_view(result) -> dict | None:
+    """Build the UI workflow panel from a finished TaskRunResult.
+
+    Surfaces each workflow step + its actual governance route + status, plus
+    any action the agent self-blocked via 101D (the data-use RED). Returns
+    None for ordinary tasks (no workflow detected and nothing self-blocked),
+    so the panel only appears when there's something to show (§L)."""
+    env = getattr(result, "envelope", None)
+    meta = getattr(env, "metadata", {}) if env is not None else {}
+    wf = (meta or {}).get("workflow")
+    plan = getattr(result, "plan", None)
+
+    route_by_action = {d.action_id: d.route for d in result.decisions}
+    appr_by_action = {d.action_id: d.approval_required for d in result.decisions}
+    status_by_action: dict[str, str] = {}
+    for e in result.executions:
+        status_by_action[e.action_id] = e.status
+
+    steps: list[dict] = []
+    blocked: list[dict] = []
+    if plan is not None:
+        for a in plan.actions:
+            md = a.metadata or {}
+            route = route_by_action.get(a.action_id, "")
+            if md.get("workflow_id"):
+                steps.append({
+                    "step_id": md.get("workflow_step_id"),
+                    "step_name": md.get("workflow_step_name"),
+                    "tool": a.tool, "operation": a.operation,
+                    "route": route,
+                    "output_scope": md.get("output_scope"),
+                    "data_use_decision": md.get("data_use_decision"),
+                    "approval_boundary": md.get("approval_boundary"),
+                    "approval_required": bool(appr_by_action.get(a.action_id, False)),
+                    "priority": md.get("priority"),
+                    "due_at": md.get("due_at"),
+                    "status": status_by_action.get(a.action_id, "pending"),
+                })
+            # Any action the agent self-blocked on its own data use (101D RED).
+            if md.get("data_use_decision") == "RED":
+                blocked.append({
+                    "purpose": a.purpose,
+                    "reasons": md.get("data_use_reasons") or [],
+                })
+
+    if not wf and not steps and not blocked:
+        return None
+    return {
+        "detected": bool(wf),
+        "workflow_id": (wf or {}).get("workflow_id"),
+        "workflow_name": (wf or {}).get("workflow_name"),
+        "priority": (wf or {}).get("priority"),
+        "deadline_hours": (wf or {}).get("deadline_hours"),
+        "confidence": (wf or {}).get("confidence"),
+        "steps": steps,
+        "blocked": blocked,
+    }
+
+
 def _state_to_dict(state: TaskState) -> dict:
     return {
         "task_id": state.task_id, "raw_goal": state.raw_goal,
@@ -1045,6 +1111,7 @@ def _state_to_dict(state: TaskState) -> dict:
         "reflection": state.reflection,
         "verification": state.verification,
         "task_tree": state.task_tree,
+        "workflow": state.workflow,
     }
 
 
