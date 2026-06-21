@@ -1,0 +1,29 @@
+GovGuard MY — Source-Available for MAIC Judging
+Copyright (c) 2026 Teow Koon Heng. All rights reserved.
+
+This source is made available SOLELY for evaluation by judges of the MAIC
+Nexus Challenge 2026 and for the author's own use. It is NOT open source.
+
+You MAY, for the purpose of MAIC judging only:
+  - read the source code, documentation, tests, and demo assets;
+  - clone the repository, install dependencies, run the test suite, run the
+    offline evaluation harness, and run the local demo server.
+
+You MAY NOT, without the prior written permission of the copyright holder:
+  - use this software or any part of it in production or for any commercial
+    purpose;
+  - copy, modify, merge, publish, distribute, sublicense, or sell copies of
+    the software or substantial portions of it;
+  - remove or alter this notice.
+
+The governance architecture and methods demonstrated here are the subject of
+filed intellectual property (Malaysian patent application PI2025005198 and
+international application PCT/IB2026/055476). No patent license is granted by
+the availability of this source.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+OR OTHER DEALINGS IN THE SOFTWARE.

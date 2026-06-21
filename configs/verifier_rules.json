@@ -1,0 +1,269 @@
+{
+  "_purpose": "Rules consumed by Module 110 (the light verifier). All three checks (length / format / refusal_sniff) are config-driven so adding a new file format or a new refusal phrase is a one-line edit — no Python change. Phase 14 will add an LLM-judge block here; keep the namespace tidy.",
+  "policy_version": "10.7.3-verifier-rules",
+
+  "enabled": true,
+  "fail_outcome": "failure",
+
+  "length_check": {
+    "_doc": "Compares the requested word count (parsed from the user goal) against the actual word count in the produced docx/chat body. Range allows reasonable over- and under-shoot but flags egregious mismatches (e.g. user asked 500 words, planner shipped 30).",
+    "enabled": true,
+    "word_intent_patterns": [
+      "(\\d{2,5})\\s*[- ]?word",
+      "(\\d{2,5})\\s*[- ]?words",
+      "(\\d{2,5})\\s*字"
+    ],
+    "min_ratio": 0.5,
+    "max_ratio": 2.5,
+    "applies_to_tools": ["chat", "docx", "report", "fs"]
+  },
+
+  "format_check": {
+    "_doc": "When the user prompt indicates a file extension OR a tool naturally produces one, verify that an artifact of that extension was actually written and is non-empty. The regex map associates an extension key with patterns we look for in the user's goal; if matched and the resulting affected_resources don't include such a file, the check fails.",
+    "enabled": true,
+    "extension_patterns": {
+      "docx": "\\bdocx?\\b|word\\s+doc|word\\s+document",
+      "pptx": "\\bpptx?\\b|powerpoint|slide\\s+deck|pitch\\s+deck|presentation",
+      "xlsx": "\\bxlsx?\\b|\\bexcel\\b|\\bspreadsheet\\b|\\bworkbook\\b",
+      "png":  "\\bpng\\b|\\bimage\\b|\\bpicture\\b|draw\\s+a|generate\\s+an?\\s+image|render",
+      "md":   "\\bmd\\b|\\bmarkdown\\b",
+      "pdf":  "\\bpdf\\b"
+    },
+    "min_bytes": 64
+  },
+
+  "refusal_sniff": {
+    "_doc": "If the chat.answer body looks like a refusal AND the governance route was BLUE or GREEN (i.e. governance APPROVED the work), that's a soft failure: the agent is refusing despite being allowed. RED / INFEASIBLE routes are exempt because a refusal is the correct response there.",
+    "enabled": true,
+    "phrases": [
+      "i can't help with that",
+      "i'm not able to",
+      "i don't have access",
+      "i cannot",
+      "i'm unable to",
+      "i can't do that",
+      "i won't be able",
+      "i'm sorry, but i",
+      "as an ai language model",
+      "as a large language model",
+      "as an ai",
+      "我无法",
+      "我没有办法",
+      "我不能",
+      "我无能为力",
+      "抱歉,我无法",
+      "对不起,我无法",
+      "作为一个 ai",
+      "作为一个语言模型"
+    ],
+    "exempt_routes": ["RED", "INFEASIBLE"],
+    "applies_to_tools": ["chat"]
+  },
+
+  "artifact_failure_sniff": {
+    "_doc": "P0.2 — a generated office artifact must never contain internal generation-failure / apology text. The judge sees the file, not the reason, so an apology baked into a .docx is a verify-FAIL, not a green VERIFIED. Config-driven phrases; one-line edits.",
+    "enabled": true,
+    "applies_to_tools": ["docx", "pptx", "xlsx", "report"],
+    "phrases": [
+      "couldn't generate the full",
+      "could not generate the full",
+      "i couldn't generate",
+      "rate-limited or busy",
+      "please retry the task",
+      "restate the request",
+      "没能完整生成",
+      "模型暂时繁忙",
+      "请稍等片刻再让我重做",
+      "请稍后再试"
+    ]
+  },
+
+  "llm_judge": {
+    "_doc": "Phase 14 — LLM-as-judge upgrade. Runs AFTER the three mechanical checks. Cheap mechanical pass-or-skip gates the expensive LLM call: judge only fires when (a) light checks pass AND (b) the task category is in judge_enabled_categories OR judge_enabled_categories is empty (= on for all). Per-rubric pass thresholds live in judge_rubrics.json.",
+    "enabled": true,
+    "judge_enabled_categories": [],
+    "judge_exempt_routes": ["RED", "INFEASIBLE"],
+    "applies_to_tools": ["chat", "docx", "report", "fs"]
+  },
+
+  "self_fix": {
+    "_doc": "Phase 14 — self-fix loop. When the LLM judge fails, runtime re-runs the planner with the judge's feedback in the brief. Capped to bound cost. Each retry is a full pipeline run; the final outcome (pass/fail) is whichever retry the judge accepts (or the last attempt if all fail).",
+    "enabled": true,
+    "max_iterations": 2,
+    "min_judge_score_to_skip_retry": 80
+  },
+
+  "scenario_checks": {
+    "_doc": "Phase B — scenario-specific quality rules. The runtime passes pre.task_category into verify(); matching rules from `by_category` are applied as additional sub-checks. Each sub-rule emits its own entry in verification.checks.",
+    "enabled": true,
+    "applies_to_tools": ["chat", "docx", "pptx", "xlsx", "report", "fs"],
+    "_skill_adapted_strict_mode": {
+      "_doc": "Phase 2 (L4.6) — when a task was solved using a CROSS-CONTEXT ADAPTED skill (the synthesizer rewrote a stored procedure from one tool to another), the output is held to a stricter bar. (a) extra_min_word_count_pct raises the length_check lower bound so an adapted procedure can't ship a thin artifact; (b) require_target_tool_format_match makes a target-tool-shaped artifact MANDATORY even when the user prompt never named an extension — proof that the adaptation actually produced the new medium. A failure here flows into the same fail_outcome as any other check, and (L4.7) the runtime will NOT credit skill_usage_success for an adapted skill whose task failed verification.",
+      "enabled": true,
+      "extra_min_word_count_pct": 1.2,
+      "require_target_tool_format_match": true
+    },
+    "by_category": {
+      "capability_boundary": {
+        "_doc": "Q4 §F1 — when the user asks whether the agent can control their computer / desktop, the answer must EXPLAIN capability + governance. Forbid graceful_fallback / 'service busy' style answers — those are correct for API failures, NOT for legitimate boundary questions. The Q3 direct path normally guarantees a good answer; this verifier rule is the safety net for any phrasing the direct path missed.",
+        "must_contain_any": [
+          {
+            "label": "mentions_governance_or_approval",
+            "any_of": [
+              "approval", "approve", "green", "governed", "governance",
+              "audit", "consent",
+              "审批", "审核", "批准", "同意", "治理", "受治理",
+              "审计", "审记", "审", "需要你"
+            ]
+          },
+          {
+            "label": "mentions_capability_or_boundary",
+            "any_of": [
+              "i can", "can take", "screenshot", "click",
+              "blue auto", "green ask",
+              "gui", "desktop tool", "tool", "boundary", "but not",
+              "可以", "可", "能", "桌面", "鼠标", "键盘", "截屏",
+              "但不是任意", "但需要", "工具"
+            ]
+          }
+        ],
+        "forbid_phrases": [
+          {
+            "label": "no_graceful_fallback_misuse",
+            "phrases": [
+              "couldn't complete that request this time",
+              "couldn't complete this request",
+              "network or service hiccup",
+              "temporary network",
+              "rate-limited",
+              "please wait a moment and send it again",
+              "抱歉,我这次没能",
+              "抱歉，我这次没能",
+              "可能是网络或服务暂时繁忙",
+              "请稍等片刻再发一次"
+            ]
+          }
+        ],
+        "min_word_count": 30
+      },
+      "office_doc_generation": {
+        "_doc": "B1 §6 — Word / PowerPoint / Excel direct generation. The light length_check + format_check already verify file existence and word-count when the user asked for a specific length. These scenario sub-rules add: no placeholder text (multi-language), pptx deck has >= 3 slides, xlsx has >= 5 data rows.",
+        "forbid_placeholders": [
+          "<content here>", "<body here>", "to be filled",
+          "sample text", "lorem ipsum", "tbd", "todo",
+          "placeholder", "generated content here", "fill in here",
+          "占位", "待补充", "待填写", "示例文本", "样例文本",
+          "<内容>", "（请补充）", "（待补充）"
+        ],
+        "pptx_min_slides": 3,
+        "xlsx_min_rows": 5
+      },
+      "report_generation": {
+        "_doc": "Same rules as office_doc_generation — a 'report' task and an 'office_doc' task both produce a file via docx/pptx/xlsx; the distinction lives only in the classifier keywords.",
+        "forbid_placeholders": [
+          "<content here>", "<body here>", "to be filled",
+          "sample text", "lorem ipsum", "tbd", "todo",
+          "placeholder", "generated content here", "fill in here",
+          "占位", "待补充", "待填写", "示例文本", "样例文本",
+          "<内容>", "（请补充）", "（待补充）"
+        ],
+        "pptx_min_slides": 3,
+        "xlsx_min_rows": 5
+      },
+      "patent_legal_draft": {
+        "_doc": "B3 §8 — patent / legal draft scenario. The agent is drafting a document for a licensed attorney to review. The verifier enforces: (a) an explicit Assumptions section so a reviewer can audit what the AI assumed, (b) a Disclaimer block stating this is NOT legal advice, (c) no lawyer-opinion language like 'we recommend you sue' / '作为律师', (d) a substantive minimum length.",
+        "must_contain_any": [
+          {
+            "label": "has_disclaimer",
+            "any_of": [
+              "disclaimer", "not legal advice", "not constitute legal",
+              "is not a substitute for", "consult a licensed attorney",
+              "consult an attorney", "ai-generated draft",
+              "免责声明", "免责", "不构成法律意见", "不构成法律建议",
+              "本草稿仅供", "本草稿由 ai", "本草稿由ai",
+              "请律师审阅", "请咨询律师", "须由执业律师"
+            ]
+          },
+          {
+            "label": "has_assumptions_section",
+            "any_of": [
+              "assumptions made", "assumptions:", "key assumptions",
+              "i assumed", "we assumed", "the following assumptions",
+              "我做的假设", "我的假设", "假设:", "假设：",
+              "前提:", "前提：", "本草稿基于以下假设"
+            ]
+          }
+        ],
+        "forbid_phrases": [
+          {
+            "label": "no_lawyer_final_opinion",
+            "phrases": [
+              "this is legal advice",
+              "as your lawyer",
+              "as legal counsel",
+              "you should file",
+              "you should sue",
+              "we recommend you sue",
+              "i recommend you file",
+              "i recommend you sue",
+              "this constitutes legal advice",
+              "作为律师", "作为你的律师",
+              "我建议你起诉", "你应该起诉",
+              "本意见构成法律建议", "本文件构成法律意见"
+            ]
+          }
+        ],
+        "forbid_placeholders": [
+          "to be filled", "lorem ipsum", "tbd", "todo",
+          "placeholder", "fill in here",
+          "占位", "待补充", "待填写", "（待补充）"
+        ],
+        "min_word_count": 200
+      },
+      "research_report": {
+        "_doc": "B2 §7 — web-search-grounded research output. The user said 'search and summarize / 搜索…总结' so the answer MUST cite sources. Sub-rules: a 'Sources:' (or 来源/参考资料/参考) section is present; at least one inline citation marker [1]/[2]/[3]…; the body is substantive (min_word_count); no placeholder text; no graceful_fallback apology body (that's correct for API failures BUT a research task should produce a real cited answer from the hits we already paid for — see 102R R3 web-grounded recovery).",
+        "must_contain_any": [
+          {
+            "label": "has_sources_section",
+            "any_of": [
+              "sources:", "source:", "references:", "citation",
+              "来源:", "来源：", "参考资料", "参考:", "参考：",
+              "出处:", "出处：", "引用:"
+            ]
+          },
+          {
+            "label": "has_citation_marker",
+            "any_of": [
+              "[1]", "[2]", "[3]", "[4]", "[5]",
+              "（1）", "（2）", "（3）", "(1)", "(2)", "(3)"
+            ]
+          }
+        ],
+        "forbid_placeholders": [
+          "to be filled", "lorem ipsum", "tbd", "todo",
+          "placeholder", "fill in here", "(source)", "(citation)",
+          "[source]", "[citation needed]",
+          "占位", "待补充", "待填写", "（待补充）"
+        ],
+        "forbid_phrases": [
+          {
+            "label": "no_graceful_fallback_apology",
+            "phrases": [
+              "couldn't complete that request this time",
+              "couldn't complete this request",
+              "network or service hiccup",
+              "temporary network",
+              "please wait a moment and send it again",
+              "抱歉,我这次没能",
+              "抱歉，我这次没能",
+              "可能是网络或服务暂时繁忙",
+              "请稍等片刻再发一次",
+              "请稍等片刻再让我重做一次"
+            ]
+          }
+        ],
+        "min_word_count": 100
+      }
+    }
+  }
+}

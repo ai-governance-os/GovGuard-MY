@@ -1,0 +1,43 @@
+# Secrets — NEVER commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime-generated state / artifacts (regenerate on run; never source, never shipped)
+state/
+state*/
+outputs/
+traces/
+workspace/uploads/
+workspace/temp/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+*.egg-info/
+client_exports/
+
+# Editor / OS / agent
+.vscode/
+.idea/
+.claude/
+.DS_Store
+Thumbs.db
+*.swp

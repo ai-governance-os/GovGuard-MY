@@ -1,0 +1,35 @@
+{
+  "_purpose": "Module 101C (semantic intake / L2 intent classifier) reads ALL of its tunables from this file. No category vocabulary, threshold or clarify wording may appear in module_101c_semantic_intake.py. The closed category set itself comes from intake_classifier.json (default_planning_mode_by_category minus hard_block_categories) so there is exactly ONE source of truth for what categories exist.",
+  "policy_version": "10.7.3-semantic-intake-v1",
+  "enabled": true,
+  "llm_env_var": "SEMANTIC_INTAKE_LLM",
+  "max_input_chars": 1000,
+  "max_tokens": 350,
+  "confidence_thresholds": {
+    "accept": 0.7,
+    "clarify": 0.4
+  },
+  "category_descriptions": {
+    "capability_boundary": "User asks whether/how the agent can touch, control or operate their computer, mouse, keyboard or screen (a meta question about capability, not a concrete task)",
+    "identity_capability": "User asks who/what the agent is, or what it can do in general",
+    "patent_legal_draft": "Draft or review a patent, contract, NDA, agreement or other legal document",
+    "research_report": "Search the web / gather sources first, then write a summary or report with citations",
+    "file_delete": "Delete, remove or clean up specific files or folders",
+    "file_write": "Save, store or write content into a file",
+    "file_read": "Open, read or view the contents of an existing file",
+    "report_generation": "Write a report, summary or structured prose document (no explicit web research requested)",
+    "office_doc_generation": "Produce a Word/PowerPoint/Excel deliverable (docx, pptx, xlsx, slides, spreadsheet)",
+    "image_generation": "Generate, draw or render a picture or image",
+    "source_code_edit": "Modify, refactor or patch source code",
+    "desktop_org": "Organize, list, move or tidy files on the desktop or in folders",
+    "external_email": "Compose or send an email to someone",
+    "external_publish": "Publish, upload or post content to an external/public destination",
+    "shell_command": "Run a shell / terminal / command-line command",
+    "gui_automation": "Click, type, press keys, scroll or take screenshots via GUI automation"
+  },
+  "clarify_templates": {
+    "cjk": "我想先确认一下你的需求，避免答非所问：你是希望我生成某种文件或报告、查资料、整理文件，还是别的？请再说得具体一点。",
+    "default": "Before I act, I want to make sure I understand. Could you describe more specifically what you'd like me to do — for example produce a document, look something up, or organize files?"
+  },
+  "allow_clarify_on_none": true
+}

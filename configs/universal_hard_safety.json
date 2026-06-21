@@ -1,0 +1,30 @@
+{
+  "policy_version": "10.7.3-hard-safety",
+  "hard_red_categories": [
+    "governance_bypass",
+    "execute_without_ticket",
+    "hide_from_audit",
+    "credential_theft_or_exfiltration",
+    "malware_or_unauthorized_destructive_action",
+    "illegal_wrongdoing_instruction",
+    "destructive_out_of_workspace_without_explicit_authorization",
+    "emergency_halt_active"
+  ],
+  "hard_red_patterns": [
+    "ignore governance",
+    "bypass 103",
+    "bypass 105",
+    "execute without ticket",
+    "hide this from audit",
+    "do not log",
+    "steal credentials",
+    "exfiltrate secrets",
+    "ctrl+alt+del",
+    "ctrl+alt+delete",
+    "win+r",
+    "press windows+r",
+    "format c:",
+    "rm -rf /"
+  ],
+  "notes": "This config is a project safety baseline. It must not be weakened by Module 104."
+}

@@ -1,0 +1,39 @@
+{
+  "policy_version": "10.7.3-public-school-governance-overlay",
+  "_purpose": "Public-school overlay. May only ADD approval requirements and sensitive surfaces; must not remove base governance.",
+  "domain": "public_school",
+  "display_name": "Malaysian Public School Administration",
+  "approval_required_actions_add": [
+    "parent_notice_broadcast",
+    "student_record_modification",
+    "external_communication_send",
+    "official_school_circular_release",
+    "student_attendance_update",
+    "disciplinary_record_reference"
+  ],
+  "hard_block_actions_add": [
+    "autonomous_external_send_to_parents"
+  ],
+  "high_value_assets_add": [
+    "**/students/**",
+    "**/parents/**",
+    "**/records/**",
+    "**/circular/**",
+    "**/disiplin/**",
+    "**/kesihatan/**"
+  ],
+  "sensitive_patterns_add": [
+    "**/student/**",
+    "**/*ic_number*",
+    "**/*no_kp*",
+    "**/*mykid*",
+    "**/*alamat*",
+    "**/*telefon*",
+    "**/*parent_contact*",
+    "**/*guardian*",
+    "**/*kehadiran*",
+    "**/*disiplin*",
+    "**/*kesihatan*"
+  ],
+  "notes": "Education adaptation is a pack/profile concern. The core constitution remains stable."
+}

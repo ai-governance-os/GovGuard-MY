@@ -1,0 +1,20 @@
+{
+  "policy_version": "10.7.3-public-school-learning-exclusions",
+  "_purpose": "Prevents student/guardian personal data from entering reusable learning.",
+  "exclude": [
+    "student_identifiers",
+    "guardian_contacts",
+    "ic_or_mykid_numbers",
+    "home_address",
+    "phone_numbers",
+    "attendance_records",
+    "disciplinary_records",
+    "health_records",
+    "individual_student_records"
+  ],
+  "exclude_content_patterns_add": [
+    "student_personal_data",
+    "guardian_personal_data"
+  ],
+  "notes": "Store reusable procedure shape only, never personal data of students or guardians."
+}

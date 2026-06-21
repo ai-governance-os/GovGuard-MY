@@ -1,0 +1,10 @@
+{
+  "policy_version": "10.7.3-learned-empty",
+  "route_weight_adjustments": {},
+  "contextual_allow_patterns": [],
+  "contextual_approval_patterns": [],
+  "learned_sensitive_patterns": [],
+  "planner_mode_hints": {},
+  "confirmation_hints": {},
+  "approved_patches": []
+}

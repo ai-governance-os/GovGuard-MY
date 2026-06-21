@@ -1,0 +1,36 @@
+{
+  "_purpose": "Per-feature risk weights used by 101B to score actions. Edit here to tune sensitivity. 101B's score is the sum of weights for features that are true. The risk_level boundaries and recommended_route boundaries are also kept here.",
+  "policy_version": "10.7.3-risk-weights",
+  "feature_weights": {
+    "destructive":              4,
+    "irreversible":             3,
+    "external_facing":          4,
+    "source_code":              3,
+    "high_value_asset":         5,
+    "sensitive_path":           3,
+    "credential_path":         12,
+    "out_of_workspace":         6,
+    "bulk_operation":           2,
+    "backup_unknown":           2,
+    "generated_output":        -3,
+    "temp_or_cache":           -3,
+    "repeated_approved_pattern": -4,
+    "repeated_rejected_pattern": 4,
+    "preview_safe_operation":   -5,
+    "shell_operation":          4,
+    "gui_automation":           5,
+    "gui_keyboard":             3,
+    "subject_confident":       -4
+  },
+  "risk_level_boundaries": {
+    "low":      4,
+    "medium":   8,
+    "high":    14,
+    "critical": 9999
+  },
+  "route_recommendation_boundaries": {
+    "BLUE":   4,
+    "GREEN": 14,
+    "RED":  9999
+  }
+}

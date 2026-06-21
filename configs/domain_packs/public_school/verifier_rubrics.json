@@ -1,0 +1,17 @@
+{
+  "policy_version": "10.7.3-public-school-verifier-rubrics",
+  "_purpose": "Public-school judge additions. Mechanical checks live in base verifier_rules.",
+  "judge_rubrics": {
+    "school_notice_draft": {
+      "criteria": [
+        "Output is clearly a draft for educator review, not a sent communication.",
+        "Bahasa Melayu, Chinese, and English versions are present and consistent in meaning.",
+        "No ministry policy, date, fee, or official name is fabricated beyond stated assumptions.",
+        "Open questions and assumptions are surfaced for the educator.",
+        "No student/guardian personal data is invented or exposed unnecessarily."
+      ],
+      "pass_threshold": 75
+    }
+  },
+  "verifier_rule_overlays": {}
+}

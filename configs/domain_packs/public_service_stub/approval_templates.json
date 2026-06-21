@@ -1,0 +1,16 @@
+{
+  "policy_version": "10.7.3-public-service-stub-approval-templates",
+  "_purpose": "Generic public-service approval card. Does not decide route; clarifies GREEN review.",
+  "templates": [
+    {
+      "id": "public_response_send",
+      "when": { "features_all": ["external_facing"] },
+      "title": "Approve public response",
+      "warning_level": "high",
+      "risk_reason": "Prepares a communication for the public. Must be officer-reviewed before any release.",
+      "decision_prompt": "Approve only if content and recipients are correct.",
+      "approve_label": "Approve response draft",
+      "reject_label": "Do not prepare response"
+    }
+  ]
+}

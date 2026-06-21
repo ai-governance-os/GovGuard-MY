@@ -1,0 +1,75 @@
+{
+  "_purpose": "Staged-plan templates used by Module 102R when 102 over-refuses. Edit here to extend recovery vocabulary. The first step in each list runs first; the final step (request_approval/...) is the gate. 102R uses 'approval_first' planning_mode so 103 will route GREEN.",
+  "policy_version": "10.7.3-102r-templates",
+  "templates": {
+    "file_delete": [
+      {"tool": "fs", "operation": "list_files",          "purpose": "enumerate target",          "reversibility": "high",   "requires_governance": false},
+      {"tool": "fs", "operation": "classify_files",      "purpose": "classify by sensitivity",   "reversibility": "high",   "requires_governance": false},
+      {"tool": "fs", "operation": "preview_deletion",    "purpose": "show what will be removed", "reversibility": "high",   "requires_governance": false},
+      {"tool": "human", "operation": "request_approval", "purpose": "ask human to approve",      "reversibility": "high",   "requires_governance": true},
+      {"tool": "fs", "operation": "delete_approved",     "purpose": "delete only approved set",  "reversibility": "low",    "requires_governance": true}
+    ],
+    "external_email": [
+      {"tool": "email", "operation": "compose_draft",    "purpose": "compose email draft",       "reversibility": "high",   "requires_governance": false},
+      {"tool": "email", "operation": "show_preview",     "purpose": "preview to user",           "reversibility": "high",   "requires_governance": false},
+      {"tool": "human", "operation": "request_approval", "purpose": "ask human to approve send", "reversibility": "high",   "requires_governance": true},
+      {"tool": "email", "operation": "send_if_approved", "purpose": "send only if approved",     "reversibility": "low",    "requires_governance": true}
+    ],
+    "external_publish": [
+      {"tool": "publish", "operation": "prepare_draft",       "purpose": "prepare publish draft",   "reversibility": "high", "requires_governance": false},
+      {"tool": "publish", "operation": "classify_sensitivity","purpose": "tag for sensitivity",     "reversibility": "high", "requires_governance": false},
+      {"tool": "publish", "operation": "show_preview",        "purpose": "preview to user",         "reversibility": "high", "requires_governance": false},
+      {"tool": "human",   "operation": "request_approval",    "purpose": "ask human to approve",    "reversibility": "high", "requires_governance": true},
+      {"tool": "publish", "operation": "publish_if_approved", "purpose": "publish only if approved","reversibility": "low",  "requires_governance": true}
+    ],
+    "source_code_edit": [
+      {"tool": "code", "operation": "inspect_file",      "purpose": "read target file",          "reversibility": "high",  "requires_governance": false},
+      {"tool": "code", "operation": "propose_patch",     "purpose": "propose diff",              "reversibility": "high",  "requires_governance": false},
+      {"tool": "code", "operation": "show_diff",         "purpose": "show diff to user",         "reversibility": "high",  "requires_governance": false},
+      {"tool": "human","operation": "request_approval", "purpose": "ask human to approve patch","reversibility": "high",  "requires_governance": true},
+      {"tool": "code", "operation": "apply_patch",       "purpose": "apply only if approved",    "reversibility": "medium","requires_governance": true}
+    ],
+    "shell_command": [
+      {"tool": "shell","operation": "explain_command",   "purpose": "explain intended command",  "reversibility": "high",  "requires_governance": false},
+      {"tool": "shell","operation": "dry_run",           "purpose": "dry-run if possible",       "reversibility": "high",  "requires_governance": false},
+      {"tool": "human","operation": "request_approval",  "purpose": "ask human to approve run",  "reversibility": "high",  "requires_governance": true},
+      {"tool": "shell","operation": "execute_if_approved","purpose": "run only if approved",     "reversibility": "low",   "requires_governance": true}
+    ],
+    "report_generation": [
+      {"tool": "report","operation": "draft_report",     "purpose": "produce draft report",      "reversibility": "high",  "requires_governance": false},
+      {"tool": "fs",    "operation": "save_under_outputs","purpose": "save to outputs",           "reversibility": "high",  "requires_governance": true}
+    ],
+    "file_write": [
+      {"tool": "fs",    "operation": "save_under_outputs","purpose": "save under outputs",        "reversibility": "high",  "requires_governance": true}
+    ],
+    "file_read": [
+      {"tool": "fs",    "operation": "read_safe",        "purpose": "read file inside workspace","reversibility": "high",  "requires_governance": true}
+    ],
+    "desktop_org": [
+      {"tool": "desktop", "operation": "list_desktop",     "purpose": "scan current Desktop",      "reversibility": "high",   "requires_governance": false},
+      {"tool": "desktop", "operation": "make_folder",      "purpose": "prepare destination folder","reversibility": "high",   "requires_governance": true},
+      {"tool": "human",   "operation": "request_approval", "purpose": "ask human to approve plan", "reversibility": "high",   "requires_governance": true},
+      {"tool": "desktop", "operation": "move_file",        "purpose": "move into destination",     "reversibility": "medium", "requires_governance": true}
+    ],
+    "office_doc_generation": [
+      {"tool": "docx", "operation": "save_under_outputs",  "purpose": "save Word doc",             "reversibility": "high",  "requires_governance": true}
+    ],
+    "gui_automation": [
+      {"tool": "gui",   "operation": "screenshot",        "purpose": "capture current screen state", "reversibility": "high",   "requires_governance": false},
+      {"tool": "human", "operation": "request_approval",  "purpose": "ask human to approve GUI action", "reversibility": "high","requires_governance": true},
+      {"tool": "gui",   "operation": "mouse_click",       "purpose": "click target after approval",  "reversibility": "low",    "requires_governance": true}
+    ],
+    "unknown": [
+      {
+        "tool": "chat",
+        "operation": "answer",
+        "purpose": "graceful degradation when planning could not complete",
+        "reversibility": "high",
+        "requires_governance": false,
+        "metadata": {
+          "graceful_fallback": true
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "_purpose": "Map symbolic action names (used by governance_profile.approval_required_actions and hard_block_actions) to feature predicates produced by 101B. A symbolic name applies to an action iff ALL its required features are present and truthy. 103 uses ONLY this map; no literal action names are hardcoded in module_103_governance.py.",
+  "policy_version": "10.7.3-action-taxonomy",
+  "feature_predicates": {
+    "delete_high_value_asset":     ["destructive", "high_value_asset"],
+    "delete_unknown_backup":       ["destructive", "backup_unknown"],
+    "overwrite_source_code":       ["source_code"],
+    "send_external_message":       ["external_facing"],
+    "publish_external_content":    ["external_facing"],
+    "run_shell_command":           ["shell_operation"],
+    "modify_governance_policy":    ["modifies_policy"],
+    "bypass_governance":           ["governance_bypass_intent"],
+    "execute_without_ticket":      ["execute_without_ticket"],
+    "access_credentials_without_authorization": ["credential_path"],
+    "destructive_out_of_workspace": ["destructive", "out_of_workspace"],
+    "gui_control_action":          ["gui_automation"],
+    "gui_keyboard_input":          ["gui_keyboard"],
+    "legal_content_draft":         ["legal_content"],
+    "parent_notice_broadcast":     ["parent_notice"],
+    "student_record_modification": ["student_record_change"],
+    "student_attendance_update":   ["student_record_change"]
+  }
+}

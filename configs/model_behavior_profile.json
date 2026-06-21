@@ -1,0 +1,10 @@
+{
+  "profile_version": "10.7.3-model-behavior-empty",
+  "models": {},
+  "global_refusal_recovery_stats": {
+    "total_planner_calls": 0,
+    "total_refusals": 0,
+    "total_recoveries": 0,
+    "successful_recoveries": 0
+  }
+}

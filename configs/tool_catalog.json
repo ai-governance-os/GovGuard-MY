@@ -1,0 +1,147 @@
+{
+  "_purpose": "Tool catalog injected into Module 102's PlanningBrief so the LLM picks tool/operation names from a closed set. Edit when you add/remove a tool from the registry.",
+  "policy_version": "10.7.3-tool-catalog",
+  "tools": {
+    "fs": {
+      "description": "Filesystem inside configured workspace_roots. Concrete file paths only.",
+      "operations": ["save_under_outputs", "read_safe", "list_files", "classify_files", "preview_deletion", "delete_approved"],
+      "metadata_hints": {
+        "save_under_outputs": "metadata.content (str) is the text to write",
+        "read_safe": "no metadata; returns content in execution_result"
+      }
+    },
+    "report": {
+      "description": "Drafts a markdown report payload (the fs tool then writes it).",
+      "operations": ["draft_report"],
+      "metadata_hints": {"draft_report": "metadata.topic, metadata.body"}
+    },
+    "docx": {
+      "description": "Writes a real .docx (Word) file via python-docx.",
+      "operations": ["save_under_outputs"],
+      "metadata_hints": {"save_under_outputs": "metadata.title, metadata.body, metadata.headings"}
+    },
+    "pptx": {
+      "description": "Writes a real .pptx (PowerPoint) deck via python-pptx.",
+      "operations": ["save_under_outputs"],
+      "metadata_hints": {"save_under_outputs": "metadata.title, metadata.subtitle, metadata.slides=[{title,bullets[]}]"}
+    },
+    "xlsx": {
+      "description": "Writes a real .xlsx (Excel) workbook via openpyxl.",
+      "operations": ["save_under_outputs"],
+      "metadata_hints": {"save_under_outputs": "metadata.sheets={sheet_name: rows[][]} OR metadata.rows[][] for default sheet"}
+    },
+    "desktop": {
+      "description": "Lists/moves/creates/opens/deletes files on Desktop, scoped to workspace_roots.",
+      "operations": ["list_desktop", "list_dir", "make_folder", "move_file", "open_path", "delete_file"],
+      "metadata_hints": {
+        "make_folder": "metadata.name (str) under target",
+        "move_file": "metadata.src, metadata.dst"
+      }
+    },
+    "image_gen": {
+      "description": "Generate an image from a text prompt. Output saved as PNG under outputs/_images/.",
+      "operations": ["generate_image"],
+      "metadata_hints": {
+        "generate_image": "metadata.prompt (str, required; vivid descriptive text). Optional: metadata.size ('1024x1024'|'1024x768'|'768x1024'), metadata.model"
+      }
+    },
+    "gui": {
+      "description": "GUI automation. Powerful and dangerous; every op except screenshot routes GREEN.",
+      "operations": ["screenshot", "mouse_move", "mouse_click", "scroll", "keyboard_type", "keyboard_hotkey"],
+      "metadata_hints": {
+        "mouse_click": "metadata.x, metadata.y, metadata.button (left|right|middle), metadata.clicks",
+        "mouse_move": "metadata.x, metadata.y",
+        "scroll": "metadata.amount (int)",
+        "keyboard_type": "metadata.text (str, max 4000 chars)",
+        "keyboard_hotkey": "metadata.combo (e.g. 'ctrl+s'). Dangerous combos like 'ctrl+alt+del', 'win+r' are hard-blocked."
+      }
+    },
+    "_human_DEPRECATED": {
+      "_doc": "DO NOT USE. The 'human' tool was removed from the closed-set catalog because planners (especially Gemini) would over-pick `human.request_clarification` for normal questions, and the underlying executor is a MockTool that returns the literal string 'mock_request_clarification' — users see junk. If you need to ask the user something, use chat.answer with a question and wait for their reply. If you need APPROVAL for a risky action, governance Module 103 routes it through GREEN automatically — you don't need to plan it.",
+      "description": "DEPRECATED — do not include in available_tools",
+      "operations": []
+    },
+    "memory": {
+      "description": "Agent's persistent notes about the user and the environment. Bounded markdown files (USER.md, MEMORY.md) injected into the planning brief next task. Use sparingly — only for facts that are likely to matter beyond this turn (preferences, project context, gotchas).",
+      "operations": ["add", "replace", "remove", "clear"],
+      "metadata_hints": {
+        "add":     "metadata.scope ('user'|'memory'), metadata.entry (str)",
+        "replace": "metadata.scope, metadata.old_substring, metadata.new_text",
+        "remove":  "metadata.scope, metadata.substring",
+        "clear":   "metadata.scope"
+      }
+    },
+    "chat": {
+      "description": "Respond to the user in natural language. Use this for ANY task that is a question, conversation, explanation, translation, code answer, or general request where the user is not asking you to produce a file/image. The answer text you put in metadata.body is surfaced to the user verbatim as the agent's reply — write the final answer there, NOT a description of what you'll do.",
+      "operations": ["answer"],
+      "metadata_hints": {
+        "answer": "metadata.body (str, required) is the natural-language answer shown to the user. Match the user's language. Be direct — no 'I will answer your question:' preamble."
+      }
+    },
+    "web_search": {
+      "description": "Search the live internet via Tavily (preferred when TAVILY_API_KEY is set) or DuckDuckGo (free, no key). Use ONLY when the user asks for current/factual information that requires looking up real-world sources (news, prices, recent events, people, specific facts). The runtime ALSO auto-injects web search results into your planning brief as `web_search_context` when the user's query looks time-sensitive — when that field is present, you do NOT need to plan a separate web_search action; just write the answer with citations.",
+      "operations": ["search"],
+      "metadata_hints": {
+        "search": "metadata.query (str, required) is the search query. Optional: metadata.max_results (int, default 5)."
+      }
+    },
+    "skill_manager": {
+      "description": "Procedural memory store. After a non-trivial successful task, you MAY record HOW you solved it as a SKILL_<id>.md so future similar tasks can reuse the approach. The runtime auto-injects the top-3 relevant skills into your brief as `relevant_skills` — DO NOT plan a separate skill_manager.list action just to read them. Only plan skill_manager.create when you actually solved something new+useful AND the task succeeded (BLUE/GREEN route + verification passed). One skill per task max.",
+      "operations": ["create", "archive", "list", "read"],
+      "metadata_hints": {
+        "create":  "metadata.name (short slug), metadata.description (1-2 sentence summary used for retrieval), metadata.procedure (the markdown body, 60-2000 chars), optional metadata.tags (list of str).",
+        "archive": "metadata.skill_id (str)",
+        "list":    "optional metadata.include_archived (bool, default false)",
+        "read":    "metadata.skill_id (str)"
+      }
+    },
+    "session_search": {
+      "description": "Episodic memory across all past sessions. Full-text search (SQLite FTS5) over the user's previous task goals + execution outputs. Use this for explicit recall like 'what did I ask you about Tesla last week?'. The runtime ALSO auto-injects matching past tasks as `prior_sessions` in your brief whenever the user's prompt contains episodic-recall phrases (\"remember when\", \"last time\", \"上次\", \"之前\") — when that field is present you do NOT need a separate session_search action.",
+      "operations": ["query", "count"],
+      "metadata_hints": {
+        "query": "metadata.query (str, required). Optional: metadata.top_k (int, default 5).",
+        "count": "no metadata; returns total indexed task count."
+      }
+    }
+  },
+  "tool_aliases": {
+    "filesystem": "fs",
+    "file_system": "fs",
+    "files": "fs",
+    "markdown_generator": "report",
+    "markdown_writer": "report",
+    "word": "docx",
+    "powerpoint": "pptx",
+    "excel": "xlsx",
+    "spreadsheet": "xlsx",
+    "text_explainer": "chat",
+    "explainer": "chat",
+    "qa": "chat",
+    "conversation": "chat",
+    "respond": "chat",
+    "reply": "chat",
+    "answer": "chat",
+    "google_search": "web_search",
+    "google": "web_search",
+    "bing_search": "web_search",
+    "bing": "web_search",
+    "search": "web_search",
+    "websearch": "web_search",
+    "internet_search": "web_search",
+    "duckduckgo": "web_search",
+    "tavily": "web_search",
+    "skill": "skill_manager",
+    "skills": "skill_manager",
+    "skill_store": "skill_manager",
+    "procedural_memory": "skill_manager",
+    "skill_save": "skill_manager",
+    "save_skill": "skill_manager",
+    "history": "session_search",
+    "history_search": "session_search",
+    "session_history": "session_search",
+    "past_sessions": "session_search",
+    "recall": "session_search",
+    "episodic": "session_search",
+    "episodic_memory": "session_search"
+  }
+}

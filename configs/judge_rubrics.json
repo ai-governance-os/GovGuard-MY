@@ -1,0 +1,63 @@
+{
+  "_purpose": "Per-category rubrics for the LLM-as-judge step (Phase 14). The judge takes (goal, output) and asks an LLM to score the output 0-100 against these rubrics. Compared to Phase 12's mechanical checks (length/format/refusal), this catches semantic failures: 'agent wrote 500 words but the content is gibberish'. Each rubric is a short bullet list; the judge LLM scores against them.",
+  "policy_version": "10.7.3-judge-rubrics",
+
+  "default": {
+    "_doc": "Catch-all rubric. Applied when no category-specific entry exists. Keep it conservative so we don't false-positive on simple tasks.",
+    "criteria": [
+      "Answer is on-topic — addresses what the user actually asked.",
+      "Answer is coherent — sentences make grammatical sense.",
+      "No obvious factual errors or self-contradictions.",
+      "Length is appropriate for the request (not absurdly short or long).",
+      "If the user asked for a file or specific format, the output matches."
+    ],
+    "pass_threshold": 60
+  },
+
+  "report_generation": {
+    "criteria": [
+      "Output is a substantive piece of writing on the requested topic.",
+      "Structure is appropriate (intro / body / conclusion or sections).",
+      "Length roughly matches the requested word count if specified.",
+      "Claims are coherent — no obvious nonsense or filler like 'lorem ipsum'.",
+      "If a citation source was provided, the output references it."
+    ],
+    "pass_threshold": 65
+  },
+
+  "office_doc_generation": {
+    "criteria": [
+      "Document body actually contains substantive content (not just the prompt repeated).",
+      "Sections/slides/rows have meaningful headings + content.",
+      "Length is in the right ballpark vs the user's specification.",
+      "Language matches user's request (Chinese in, Chinese out)."
+    ],
+    "pass_threshold": 65
+  },
+
+  "image_generation": {
+    "_doc": "Image generation can't be judged textually — fall through to mechanical checks only. Threshold high enough that the judge effectively passes for any artifact.",
+    "criteria": [
+      "An image artifact was produced (file exists, non-empty)."
+    ],
+    "pass_threshold": 50
+  },
+
+  "unknown": {
+    "_doc": "Chat / Q&A / freeform. Most user requests fall here.",
+    "criteria": [
+      "The reply answers the user's question directly.",
+      "Reply matches user's language.",
+      "No placeholder text ('I'll answer that:', 'as an AI...', etc.).",
+      "No factual hallucinations the user would obviously notice.",
+      "Length is appropriate (one-liner Q gets one-liner A; deep Q gets fuller A)."
+    ],
+    "pass_threshold": 60
+  },
+
+  "judge_call": {
+    "_doc": "Knobs for how the judge LLM is invoked. max_tokens kept low because the judge response is a short JSON object, not prose. temperature=0 for determinism — we want consistent scores across reruns of the same content.",
+    "max_tokens": 600,
+    "temperature": 0.0
+  }
+}

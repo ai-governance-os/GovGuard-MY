@@ -1,0 +1,78 @@
+{
+  "profile_version": "10.7.3-default",
+  "user_id": "default_user",
+  "role_context": "independent_researcher_inventor",
+  "workspace_roots": [
+    "./workspace",
+    "./outputs"
+  ],
+  "high_value_assets": [
+    "**/patent/**",
+    "**/core_ip/**",
+    "**/AGI/**",
+    "**/theory_archive/**",
+    "**/legal/**"
+  ],
+  "sensitive_patterns": [
+    "**/private/**",
+    "**/patent*",
+    "**/*patent*",
+    "**/*claim*",
+    "**/credentials/**",
+    "**/.env",
+    "**/secrets/**",
+    "**/Desktop/**",
+    "**/desktop/**"
+  ],
+  "safe_generated_patterns": [
+    "outputs/**/*.md",
+    "outputs/**/*.txt",
+    "outputs/**/*.docx",
+    "outputs/**/*.pptx",
+    "outputs/**/*.xlsx"
+  ],
+  "safe_temp_patterns": [
+    "**/temp/**",
+    "**/tmp/**",
+    "**/cache/**",
+    "outputs/drafts/**",
+    "outputs/temp/**"
+  ],
+  "default_delete_policy": "ask",
+  "external_send_policy": "draft_first_green",
+  "source_code_policy": "diff_first_green",
+  "backup_policy": {
+    "default_status": "unknown",
+    "allow_destructive_auto_only_if_backup_verified": true
+  },
+  "approval_required_actions": [
+    "delete_high_value_asset",
+    "delete_unknown_backup",
+    "overwrite_source_code",
+    "send_external_message",
+    "publish_external_content",
+    "run_shell_command",
+    "modify_governance_policy",
+    "gui_control_action",
+    "gui_keyboard_input",
+    "legal_content_draft"
+  ],
+  "hard_block_actions": [
+    "bypass_governance",
+    "execute_without_ticket",
+    "access_credentials_without_authorization",
+    "destructive_out_of_workspace"
+  ],
+  "learnable_preferences": true,
+  "max_auto_downgrade": {
+    "destructive": 10,
+    "external_facing": 8,
+    "high_value_asset": 0
+  },
+  "learning_constraints": {
+    "min_approvals_for_friction_reduction": 3,
+    "min_events_for_destructive_adjustment": 5,
+    "require_human_patch_approval": true,
+    "never_weaken_universal_hard_safety": true
+  }
+}

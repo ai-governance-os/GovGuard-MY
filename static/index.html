@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>GovGuard MY</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- Top bar: brand left, theme + audit toggle right -->
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">GovGuard MY</span>
+    <span class="tag">Powered by TEOW-AGL</span>
+  </div>
+  <div class="topbar-actions">
+    <span class="cfg-mini" id="cfg-mini">…</span>
+    <button id="audit-toggle" class="ghost-btn" title="Show / hide audit panel">Audit ▸</button>
+    <button id="theme-toggle" class="ghost-btn" title="Light / dark">◐</button>
+  </div>
+</header>
+
+<!-- MAIC demo-mode lockout banner (Owner Rule 4). Shown when the server
+     reports demo_mode=true; external actions are simulated, never real. -->
+<div id="demo-banner" class="demo-banner" hidden>
+  🔒 Demo mode — external actions are simulated. No real message was sent.
+</div>
+
+<div class="app">
+
+  <!-- Main chat column -->
+  <main class="chat-col">
+    <div class="chat" id="chat">
+      <!-- Conversation messages get appended here -->
+      <div class="welcome" id="welcome">
+        <h1>GovGuard MY — school administration, under governance you can audit</h1>
+        <p class="subtitle">The planner proposes. Governance decides (BLUE / GREEN / RED / INFEASIBLE). A human approves. Everything is traced. Try the school-circular demo:</p>
+        <div class="example-grid">
+          <button class="example" data-prompt="Prepare a trilingual sports-day parent notice from this circular and queue it for release to parents after approval.">🟢 Trilingual parent notice → approve before release (GREEN)</button>
+          <button class="example" data-prompt="Save the approved sports-day notice as a Word file for school records.">🔵 Save approved notice as a Word file (BLUE)</button>
+          <button class="example" data-prompt="Send the full student list with MyKid numbers and parent phone numbers to all class WhatsApp groups.">🔴 Broadcast student list + MyKid to WhatsApp (RED — blocked)</button>
+          <button class="example" data-prompt="Use the APDM file's parent income and occupation to personalise future parent notices automatically.">🔴 Learn APDM income/occupation for future notices (RED — learning boundary)</button>
+          <button class="example" data-prompt="Predict exactly which parents will ignore this notice and list their names.">⚪ Predict & name parents who will ignore it (INFEASIBLE)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Composer -->
+    <div class="composer" id="composer">
+      <div class="composer-attachments" id="composer-attachments"></div>
+      <div class="composer-row">
+        <button class="attach-btn" id="attach-btn" title="Attach a file">📎</button>
+        <input type="file" id="file-input" hidden multiple>
+        <textarea id="goal" rows="1" placeholder="Ask anything, or describe a task…"></textarea>
+        <button id="run-btn" class="send-btn" title="Send (Ctrl/⌘ + Enter)">Send</button>
+      </div>
+      <div class="composer-hint">
+        <span>BLUE auto · GREEN ask you · INFEASIBLE I can't · RED blocked</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- Audit drawer (hidden by default; toggle from topbar) -->
+  <aside class="audit-drawer" id="audit-drawer" hidden>
+    <div class="drawer-section">
+      <h3>Subject confidence</h3>
+      <div id="stats-panel" class="stats-panel"><div class="empty">no history yet</div></div>
+    </div>
+    <div class="drawer-section">
+      <h3>RAG · workspace</h3>
+      <div class="rag-panel">
+        <div id="rag-status" class="rag-status">…</div>
+        <button id="rag-reindex" class="rag-btn">Re-index workspace</button>
+      </div>
+    </div>
+    <div class="drawer-section">
+      <h3>Persistent memory</h3>
+      <div id="memory-panel" class="memory-panel"><div class="empty">empty</div></div>
+    </div>
+    <div class="drawer-section">
+      <h3>Skills · procedural memory</h3>
+      <div id="skills-panel" class="skills-panel"><div class="empty">no skills yet</div></div>
+    </div>
+    <div class="drawer-section">
+      <h3>Curator · weekly memory review
+        <button id="curator-run-btn" class="rag-btn curator-run">Run curator</button>
+      </h3>
+      <div id="curator-panel" class="curator-panel"><div class="empty">no curator proposals yet</div></div>
+    </div>
+    <div class="drawer-section">
+      <h3>Learned-policy patches</h3>
+      <div id="patches-list"><div class="empty">no proposals</div></div>
+    </div>
+    <div class="drawer-section">
+      <h3>Recent tasks</h3>
+      <div id="history-list"><div class="empty">no tasks yet</div></div>
+    </div>
+  </aside>
+
+</div>
+
+<!-- Auth overlay (Phase C) — shown only when an API call returns 401.
+     Self-contained inline styles so it renders even if style.css is
+     stale-cached. -->
+<div id="login-overlay" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.55); align-items:center; justify-content:center;">
+  <div style="background:#fff; color:#222; padding:28px 32px; border-radius:12px; min-width:300px; max-width:90vw; box-shadow:0 8px 40px rgba(0,0,0,.35); font-family:inherit;">
+    <h2 style="margin:0 0 6px; font-size:18px;">GovGuard MY 登录 / Sign in</h2>
+    <p style="margin:0 0 14px; font-size:13px; opacity:.7;">这个部署需要密码。This deployment requires a password.</p>
+    <input id="login-password" type="password" placeholder="Password" autocomplete="current-password"
+           style="width:100%; box-sizing:border-box; padding:9px 10px; font-size:14px; margin-bottom:10px; border:1px solid #ccc; border-radius:6px;" />
+    <button id="login-submit"
+            style="width:100%; padding:9px; font-size:14px; cursor:pointer; border:0; border-radius:6px; background:#2563eb; color:#fff;">Login</button>
+    <div id="login-error" style="color:#d33; font-size:12px; min-height:16px; margin-top:8px;"></div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

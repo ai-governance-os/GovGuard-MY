@@ -1,0 +1,57 @@
+{
+  "_purpose": "Bounds and forbidden patterns for the Module 109 Reflector. Edit here to tune how aggressive auto-curation of USER.md / MEMORY.md is. 109 reads these at startup; runtime enforces them when applying proposals. Hermes's LLM-as-curator has no equivalent layer — this is the part Hermes cannot replicate without rewriting their architecture.",
+  "policy_version": "10.7.3-reflection-constraints",
+
+  "confidence_thresholds": {
+    "auto_apply_min": 0.80,
+    "human_review_min": 0.40
+  },
+
+  "bounded_delta": {
+    "_doc": "Per-task budget. The reflector may propose at most this many entries per file, and each entry is capped at the char limit. Net delta to USER.md/MEMORY.md per task is also capped to keep memory drift small and reviewable.",
+    "max_entries_per_file_per_task": 2,
+    "max_chars_per_entry": 200,
+    "max_net_delta_chars_per_task": 400
+  },
+
+  "min_task_signal": {
+    "_doc": "The reflector will NOT propose updates for trivial tasks. A task must clear these bars to be worth remembering. Prevents memory pollution from one-off chit-chat AND from failed tasks that an over-eager reflector would otherwise record as 'BLUE route effective' lessons.",
+    "min_user_intent_chars": 12,
+    "skip_if_route_in": ["RED"],
+    "skip_if_no_executions": true,
+    "skip_if_verification_failed": true
+  },
+
+  "forbidden_patterns": {
+    "_doc": "Regex patterns (case-insensitive) that cause the proposal to be rejected even at high confidence. Covers PII the user did not explicitly opt into, credentials, and patterns that look like prompt-injection planted via memory.",
+    "patterns": [
+      "\\b\\d{3}[- ]?\\d{2}[- ]?\\d{4}\\b",
+      "\\b[A-Z]{1,2}[- ]?\\d{6,9}\\b",
+      "\\b\\d{16}\\b",
+      "\\b\\d{4}[- ]\\d{4}[- ]\\d{4}[- ]\\d{4}\\b",
+      "(?i)\\bpassword\\b\\s*[:=]",
+      "(?i)\\bapi[_ -]?key\\b\\s*[:=]",
+      "(?i)\\bsecret\\b\\s*[:=]",
+      "(?i)\\btoken\\b\\s*[:=]",
+      "(?i)sk-[a-z0-9]{20,}",
+      "(?i)gsk_[a-z0-9]{20,}",
+      "(?i)AIza[a-z0-9_\\-]{20,}",
+      "(?i)\\bignore (previous|all|above) instructions\\b",
+      "(?i)\\byou are now\\b",
+      "(?i)\\bsystem prompt override\\b",
+      "(?i)\\bdo not tell the user\\b",
+      "(?i)\\bhide (this|that) from (the )?user\\b"
+    ]
+  },
+
+  "forbidden_topics": {
+    "_doc": "Substrings (case-insensitive) the user has explicitly asked be forgotten. The runtime appends to this list when the user says 'forget that' or similar; the reflector also reads it and refuses to remember anything matching.",
+    "topics": []
+  },
+
+  "rate_limits": {
+    "_doc": "Soft caps to prevent runaway memory growth. If the agent has already learned a lot recently, slow down.",
+    "max_reflections_per_hour": 30,
+    "cooldown_seconds_after_apply": 0
+  }
+}

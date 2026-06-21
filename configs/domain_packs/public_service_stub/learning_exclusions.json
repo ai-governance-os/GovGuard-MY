@@ -1,0 +1,15 @@
+{
+  "policy_version": "10.7.3-public-service-stub-learning-exclusions",
+  "_purpose": "Prevents citizen personal data from entering reusable learning.",
+  "exclude": [
+    "citizen_identifiers",
+    "citizen_contacts",
+    "ic_numbers",
+    "home_address",
+    "individual_citizen_records"
+  ],
+  "exclude_content_patterns_add": [
+    "citizen_personal_data"
+  ],
+  "notes": "Store reusable procedure shape only, never personal data of citizens."
+}

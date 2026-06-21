@@ -1,0 +1,51 @@
+{
+  "_purpose": "Single source of the product's self-knowledge: which prompts get a prepared direct answer (identity / greeting / desktop-boundary) and what that answer says. Previously these lived as hardcoded literal tables inside runtime.py — moving them here keeps the data-driven purity commitment (edit the product's self-description without touching code) and stops the per-demo-bug pattern-table sprawl. runtime.py module helpers fall back to THIS file when no card is passed; Runtime instances read the copy in their own config_dir.",
+  "policy_version": "10.7.3-capability-card-v1",
+  "boundary_patterns": [
+    "动我的电脑", "动你的电脑", "动这台电脑",
+    "操作我的电脑", "操作你的电脑", "控制我的电脑", "控制你的电脑",
+    "用我的电脑", "你能上我的电脑", "你能开我的电脑",
+    "帮我点鼠标", "帮我点按钮", "替我操作电脑",
+    "control my computer", "control my pc", "control my desktop",
+    "use my computer", "use my desktop", "operate my computer",
+    "drive my computer", "take over my computer",
+    "access my desktop", "click on my screen", "type on my computer"
+  ],
+  "identity_patterns": [
+    "who are you", "what are you", "what is this", "introduce yourself",
+    "what can you do", "describe yourself", "about yourself",
+    "你是谁", "你是什么", "你能做什么", "你可以做什么",
+    "你可以帮我做什么", "你可以帮助我做什么",
+    "你能帮我做什么", "你能帮助我做什么",
+    "介绍一下你自己", "你是个什么", "介绍自己", "自我介绍"
+  ],
+  "greeting_phrases": [
+    "hello", "hi", "hi there", "hey", "hiya", "yo", "sup", "howdy",
+    "good morning", "good afternoon", "good evening", "good day",
+    "你好", "您好", "哈喽", "嗨", "哟",
+    "早上好", "下午好", "晚上好", "早安", "晚安", "在吗", "在不在"
+  ],
+  "no_search_patterns": [
+    "who are you", "what are you", "what is this", "introduce yourself",
+    "what can you do", "describe yourself", "about yourself",
+    "你是谁", "你是什么", "你能做什么", "介绍一下你自己", "你是个什么",
+    "介绍自己", "自我介绍",
+    "hello", "hi there", "hey", "good morning", "good afternoon",
+    "good evening",
+    "你好", "您好", "早上好", "下午好", "晚上好", "在吗"
+  ],
+  "answers": {
+    "identity": {
+      "cjk": "我是 TEOW-AGL，一个受治理约束的 AI agent 原型。我可以聊天、解释问题、联网搜索并给出处、生成 Word/PPT/Excel、生成图片、整理文件、查询过去任务，也会把动作经过 BLUE/GREEN/RED 等路线审计。简单说，我不是只会回答的聊天框，而是一个带安全门、审批和记录的工作型智能体。",
+      "default": "I am TEOW-AGL, a governed AI agent prototype. I can chat, explain, search the web with citations, create Word/PowerPoint/Excel files, generate images, organize files, recall past sessions, and route actions through auditable BLUE/GREEN/RED governance checks."
+    },
+    "greeting": {
+      "cjk": "你好！有什么我可以帮你的吗?",
+      "default": "Hi there! What can I help you with?"
+    },
+    "capability_boundary": {
+      "cjk": "可以,但**不是任意控制**。我的 `gui` 和 `desktop` 工具能截屏、点鼠标、敲键盘、整理桌面文件 —— 但每一个写操作都要经过治理流程:\n\n• **BLUE 自动**:只读类的动作（截屏、列桌面文件）会直接执行。\n• **GREEN 必审**:点击、键入、移动/删除文件 等会先请你看一眼再批准,我才会执行。\n• **RED 阻断**:`Ctrl+Alt+Del` / `Win+R` / `format c:` 等危险组合在 101A 安全层就被拒绝。\n\n你想让我做什么具体的事?告诉我目标,我会拆成可审计的步骤,需要你点'同意'的地方会显式停下来。",
+      "default": "Yes — but **not freely**. My `gui` and `desktop` tools can take screenshots, click, type, and organise Desktop files — but every write action runs through the governance pipeline:\n\n• **BLUE auto**: read-only actions (screenshot, list Desktop) execute directly.\n• **GREEN ask-first**: clicks, keystrokes, file moves/deletes show you the planned action and pause for your approval before running.\n• **RED blocked**: dangerous combos like `Ctrl+Alt+Del` / `Win+R` / `format c:` are refused at the 101A safety layer.\n\nWhat specifically would you like done? Tell me the goal and I'll break it into auditable steps; anything that needs your approval will stop and ask."
+    }
+  }
+}

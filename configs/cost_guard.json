@@ -1,0 +1,9 @@
+{
+  "_purpose": "Daily LLM-call budget enforced by teow_agl/policies/cost_guard.py. planner_calls = Module 102 remote calls (direct/cached/identity paths are free and never blocked). chat_calls = every ChatLLM backend call (102B synthesizer, 110 judge, 101C intent classifier, 109 reflector, chat tool). Over budget: planner returns a graceful model_error refusal (self-fix will NOT retry it); ChatLLM returns empty and callers degrade per the adapter contract. Env kill-switch COST_GUARD_ENABLED=0.",
+  "policy_version": "10.7.3-cost-guard-v1",
+  "enabled": true,
+  "daily_limits": {
+    "planner_calls": 500,
+    "chat_calls": 2500
+  }
+}

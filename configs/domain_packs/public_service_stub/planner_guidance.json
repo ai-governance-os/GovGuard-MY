@@ -1,0 +1,17 @@
+{
+  "policy_version": "10.7.3-public-service-stub-planner-guidance",
+  "_purpose": "Minimal generic guidance for the portability stub.",
+  "summary": "Generic public-service desk work is produced as DRAFT material for officer review. The agent may retrieve policy and draft responses, but must never send to the public or modify a citizen record without explicit human approval.",
+  "must_do": [
+    "Frame every public response and letter as a draft for officer review.",
+    "State explicit assumptions when the source is incomplete.",
+    "Route any public broadcast or citizen-record change through human approval (GREEN)."
+  ],
+  "must_not_do": [
+    "Do not send any response to the public without approval.",
+    "Do not modify or finalise any citizen record autonomously.",
+    "Do not treat citizen personal data as reusable general memory."
+  ],
+  "review_boundary": "Drafts require officer review before release. Approval allows draft creation and internal preparation, not autonomous external communication.",
+  "learning_boundary": "Learn reusable workflow shape only. Do not learn citizen identifiers, contacts, or individual records."
+}

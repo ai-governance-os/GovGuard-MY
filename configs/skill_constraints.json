@@ -1,0 +1,102 @@
+{
+  "_purpose": "Bounds and forbidden patterns for the Skill Manager. Mirrors reflection_constraints.json — Hermes lets the LLM curate SKILL.md files freely with no policy layer; we bound them so a malicious or buggy skill can't quietly steer all future tasks. Edit here to tune aggressiveness of skill creation / retrieval.",
+  "policy_version": "10.7.5-skill-constraints",
+
+  "creation_limits": {
+    "_doc": "Hard caps on what a single task can create. Hermes will let the LLM write a 4KB SKILL.md every turn; we cap to one short skill per task to keep memory drift small.",
+    "max_skills_per_task": 1,
+    "max_chars_per_skill": 2000,
+    "min_chars_per_skill": 60,
+    "max_total_skills": 200
+  },
+
+  "retrieval": {
+    "_doc": "Pre-planner injection: at task start, runtime asks SkillManager.find_relevant(goal) for the top-N matches via BM25 over skill descriptions+names. Only ACTIVE skills are returned — archived ones never inject.",
+    "top_k_injected": 3,
+    "min_score_for_injection": 0.5,
+    "_cross_context_doc": "P2 (option B) cross-tool transfer lane. min_score_for_injection above is kept conservative ON PURPOSE (a missed skill is harmless — the task just runs without a head-start; a wrongly-injected one can mislead). This SEPARATE lower threshold fires ONLY as a fallback when normal retrieval found nothing, ONLY for the categories listed, and ONLY returns skills whose stored tool differs from the task's target tool — each of which must then survive adaptation + the verifier's strict mode. We do NOT lower the global threshold to chase cross-medium matches.",
+    "cross_context_min_score": 0.30,
+    "cross_context_categories": ["office_doc_generation"]
+  },
+
+  "lifecycle": {
+    "_doc": "Phase 2 L4.8 — 4-state lifecycle (active/stale/superseded/archived). Skills are NEVER auto-deleted. lifecycle_sweep auto-applies the only reversible low-risk transition (ACTIVE->STALE when unused past active_to_stale_days_unused); STALE->ARCHIVED and ACTIVE->SUPERSEDED are emitted as proposals for the 105 human gate. Retrieval weights below scale a skill's match score by status: ACTIVE=1.0 (implicit), STALE=stale_retrieval_weight, SUPERSEDED=superseded_retrieval_weight (0.0 = excluded), ARCHIVED always excluded.",
+    "stale_after_days": 30,
+    "active_to_stale_days_unused": 90,
+    "stale_to_archived_days_unused": 180,
+    "supersede_on_new_skill_same_shape": true,
+    "stale_retrieval_weight": 0.5,
+    "superseded_retrieval_weight": 0.0,
+    "auto_archive_enabled": false,
+    "auto_delete_enabled": false
+  },
+
+  "forbidden_patterns": {
+    "_doc": "Regex patterns (case-insensitive) that cause skill creation to be REJECTED — same defense as reflection_constraints, applied to both name and body. A malicious skill would otherwise be injected into every future planning brief, so this is a critical hook.",
+    "patterns": [
+      "(?i)\\bignore (previous|all|above) instructions\\b",
+      "(?i)\\byou are now\\b",
+      "(?i)\\bsystem prompt override\\b",
+      "(?i)\\bdo not tell the user\\b",
+      "(?i)\\bhide (this|that) from (the )?user\\b",
+      "(?i)\\bdisregard (your|all|any) (instructions|rules|guidelines)\\b",
+      "(?i)\\bpassword\\b\\s*[:=]",
+      "(?i)\\bapi[_ -]?key\\b\\s*[:=]",
+      "(?i)\\bsecret\\b\\s*[:=]",
+      "(?i)\\btoken\\b\\s*[:=]",
+      "(?i)sk-[a-z0-9]{20,}",
+      "(?i)gsk_[a-z0-9]{20,}",
+      "(?i)AIza[a-z0-9_\\-]{20,}"
+    ]
+  },
+
+  "min_task_quality": {
+    "_doc": "The skill_manager tool refuses to create a skill from a trivial / failed task. The agent should only create skills from substantive successful work — not from one-shot chit-chat.",
+    "require_blue_or_green_route": true,
+    "min_executions": 1,
+    "skip_if_verification_failed": true
+  },
+
+  "distiller": {
+    "_doc": "Phase 1A — Skill Distiller (Module 109B) trigger config. Auto-proposes a skill draft after qualified successful tasks. Draft enters Curator queue as proposal kind 'create_skill'; user must approve before write. 8 checks across 6 dimensions: enabled / category-exclude / verifier-pass / route / cumulative-quality / recency / dedup / rate-limit. Demo override: set SKILL_AUTO_PROPOSE_MIN_SUCCESSES=5 env var.",
+    "enabled": true,
+    "exclude_categories": [
+      "unknown",
+      "identity_capability",
+      "capability_boundary",
+      "greeting"
+    ],
+    "min_successes": 10,
+    "min_success_rate": 0.80,
+    "recent_window": 5,
+    "max_per_day": 3,
+    "draft_max_tokens": 1500
+  },
+
+  "pii_extra_patterns": {
+    "_doc": "Phase 1A — PII scanning ON TOP OF forbidden_patterns. Two categories: (a) hard_reject — kill the entire proposal (real PII / credentials); (b) redact — sanitize in-place and keep the skill (low-value PII like local file paths). forbidden_patterns above already covers prompt-injection + API key shapes (sk-/gsk_/AIza/password/secret/token), so we do NOT duplicate those here.",
+    "hard_reject": {
+      "email":        "[\\w.+-]+@[\\w-]+\\.[\\w.-]+",
+      "phone_intl":   "\\+\\d{1,3}[-\\s]?\\(?\\d{1,4}\\)?[-\\s]?\\d{3,4}[-\\s]?\\d{3,4}",
+      "phone_cn":     "1[3-9]\\d{9}",
+      "credit_card":  "\\d{4}[-\\s]?\\d{4}[-\\s]?\\d{4}[-\\s]?\\d{4}",
+      "sg_nric":      "[STFG]\\d{7}[A-Z]",
+      "my_ic":        "\\d{6}-\\d{2}-\\d{4}",
+      "us_ssn":       "\\d{3}-\\d{2}-\\d{4}"
+    },
+    "redact": {
+      "abs_path_win":  {
+        "pattern":     "[A-Za-z]:\\\\Users\\\\[^\\\\]+\\\\",
+        "replacement": "<USER_HOME>\\"
+      },
+      "abs_path_unix": {
+        "pattern":     "/home/[^/]+/",
+        "replacement": "<USER_HOME>/"
+      },
+      "url_userinfo":  {
+        "pattern":     "://[^/@\\s]+:[^/@\\s]+@",
+        "replacement": "://<credentials>@"
+      }
+    }
+  }
+}

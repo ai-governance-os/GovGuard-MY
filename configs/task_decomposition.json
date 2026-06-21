@@ -1,0 +1,52 @@
+{
+  "_purpose": "Knobs for Module 102T (Task Tree Planner). Controls whether a user goal gets decomposed into sub-goals (vs the single-shot pipeline), how aggressively, and the per-tree budget. Heuristic-only — no English literals or category names inside module_102t code.",
+  "policy_version": "10.7.3-task-decomposition",
+
+  "enabled": true,
+
+  "complexity_heuristic": {
+    "_doc": "A goal triggers decomposition iff ANY of these signals fire. We deliberately err on the side of NOT decomposing (it costs N×LLM calls) — the operator can force always-decompose via env TASK_TREE_ALWAYS=1.",
+    "min_chars": 120,
+    "multi_imperative_min_verbs": 3,
+    "trigger_phrases": [
+      "first", "then", "next", "finally", "after that",
+      "step 1", "step 2", "step one", "step two",
+      "1.", "2.", "3.",
+      "and then ", " and also ",
+      "首先", "然后", "接着", "最后", "之后",
+      "第一步", "第二步", "第三步"
+    ],
+    "imperative_verbs_en": [
+      "write", "make", "create", "build", "generate", "produce", "save",
+      "search", "find", "look up", "research", "summarise", "summarize",
+      "translate", "draft", "design", "compose", "compile", "list",
+      "analyze", "analyse", "compare", "review", "extract"
+    ],
+    "imperative_verbs_zh": [
+      "写", "做", "生成", "创建", "搜索", "查询", "翻译",
+      "总结", "整理", "比较", "分析", "审查", "提取", "起草",
+      "保存", "发送", "整理", "排序"
+    ]
+  },
+
+  "tree_limits": {
+    "_doc": "Hard upper bounds. max_leaves_per_tree exists so a runaway LLM can't spawn a 50-step tree that exhausts the API budget. max_depth is currently 1 (flat tree of leaves) — deeper trees are a future phase.",
+    "max_leaves_per_tree": 8,
+    "min_leaves_per_tree": 2,
+    "max_depth": 1
+  },
+
+  "leaf_pipeline": {
+    "_doc": "Behaviour overrides for sub-goal leaves so we don't spam the audit log and don't double-spend reflector tokens. Reflector and skill-creation only run at the ROOT task (the parent); intermediate leaves still get verified + governance-checked.",
+    "skip_reflector_on_leaves": true,
+    "skip_skill_creation_on_leaves": true,
+    "skip_session_indexing_on_leaves": true
+  },
+
+  "fallback": {
+    "_doc": "When the decomposer LLM fails or returns garbage, we fall back to single-shot mode instead of crashing. This is the same conservative discipline 102B (synthesizer) uses.",
+    "on_decomposer_error": "single_shot",
+    "on_zero_leaves":      "single_shot",
+    "on_overflow":         "truncate"
+  }
+}

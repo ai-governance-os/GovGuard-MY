@@ -1,0 +1,23 @@
+{
+  "policy_version": "10.7.3-public-service-stub-governance-overlay",
+  "_purpose": "Portability proof ONLY. A generic public-service desk overlay showing a domain is swapped by config alone with no core change. Not a second product; contains no real client data.",
+  "domain": "public_service_stub",
+  "display_name": "Generic Public-Service Desk (portability stub)",
+  "approval_required_actions_add": [
+    "public_response_send",
+    "citizen_record_modification"
+  ],
+  "hard_block_actions_add": [
+    "autonomous_external_send_to_public"
+  ],
+  "high_value_assets_add": [
+    "**/citizens/**",
+    "**/records/**"
+  ],
+  "sensitive_patterns_add": [
+    "**/*ic_number*",
+    "**/*citizen*",
+    "**/*alamat*"
+  ],
+  "notes": "Stub only. Proves the domain-pack seam; the flagship narrative stays on public_school."
+}

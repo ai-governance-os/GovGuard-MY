@@ -1,0 +1,51 @@
+{
+  "_purpose": "Knobs for Module CURATOR. Periodically (manual trigger today, cron later) the Curator scans accumulated USER.md / MEMORY.md / SKILL.md and emits proposals for consolidating duplicates, archiving stale skills, and refining wording. ALL proposals route through 105 approval — nothing auto-applies. This is the Hermes-style 'LLM reviews LLM' layer, but with the governance shield Hermes does not have.",
+  "policy_version": "10.7.3-curator-rules",
+
+  "enabled": true,
+
+  "scope": {
+    "_doc": "Which surfaces does the curator review. Separate scope per surface so user can disable individual ones (e.g. SKILL.md curation but no USER.md curation).",
+    "review_user_md":   true,
+    "review_memory_md": true,
+    "review_skills":    true
+  },
+
+  "proposal_limits": {
+    "_doc": "Hard caps per run. The first run on a populated memory will propose a lot — the cap keeps the human review queue manageable. The 105 approval card UI shows them one at a time.",
+    "max_proposals_per_run": 10,
+    "max_proposals_per_scope": 5,
+    "max_chars_per_proposal": 600
+  },
+
+  "staleness": {
+    "_doc": "Skills unused for N days are AUTO-PROPOSED for archive (proposal still needs human approval, just nominated automatically). USER.md / MEMORY.md entries have no staleness concept — only the LLM judges relevance during review.",
+    "skill_stale_days":            30,
+    "min_skill_usage_to_keep":      1
+  },
+
+  "forbidden_patterns": {
+    "_doc": "Regex patterns (case-insensitive) that cause the curator's proposed NEW_TEXT to be REJECTED at apply time even if a human approved it (defense in depth — same defense as reflection_constraints + skill_constraints). Catches the case where the curator LLM gets prompt-injected into proposing a malicious rewrite of USER.md.",
+    "patterns": [
+      "(?i)\\bignore (previous|all|above) instructions\\b",
+      "(?i)\\byou are now\\b",
+      "(?i)\\bsystem prompt override\\b",
+      "(?i)\\bdo not tell the user\\b",
+      "(?i)\\bhide (this|that) from (the )?user\\b",
+      "(?i)\\bdisregard (your|all|any) (instructions|rules|guidelines)\\b",
+      "(?i)\\bpassword\\b\\s*[:=]",
+      "(?i)\\bapi[_ -]?key\\b\\s*[:=]",
+      "(?i)\\bsecret\\b\\s*[:=]",
+      "(?i)\\btoken\\b\\s*[:=]",
+      "(?i)sk-[a-z0-9]{20,}",
+      "(?i)gsk_[a-z0-9]{20,}",
+      "(?i)AIza[a-z0-9_\\-]{20,}"
+    ]
+  },
+
+  "llm_call": {
+    "_doc": "Per-scope LLM call config. The curator calls the chat LLM once per scope (USER.md / MEMORY.md / skills list) so each scope gets independent JSON output and a fresh context budget.",
+    "max_tokens_per_scope": 2000,
+    "temperature": 0.2
+  }
+}
