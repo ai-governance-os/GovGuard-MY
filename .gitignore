@@ -27,6 +27,7 @@ outputs/
 traces/
 workspace/uploads/
 workspace/temp/
+workspace/results.md
 *.db
 *.sqlite
 *.sqlite3
