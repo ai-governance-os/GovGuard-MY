@@ -1079,10 +1079,13 @@ def _workflow_view(result) -> dict | None:
 
     steps: list[dict] = []
     blocked: list[dict] = []
+    source_file = None
     if plan is not None:
         for a in plan.actions:
             md = a.metadata or {}
             route = route_by_action.get(a.action_id, "")
+            if md.get("workflow_source_file") and not source_file:
+                source_file = md.get("workflow_source_file")
             if md.get("workflow_id"):
                 steps.append({
                     "step_id": md.get("workflow_step_id"),
@@ -1125,6 +1128,7 @@ def _workflow_view(result) -> dict | None:
         "steps": steps,
         "blocked": blocked,
         "summary": summary,
+        "source_file": source_file,
     }
 
 

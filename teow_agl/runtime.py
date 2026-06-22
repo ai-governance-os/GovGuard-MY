@@ -217,6 +217,28 @@ def _query_needs_web(text: str, category: str | None,
     return False
 
 
+def _public_summary_section(results_md: str) -> str:
+    """Extract the delimited public-safe summary from a results file — the block
+    under a '## … Public Summary' / '公开摘要' heading — so public-facing drafts
+    are grounded only in non-sensitive facts. Falls back to a short safe line if
+    the section is absent."""
+    out: list[str] = []
+    capturing = False
+    for ln in results_md.splitlines():
+        is_heading = ln.lstrip().startswith("#")
+        if is_heading:
+            if capturing:
+                break  # next heading ends the section
+            if "public summary" in ln.lower() or "公开摘要" in ln:
+                capturing = True
+                out.append(ln)
+            continue
+        if capturing:
+            out.append(ln)
+    text = "\n".join(out).strip()
+    return text or "Overall results summary (public-safe): see school records."
+
+
 def _is_identity_question(text: str, card: dict | None = None) -> bool:
     """True for explicit identity / capability questions ('who are you',
     'what can you do', '你是谁', '介绍一下你自己', …)."""
@@ -1125,6 +1147,9 @@ class Runtime:
                 )
                 workflow_plan = self.workflow_resolver.build_plan(
                     workflow_resolution, envelope, pre, self.tool_catalog)
+                # Ground the workflow's content steps in the local results file
+                # so drafts cite real facts (not generic LLM/web filler).
+                self._attach_workflow_context(workflow_plan, envelope)
 
         # ── Phase 13: Task Tree fork ──────────────────────────────────
         # Before single-shot planning, ask 102T whether this goal is
@@ -1352,8 +1377,15 @@ class Runtime:
         # The agent doesn't "decide" to search — runtime decides via
         # _query_needs_web. A future Module 102 upgrade may move this
         # decision into the planner itself (the "🅱️" agent-loop path).
-        if _query_needs_web(envelope.normalized_goal, pre.task_category,
-                            self.capability_card):
+        #
+        # Workflow ownership: once 102W has matched a configured workflow, the
+        # workflow OWNS the task and uses local workspace data — an unsolicited
+        # web search (e.g. "results"/"2026" tripping the freshness heuristic)
+        # would pollute the demo with generic web content. So skip web search
+        # entirely for workflow-owned tasks. Generic tasks are unaffected.
+        if (workflow_plan is None
+                and _query_needs_web(envelope.normalized_goal, pre.task_category,
+                                     self.capability_card)):
             try:
                 web_hits = search_web(envelope.normalized_goal, max_results=5)
             except Exception:
@@ -2023,6 +2055,40 @@ class Runtime:
                        envelope.task_id, envelope.session_id,
                        summary=f"concepts={','.join(concepts)} (llm)",
                        details={"concepts": concepts, "source": "c_tier_llm"})
+
+    def _attach_workflow_context(self, plan: CandidatePlan,
+                                 envelope: TaskEnvelope) -> None:
+        """Ground workflow content steps in the local results file. Reads the
+        workspace results file once and attaches it as authoritative context so
+        the synthesizer (deterministic template AND live model) drafts from real
+        facts. Internal steps get the FULL data; public-facing steps get only
+        the delimited public-safe summary (no personal identifiers)."""
+        roots = list(getattr(envelope, "workspace_roots", []) or [])
+        if not roots:
+            roots = list(getattr(self.profile, "workspace_roots", []) or [])
+        results_path = None
+        for root in roots:
+            cand = Path(root) / "results.md"
+            if cand.exists():
+                results_path = cand
+                break
+        if results_path is None:
+            return
+        try:
+            full = results_path.read_text(encoding="utf-8")
+        except OSError:
+            return
+        if not full.strip():
+            return
+        public = _public_summary_section(full)
+        for a in plan.actions:
+            md = a.metadata
+            if not md.get("workflow_id"):
+                continue
+            scope = str(md.get("output_scope", "")).lower()
+            internal = scope in ("internal", "")
+            md["workflow_result_context"] = full if internal else public
+            md["workflow_source_file"] = "workspace/results.md"
 
     # ------------------------------------------------------------------
     # Per-action execution (extracted so the agent loop can reuse it).

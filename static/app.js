@@ -342,10 +342,15 @@ function renderWorkflowPanel(bubble, d) {
     statusLine = `<div class="wf-statusline">Governed workflow — `
       + `${esc(bits.join(" · "))}</div>`;
   }
+  const srcLine = wf.source_file
+    ? `<div class="wf-source">Using <code>${esc(wf.source_file)}</code> `
+      + `as the authoritative event-results file.</div>`
+    : "";
   el.innerHTML =
     `<div class="wf-title">Workflow autonomy — more autonomy, without loss of control</div>`
     + statusLine
     + head
+    + srcLine
     + (rows ? `<div class="wf-steps">${rows}</div>` : "")
     + blockedHtml;
   el.hidden = false;

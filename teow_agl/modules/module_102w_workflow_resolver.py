@@ -168,6 +168,17 @@ class WorkflowResolver:
                 "approval_boundary": step.get("approval_boundary", "none"),
                 "route_hint": route_hint,
             }
+            # Latency / cleanliness: steps that are NOT content deliverables get
+            # a deterministic template body and never call the live LLM —
+            #   * the report-stub step (its body is overwritten by ReportTool),
+            #   * the self-block step (route RED — blocked, never executed),
+            #   * the release/status step (public_release — a "ready for
+            #     approval" status, not free-form content).
+            # The real content drafts (internal report save, FB post, parent
+            # notice) are the only steps the live model drafts.
+            if (op == "draft_report" or route_hint == "RED"
+                    or output_scope == "public_release"):
+                md["workflow_template_only"] = True
             # Content is produced by the 102B synthesizer (a presentable
             # bilingual workflow draft with no key, or richer text under a live
             # provider) — see `_workflow_fallback_body`. We only fix the output

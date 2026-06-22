@@ -106,7 +106,7 @@ def test_build_plan_uses_catalog_tools_and_metadata(isolated_workspace: Path):
     catalog = {"tools": {t: {} for t in ("fs", "report", "chat", "docx")}}
     plan = r.build_plan(res, _envelope(WORKFLOW_GOAL_CN), None, catalog)
     assert plan.planner_id == "102W_workflow_resolver"
-    assert len(plan.actions) == 6
+    assert len(plan.actions) == 7
     valid = set(catalog["tools"])
     for a in plan.actions:
         assert a.tool in valid, f"{a.tool} not in closed catalog"
@@ -141,7 +141,7 @@ def test_runtime_detects_workflow_and_skips_planner(isolated_workspace: Path):
     assert ("102", "planner_called") not in mods
     # every decided action belongs to the workflow (metadata present, test 1)
     assert result.plan is not None
-    assert len(result.plan.actions) == 6
+    assert len(result.plan.actions) == 7
     assert all(a.metadata.get("workflow_id") == "post_event_reporting"
                for a in result.plan.actions)
 
@@ -195,8 +195,8 @@ def test_external_release_step_is_green(isolated_workspace: Path):
     rt = _runtime(isolated_workspace, gate="reject_all")
     result = rt.run(raw_goal=WORKFLOW_GOAL_CN)
     ext = next(a for a in result.plan.actions
-               if a.metadata.get("workflow_step_id") == "prepare_public_release")
-    dec = _decision_for(result, "prepare_public_release")
+               if a.metadata.get("workflow_step_id") == "queue_release_for_approval")
+    dec = _decision_for(result, "queue_release_for_approval")
     assert dec.route == "GREEN"
     assert dec.approval_required
     # internal steps stay BLUE (101D inert / NO_OVERRIDE for internal scope)
@@ -348,7 +348,7 @@ def test_server_exposes_workflow_panel(monkeypatch):
     wf = state.get("workflow")
     assert wf and wf["detected"] is True
     assert wf["workflow_id"] == "post_event_reporting"
-    assert len(wf["steps"]) == 6
+    assert len(wf["steps"]) == 7
     routes = [s["route"] for s in wf["steps"]]
     assert "GREEN" in routes, routes  # external release elevated by 101D
     assert "RED" in routes, routes    # in-workflow self-block (income personalisation)
@@ -357,6 +357,10 @@ def test_server_exposes_workflow_panel(monkeypatch):
     assert wf["blocked"], "expected a self-blocked action in the workflow panel"
     assert any("differential treatment" in r
                for b in wf["blocked"] for r in b.get("reasons", []))
+    # the authoritative results source is surfaced (server seeded it)
+    assert wf.get("source_file") == "workspace/results.md"
+    # summary frames a self-blocked step as governed, not failed
+    assert wf["summary"]["self_blocked"] == 1 and wf["summary"]["approval"] == 1
 
 
 # ── natural-language self-governance, end-to-end (the flagship claim) ────────
@@ -437,3 +441,71 @@ def test_c_tier_offline_is_noop(isolated_workspace: Path):
     assert getattr(rt.synthesizer.chat_llm, "backend", "mock") == "mock"
     res = rt.run(raw_goal=_C_TIER_GOAL)
     assert res.final_route != "RED", res.final_route
+
+
+# ── live-key cleanliness: web-ownership, grounding, latency ──────────────────
+
+def _seed_results(workspace: Path) -> None:
+    wsdir = workspace / "workspace"
+    wsdir.mkdir(parents=True, exist_ok=True)
+    (wsdir / "results.md").write_text(
+        "# Sports Day 2026 — Results\n"
+        "- School: SK Demo Primary School\n"
+        "- Overall Champion: Rumah Merah\n"
+        "- Student attendance: 96%\n\n"
+        "## Public Summary\n"
+        "- Overall Champion: Rumah Merah\n"
+        "- Student attendance: 96%\n", encoding="utf-8")
+
+
+def test_workflow_skips_web_search(isolated_workspace: Path, monkeypatch):
+    """Once 102W owns the task, no unsolicited web search runs — even with the
+    freshness heuristic forced on. Generic tasks are unaffected (not tested
+    here). Proves the demo isn't polluted by DuckDuckGo sources."""
+    import teow_agl.runtime as rtmod
+    called = {"n": 0}
+    monkeypatch.setattr(rtmod, "search_web",
+                        lambda *a, **k: called.__setitem__("n", called["n"] + 1) or [])
+    monkeypatch.setenv("WEB_SEARCH_ALWAYS", "1")  # force the heuristic ON
+    rt = _runtime(isolated_workspace)
+    cap = _capture(rt)
+    rt.run(raw_goal=WORKFLOW_GOAL_EN)
+    assert called["n"] == 0, "web search ran for a workflow-owned task"
+    assert ("WEB", "web_search_retrieved") not in [
+        (e["module"], e["event_type"]) for e in cap]
+
+
+def test_workflow_outputs_grounded_in_results(isolated_workspace: Path):
+    """The internal report visibly uses the local results facts (not generic
+    filler) — grounded via the deterministic template with no key."""
+    _seed_results(isolated_workspace)
+    rt = _runtime(isolated_workspace)
+    rt.run(raw_goal=WORKFLOW_GOAL_CN)
+    report = isolated_workspace / "outputs" / "save_internal_report.md"
+    assert report.exists()
+    body = report.read_text(encoding="utf-8")
+    for fact in ("SK Demo Primary School", "Rumah Merah", "96%"):
+        assert fact in body, f"internal report missing grounded fact: {fact}"
+
+
+def test_workflow_status_steps_use_template_not_llm(isolated_workspace: Path):
+    """Latency: only the 3 real content drafts (internal report, FB post, parent
+    notice) call the live model. The report-stub, the RED self-block, and the
+    GREEN release step use deterministic templates — no LLM call."""
+    _seed_results(isolated_workspace)
+    rt = _runtime(isolated_workspace)
+    calls = {"n": 0}
+
+    class _Counter:
+        backend = "openai"
+
+        def chat(self, system, user, *, max_tokens=1500):
+            calls["n"] += 1
+            return ""  # force the grounded fallback (keeps outputs real)
+
+        def chat_json(self, *a, **k):
+            return {}
+
+    rt.synthesizer.chat_llm = _Counter()
+    rt.run(raw_goal=WORKFLOW_GOAL_CN)
+    assert calls["n"] == 3, f"expected 3 content-draft LLM calls, got {calls['n']}"

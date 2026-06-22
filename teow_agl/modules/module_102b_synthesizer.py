@@ -125,52 +125,62 @@ def _workflow_fallback_body(user_intent: str, meta: dict) -> str:
     """
     scope = str((meta or {}).get("output_scope") or "").lower()
     step = str((meta or {}).get("workflow_step_name") or "").lower()
-    intent = (user_intent or "").strip()[:200]
-    if scope == "public_release" or "release" in step:
+    ctx = str((meta or {}).get("workflow_result_context") or "").strip()
+    src = (meta or {}).get("workflow_source_file")
+    src_line = f"\n\n(来源 / Source: {src})" if src else ""
+
+    if scope == "public_release" or "release" in step or "queue" in step or "approval" in step:
         return (
-            "【对外发布 — 待人工批准 / Public release — pending human approval】\n\n"
-            "以下内容已准备好,只有在校方人员批准后才会对外发布"
-            "(示范模式下不会真的发出)。\n"
-            "The following is ready and will be published ONLY after an educator "
-            "approves it (nothing is actually sent in demo mode).\n\n"
-            f"• 原始请求 / Original request: {intent}\n"
-            "• 已附:内部活动报告草稿 + 公开版 Facebook 文案草稿。\n"
-            "  Attached: internal activity-report draft + public Facebook-post draft.\n"
-            "• 对外发布属于 GREEN —— 需人工批准后才会有任何对外动作。\n"
-            "  Publishing externally is GREEN: it requires human approval before "
-            "any outside action."
+            "【待人工批准 / Pending human approval】\n\n"
+            "以下内容已备好,只有在校方人员批准后才会发送 / 发布"
+            "(示范模式下不会真的发出):\n"
+            "Ready for release ONLY after an educator approves (nothing is sent or "
+            "published in demo mode):\n\n"
+            "• 内部活动报告草稿 / Internal activity-report draft\n"
+            "• 公开版 Facebook 文案草稿 / Public Facebook-post draft\n"
+            "• 家长祝贺通知草稿 / Parent congratulation-notice draft\n\n"
+            "对外发送 / 发布属于 GREEN —— 需人工批准后才会有任何对外动作。\n"
+            "Sending / publishing is GREEN: it requires human approval before any "
+            "outside action."
         )
+    if "parent" in scope or "parent" in step:
+        body = (
+            "【家长祝贺通知草稿 / Parent Congratulation Notice — Draft】\n\n"
+            "亲爱的家长:恭喜贵子女所属班级在本次校运会中取得佳绩!感谢您一直以来的支持与鼓励。\n"
+            "Dear parents: congratulations to your child's class on their fine "
+            "results at our Sports Day! Thank you for your continued support.\n"
+        )
+        if ctx:
+            body += "\n— 公开摘要 / Public summary —\n" + ctx + "\n"
+        body += ("\n(本通知不含家庭收入、身份证号、电话等敏感资料;发送前须校方批准。 / "
+                 "No household-income, IC, phone or address data; subject to school "
+                 "approval before sending.)")
+        return body + src_line
     if scope == "public_draft":
-        return (
+        body = (
             "【公开草稿 — Facebook / Public draft — Facebook】\n\n"
-            "🎉 我们的活动圆满结束!恭喜所有获奖的班级与同学,也感谢老师与家长的支持与配合。\n"
-            "Our event was a wonderful success! Congratulations to every winning "
-            "class and student, and a big thank-you to our teachers and parents.\n\n"
-            "📸 更多精彩照片与花絮将陆续上传,敬请关注本校官方专页。\n"
-            "More photos and highlights will be shared on our official page soon.\n\n"
-            "(本公开草稿不含身份证号、MyKid、电话、住址或家庭收入等敏感资料,"
-            "需经校方批准后才发布。 / This public draft contains no IC, MyKid, "
-            "phone, home-address or household-income data, and is released only "
-            "after school approval.)"
+            "🎉 我们的校运会圆满结束!恭喜所有得奖班级与同学,也感谢老师与家长的支持。\n"
+            "Our Sports Day was a great success! Congratulations to all winning "
+            "classes and students, and thank you to our teachers and parents.\n"
         )
-    # default — internal activity report
-    return (
+        if ctx:
+            body += "\n— 公开摘要 / Public summary —\n" + ctx + "\n"
+        body += ("\n(本公开草稿不含身份证号、MyKid、电话、住址或家庭收入,需校方批准后发布。 / "
+                 "No IC, MyKid, phone, home-address or household-income data; "
+                 "released only after school approval.)")
+        return body + src_line
+    # default — internal activity report (grounded in the full results data)
+    body = (
         "【内部活动报告草稿 / Internal Activity Report — Draft】\n\n"
-        f"一、缘起 / Request:\n  {intent}\n\n"
-        "二、活动概况 / Overview:\n"
-        "  本次活动已顺利完成,成绩与获奖名单已整理完毕,详见随附数据。\n"
-        "  The event was completed successfully; results and the award list have "
-        "been compiled (see attached data).\n\n"
-        "三、成绩与获奖 / Results & awards:\n"
-        "  各项目的优胜班级与同学名单已按项目整理存档。\n"
-        "  Winning classes and students are recorded per event.\n\n"
-        "四、后续 / Next steps:\n"
-        "  内部报告存档供校方审阅;公开版文案另行草拟,经批准后才对外发布。\n"
-        "  The internal report is filed for educator review; a public post is "
-        "drafted separately and released only after approval.\n\n"
-        "(仅供校内审阅,不含敏感个人资料 / For internal review only — no "
-        "sensitive personal data included.)"
     )
+    if ctx:
+        body += ctx + "\n"
+    else:
+        body += ("活动已顺利完成,成绩与获奖名单已整理(详见随附成绩档案)。\n"
+                 "The event was completed successfully; results and awards compiled "
+                 "(see the attached results file).\n")
+    body += "\n(仅供校内审阅 / For internal review only.)"
+    return body + src_line
 
 
 def _school_notice_fallback_body(user_intent: str) -> str:
@@ -811,6 +821,17 @@ class ContentSynthesizer:
             return {"action_id": action.action_id, "tool": tool, "op": op,
                     "skipped": "synthesis_skip_flag"}
 
+        # Workflow status / blocked / report-stub steps: use a deterministic
+        # template body and DO NOT call the live LLM (latency + cleanliness).
+        # Only the real content drafts (internal report, FB post, parent notice)
+        # are drafted by the model.
+        if action.metadata.get("workflow_template_only"):
+            meta = action.metadata
+            body = _workflow_fallback_body(user_intent, meta)
+            meta["content" if tool == "fs" else "body"] = body
+            return {"action_id": action.action_id, "tool": tool, "op": op,
+                    "result": "workflow_template_only", "chars": len(body)}
+
         # Each tool family has its own metadata shape — handle separately.
         if tool == "chat":
             return self._enrich_chat(action, user_intent)
@@ -1175,6 +1196,40 @@ class ContentSynthesizer:
         # Treat the same as docx for content purposes.
         return self._enrich_docx(action, user_intent)
 
+    def _synth_workflow_text(self, action: CandidateAction, user_intent: str) -> str:
+        """Draft a workflow content step with the live model, but BOUNDED:
+        grounded only in the local results context, no web, no inventing, the
+        right sensitive-data rules for public vs internal, capped tokens for
+        speed, and explicitly told NOT to touch the governance route."""
+        meta = action.metadata
+        ctx = str(meta.get("workflow_result_context") or "").strip()
+        scope = str(meta.get("output_scope") or "").lower()
+        public = scope not in ("internal", "")
+        system = (
+            "You are drafting content INSIDE a configured GovGuard MY school "
+            "workflow. Use ONLY the authoritative results below and the task "
+            "intent. Do NOT use web knowledge or web search. Do NOT invent "
+            "winners, classes, dates or numbers — if a fact is missing write "
+            "'[please confirm]'. Produce a clean bilingual draft (中文 + "
+            "English), file body only, no preamble. The governance route has "
+            "already been decided elsewhere — do not mention, alter, or justify "
+            "it. "
+            + ("This is PUBLIC-FACING content: do NOT include IC, MyKid, "
+               "passport, phone, home address, guardian income, occupation, "
+               "family background, health or discipline data. Names of winning "
+               "CLASSES (e.g. '5 Bestari') and houses are fine."
+               if public else
+               "This is an INTERNAL report for educators — include the concrete "
+               "results, standings, attendance and programme.")
+        )
+        user = (
+            f"Task: {action.purpose or user_intent}\n\n"
+            f"Authoritative results — use ONLY this:\n"
+            f"{ctx or '(no results file found — write [please confirm] for facts)'}\n\n"
+            "Write the document body now."
+        )
+        return self.chat_llm.chat(system=system, user=user, max_tokens=1200)
+
     def _enrich_fs(self, action: CandidateAction, user_intent: str) -> dict:
         # Only enrich save_under_outputs that's writing text content.
         op = (action.operation or "").lower()
@@ -1189,16 +1244,21 @@ class ContentSynthesizer:
             return self._status(action, "skipped_non_text_target")
         if self._looks_real(content, min_chars=200):
             return self._status(action, "kept_planner_content", chars=len(content))
-        new_body = self.chat_llm.chat(
-            system=(
-                "You write document content for files saved to disk. Output "
-                "the file body only — no preamble. Use markdown if the target "
-                "is .md. Match the user's language. Be substantive."
-            ),
-            user=f"User request: {user_intent}\n\nTarget file: {action.target}\n\n"
-                 f"Write the file content now.",
-            max_tokens=4000,
-        )
+        # Workflow content draft: ground in the local results file, narrow the
+        # role (no web, no inventing, sensitive-data rules), cap tokens (speed).
+        if meta.get("workflow_id"):
+            new_body = self._synth_workflow_text(action, user_intent)
+        else:
+            new_body = self.chat_llm.chat(
+                system=(
+                    "You write document content for files saved to disk. Output "
+                    "the file body only — no preamble. Use markdown if the target "
+                    "is .md. Match the user's language. Be substantive."
+                ),
+                user=f"User request: {user_intent}\n\nTarget file: {action.target}\n\n"
+                     f"Write the file content now.",
+                max_tokens=4000,
+            )
         new_body = (new_body or "").strip()
         if new_body:
             meta["content"] = new_body
