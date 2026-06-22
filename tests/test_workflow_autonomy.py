@@ -488,6 +488,21 @@ def test_workflow_outputs_grounded_in_results(isolated_workspace: Path):
         assert fact in body, f"internal report missing grounded fact: {fact}"
 
 
+def test_read_step_not_listed_as_artifact(isolated_workspace: Path):
+    """A workflow READ step (extract_results) must not surface its input file as
+    a downloadable artifact — artifacts serve from outputs/, so a workspace input
+    (results.md) would 404. Only generated drafts are downloadable artifacts."""
+    _seed_results(isolated_workspace)
+    rt = _runtime(isolated_workspace)
+    res = rt.run(raw_goal=WORKFLOW_GOAL_CN)
+    read_act = next(a for a in res.plan.actions
+                    if a.metadata.get("workflow_step_id") == "extract_results")
+    read_execs = [e for e in res.executions if e.action_id == read_act.action_id]
+    assert read_execs and all(not e.affected_resources for e in read_execs)
+    all_affected = [r for e in res.executions for r in (e.affected_resources or [])]
+    assert not any("results.md" in r for r in all_affected), all_affected
+
+
 def test_workflow_status_steps_use_template_not_llm(isolated_workspace: Path):
     """Latency: only the 3 real content drafts (internal report, FB post, parent
     notice) call the live model. The report-stub, the RED self-block, and the

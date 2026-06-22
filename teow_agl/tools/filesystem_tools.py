@@ -51,14 +51,18 @@ class FilesystemTool:
         path = resolve_safe(target)
         if not path.exists():
             return {"status": "failed", "summary": "not_found", "error": "missing", "affected": []}
-        # Read text content. For binary office files, return a placeholder.
+        # A read does NOT produce a file — it must not surface in
+        # `affected_resources` (the UI lists those as downloadable artifacts,
+        # served from outputs/; a read input lives under workspace/ and would
+        # 404). The read is still audited via the execution summary + trace,
+        # and the workflow panel shows the source file separately.
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             return {"status": "success", "summary": "binary_file_skipped",
-                    "affected": [str(path)], "content": ""}
+                    "affected": [], "read_path": str(path), "content": ""}
         return {"status": "success", "summary": f"read_{len(text)}_chars",
-                "affected": [str(path)], "content": text}
+                "affected": [], "read_path": str(path), "content": text}
 
     def _list(self, target: str) -> dict:
         if not target or not target.strip():
