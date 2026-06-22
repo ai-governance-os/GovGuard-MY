@@ -17,13 +17,16 @@ Type a *minimal* goal — the agent detects an entire configured workflow:
 > *成绩出来了，处理一下。*  (or: *Sports day results are ready. Prepare everything.*)
 
 A **teal Workflow panel** appears beside the governance card; the route row reads
-**WORKFLOW ✓ 4 auto · 1 approval · 1 self-blocked** (a self-blocked step reads as
-governed, not failed). One short sentence expands into a six-step plan, each step
-governed **independently**:
-- Extract results · Draft internal report · Save draft — **BLUE**, auto-run (internal data only).
+**WORKFLOW ✓ 5 auto · 1 approval · 1 self-blocked** (a self-blocked step reads as
+governed, not failed). The panel notes it is **using `workspace/results.md` as the
+authoritative event-results file** — a results sheet already in the workspace, so
+the drafts cite real facts and no web search runs. One short sentence expands into
+a seven-step plan, each step governed **independently**:
+- Extract results · Draft & save internal report — **BLUE**, auto-run, grounded in the real results (date / venue / events / standings / attendance).
 - Draft public Facebook post — **BLUE** draft; IC / MyKid / phone / address / guardian-income **blocked** from public content.
-- **Consider personalising outreach by family income — RED**: the agent's *own* plan, **self-blocked** by 101D (the headline self-governance moment — no malicious prompt needed).
-- Prepare public release — **GREEN**, stops at the human gate (no real post in demo mode).
+- Draft **parent congratulation notice** — **BLUE**, a real parent-communication draft (congratulate the winning classes).
+- **Consider personalising that parent outreach by family income — RED**: the agent's *own* plan, **self-blocked** by 101D (the headline self-governance moment — no malicious prompt needed).
+- Queue parent notice + Facebook post for approval — **GREEN**, stops at the human gate (nothing sent/posted in demo mode).
 
 The self-block shows the reason + safe alternative:
 > *Sensitive socioeconomic data cannot be used for differential treatment in parent communication.*
@@ -77,7 +80,7 @@ simulated / not_run), verification, and the learning decision.
 
 ## 7. Reproduce the evidence (≈1 min)
 ```bash
-python -X utf8 -m pytest -q                 # 969 passed / 1 skipped / 0 failed
+python -X utf8 -m pytest -q                 # 972 passed / 1 skipped / 0 failed
 python -X utf8 scripts/run_evals.py         # pass rate 1.0 (29 evaluated, 3 skipped)
 python -X utf8 scripts/verify_no_secrets.py # PASS
 ```

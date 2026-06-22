@@ -19,13 +19,38 @@ pytest                : 949 passed, 1 skipped, 0 failed   ← GREEN
 - pytest after **Phase 5** (101D integrated): **962 passed, 1 skipped, 0 failed** (= 949 + 13).
 - pytest after **Phase 9** (workflow build): **964 passed, 1 skipped, 0 failed** (965 collected; = 949 + 15).
 - pytest after **V2 critique fixes** (this folder): **969 passed, 1 skipped, 0 failed** (970 collected; = 949 + 20).
+- pytest after **V2 live-key fixes**: **972 passed, 1 skipped, 0 failed** (973 collected; = 949 + 23).
 - Offline governance eval: **pass rate 1.0** (29 evaluated, 3 documented L2 skips) — unchanged.
-- New workflow tests: `tests/test_workflow_autonomy.py` — 20 total (5 resolver-direct, 3 102W integration, 5 101D / data-use, 1 output-quality, 1 server panel, 3 natural-language self-governance, 2 C-tier understanding).
+- New workflow tests: `tests/test_workflow_autonomy.py` — 23 total (adds: no-web-for-workflow, grounded-outputs, 3-LLM-call latency).
 - New intentional skips: none.
 
 > Doc-number correction: the shipped docs previously claimed **932/933** — stale
 > from before the FIX_PLAN added ~17 tests without updating them. All judge docs
-> are now corrected to the measured **969/970** (pre-workflow baseline 949 noted).
+> are now corrected to the measured **972/973** (pre-workflow baseline 949 noted).
+
+## V2 live-key fixes (after a real GPT-4o run drifted: slow / web-polluted / generic)
+A live-key run of the headline workflow ran ~1 min, showed DuckDuckGo web sources +
+generic sports-day advice, and produced ungrounded drafts; and the income self-block
+was logically floating (the workflow had no parent-communication action). Fixed:
+- **Workflow ownership (P0-a):** web search is gated on `workflow_plan is None`
+  (`runtime.py`) — once 102W matches, no unsolicited search / web-context injection.
+  Generic tasks keep web search. (Test: `test_workflow_skips_web_search`.)
+- **Latency (P0-b):** 102W flags non-deliverable steps `workflow_template_only`
+  (report-stub, RED self-block, GREEN release); the synthesizer short-circuits them
+  with deterministic templates (no LLM). Content drafts capped at 1200 tokens →
+  3 live calls (was ~5×4000) + no web. (Test: `test_workflow_status_steps_use_template_not_llm`.)
+- **Narrowed synthesis (P0-c):** `_synth_workflow_text` — local context only, no web,
+  no inventing, sensitive-data rules, "do not touch the route".
+- **Grounding (P1):** `Runtime._attach_workflow_context` reads `workspace/results.md`
+  once; internal steps get the full data, public-facing steps only the delimited
+  `## Public Summary`. Both tiers (template + live model) cite real facts. (Test:
+  `test_workflow_outputs_grounded_in_results`.) Source shown in the panel (P1-b).
+- **Logical coherence (P2):** workflow redesigned to 7 steps — added a REAL
+  `draft_parent_congrats_notice` (BLUE) so the income self-block governs an action
+  the workflow actually performs. Routes BLUE×5 + RED + GREEN. Richer
+  `demo/sports_day_results.md` (date/venue/programme/full events/standings/attendance
+  + a public-safe summary block). The live GPT-4o output quality remains owner-verified
+  (the offline stub proves wiring + grounding + the call cap).
 
 ## V2 critique fixes (after a mentor review of the natural-input behaviour)
 A reviewer found the flagship self-governance claim was real in unit tests but

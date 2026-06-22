@@ -21,8 +21,8 @@ not test-trimmed relative to the 10.7.4 spine it derives from.
 
 ## Tier 2 — Public MAIC evaluation build (this repository)
 The exact, reproducible result of the public surface, in a clean zero-key env:
-- **pytest: 969 passed / 1 skipped / 0 failed** (970 collected).
-  - This includes the Workflow Autonomy layer (102W/101D) and its 20 new tests
+- **pytest: 972 passed / 1 skipped / 0 failed** (973 collected).
+  - This includes the Workflow Autonomy layer (102W/101D) and its 23 new tests
     in `tests/test_workflow_autonomy.py`. The pre-workflow baseline on this same
     tree was 949 passed / 1 skipped / 0 failed (950 collected).
   - The 1 skip is documented (`tests/test_qpatch.py:256` — an intentional
@@ -64,11 +64,14 @@ Behaviour eval over the seed + public-school cases (offline, `smart_mock`):
 - **Workflow Autonomy (one configured workflow demonstrated).** Implemented and
   demoed: one configured `post_event_reporting` workflow. Mechanism: a
   config-driven workflow resolver (102W) + workflow metadata + the *normal*
-  governance pipeline (101B → 103 → 105/107) + a data-use guard (101D). Low-risk
-  steps auto-run (BLUE), the external release needs human approval (GREEN), and
-  the agent self-blocks using guardian income for differential treatment (RED) —
-  both as a step inside the workflow and on free-text input (EN + 中文).
-  Extensible by adding more workflow templates under `configs/workflows/`.
+  governance pipeline (101B → 103 → 105/107) + a data-use guard (101D). The 7-step
+  flow: low-risk drafting auto-runs (BLUE) — internal report, public Facebook post,
+  and a real parent-congratulation notice; the agent then self-blocks personalising
+  that parent outreach by family income (RED); and queuing the parent notice + post
+  for release needs human approval (GREEN). The same RED also fires on free-text
+  input (EN + 中文). Outputs are grounded in a local `workspace/results.md` (cited
+  in the panel); a workflow-owned task runs **no web search**. Extensible by adding
+  more templates under `configs/workflows/`.
 - **Understanding vs deciding (separated layers).** Free-form requests are
   *understood* by a deterministic concept lexicon offline, or by GPT-4o labelling
   closed-vocabulary data-use concepts when a key is present (gated: at most one

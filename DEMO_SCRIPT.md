@@ -13,27 +13,32 @@ trilingual notice template). Start: `python -X utf8 -m server.app` →
 > traced. First watch one sentence become a whole governed workflow — then the
 > four routes."
 
-**Beat W — one sentence becomes a governed workflow (40 s, the headline).** Type
-a minimal goal:
+**Beat W — one sentence becomes a governed workflow (40 s, the headline).** First
+set the scene: *"A sports-day **results file is already in the school workspace**.
+I only give the agent a minimal instruction."* Then type:
 > *成绩出来了,处理一下。*  (or in English: *Sports day results are ready. Prepare everything.*)
 
 "I gave it one line. It detected the **post-event reporting workflow** and built a
-six-step plan — the route row reads **WORKFLOW ✓ 4 auto · 1 approval · 1
-self-blocked**. Extracting results, drafting the internal report, saving the draft
-— **BLUE**, done automatically. Drafting the public Facebook post — **BLUE**, but
-IC, MyKid, phone, address and guardian income are **blocked** from anything
-public. Then preparing the public release — **GREEN**: it stops and asks me,
-because anything that leaves the school needs a human. Low-risk work automated,
+seven-step plan — the route row reads **WORKFLOW ✓ 5 auto · 1 approval · 1
+self-blocked**, and the panel says it is **using `workspace/results.md` as the
+authoritative source** (so this is grounded in real data, not web filler).
+Extracting results, drafting and saving the internal report — **BLUE**, done
+automatically, citing the real winners and standings. Drafting the public Facebook
+post and a **parent congratulation notice** — **BLUE** drafts, but IC, MyKid,
+phone, address and guardian income are **blocked** from anything public. Then
+queuing the parent notice and FB post for release — **GREEN**: it stops and asks
+me, because anything that leaves the school needs a human. Low-risk work automated,
 the risky step asks — *human by exception*."
 
 **Beat W2 — the agent governs its OWN plan (20 s, the moment that matters).** Point
 at the **RED** step already in the panel — *Consider personalising outreach by
 family income*:
 
-"This isn't a user attack — it's the agent's *own* plan, inside the workflow,
-proposing to use family income to treat parents differently. Module 101D blocks
-it — **RED: sensitive socioeconomic data cannot be used for differential treatment
-in parent communication** — and offers the safe alternative: student progress,
+"This isn't a user attack — it's the agent's *own* plan: having just drafted the
+**parent congratulation notice**, it considers personalising that outreach by
+family income (who to call first, how warmly to word it). Module 101D blocks it —
+**RED: sensitive socioeconomic data cannot be used for differential treatment in
+parent communication** — and offers the safe alternative: student progress,
 attendance, homework completion. The agent governs **itself**. (You can also type
 that request as free text, EN or 中文, and get the same RED — with a key, GPT-4o
 *understands* the request, but the deterministic core still *decides*.)"

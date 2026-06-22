@@ -62,21 +62,27 @@ Type one minimal goal:
 The agent detects the **`post_event_reporting` workflow** and shows a teal
 **Workflow panel** beside the governance card:
 
-The route row shows a teal **WORKFLOW ✓ 4 auto · 1 approval · 1 self-blocked**
+The route row shows a teal **WORKFLOW ✓ 5 auto · 1 approval · 1 self-blocked**
 status (a self-blocked step reads as governed, not as a failed task):
+
+The panel also shows **"Using `workspace/results.md` as the authoritative
+event-results file"** — a results sheet already in the school workspace; the
+drafts are grounded in it (no web search runs for a workflow task).
 
 | # | Step | Route | Why |
 |---|------|-------|-----|
-| 1 | Extract results | **BLUE** | internal event data, auto-run |
-| 2 | Draft internal report | **BLUE** | name / class / result / award allowed internally |
-| 3 | Save internal draft | **BLUE** | stored under `outputs/` |
-| 4 | Draft public Facebook post | **BLUE** | IC / MyKid / phone / address / guardian-income **blocked** from public content |
-| 5 | Consider personalising outreach by family income | **RED** | the agent's **own** plan — 101D self-blocks it (see below) |
-| 6 | Prepare public release | **GREEN** | external release waits for human approval (no real post in demo) |
+| 1 | Extract results (from `workspace/results.md`) | **BLUE** | local event data, auto-run |
+| 2 | Draft internal report | **BLUE** | grounded in the real results (date / venue / events / standings / attendance) |
+| 3 | Save internal report | **BLUE** | stored under `outputs/` |
+| 4 | Draft public Facebook post | **BLUE** | public summary only; IC / MyKid / phone / address / income **blocked** |
+| 5 | Draft parent congratulation notice | **BLUE** | a real parent-communication draft (congratulate the winning classes) |
+| 6 | Consider personalising that outreach by family income | **RED** | the agent's **own** plan — 101D self-blocks it (see below) |
+| 7 | Queue parent notice + Facebook post for approval | **GREEN** | external send waits for human approval (nothing sent in demo) |
 
-Step 5 is the **self-governance** moment — the agent blocks its *own* plan, with
-no malicious user prompt required:
-> Blocked internal action: *personalise / prioritise which parents to contact first using guardian household income* — **RED**
+Step 6 is the **self-governance** moment: when deciding *how* to personalise the
+**real** parent outreach (step 5), the agent is tempted to use family income —
+and blocks its *own* plan, with no malicious user prompt required:
+> Blocked internal action: *personalise / prioritise the parent congratulation outreach using guardian household income* — **RED**
 > *Sensitive socioeconomic data cannot be used for differential treatment in parent communication.*
 > Safe alternative: student progress, attendance, homework completion, or neutral communication preferences.
 
@@ -115,8 +121,8 @@ tools are mock; after approval, execution is **simulated and labelled**, while
 the **audit trace and signed ticket are real**.
 
 ## Evidence (see [CLAIMS_CHECK.md](CLAIMS_CHECK.md) for the tiered, reproducible ledger)
-- **Public MAIC build (this repo):** `pytest` → 969 passed / 1 skipped / 0 failed (970 collected),
-  including the Workflow Autonomy layer (102W/101D) and its 20 tests. Pre-workflow
+- **Public MAIC build (this repo):** `pytest` → 972 passed / 1 skipped / 0 failed (973 collected),
+  including the Workflow Autonomy layer (102W/101D) and its 23 tests. Pre-workflow
   baseline on the same tree: 949 passed / 1 skipped / 0 failed.
 - **Offline governance eval:** `python -X utf8 scripts/run_evals.py` → pass rate **1.0**
   (32 cases: 29 evaluated incl. the public-school cases, 3 documented L2 skips).
