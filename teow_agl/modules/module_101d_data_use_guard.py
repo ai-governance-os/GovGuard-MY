@@ -45,14 +45,22 @@ def _normalize(text: Any) -> str:
     return _WS.sub(" ", t).strip()
 
 
-# Sensitive socioeconomic fields that must never drive differential treatment.
+# Sensitive socioeconomic / social-status fields that must never drive
+# differential treatment (income, wealth, AND social standing — a Dato'/Datuk
+# title, PIBG/PTA committee position, or donation potential are status signals,
+# not legitimate communication factors).
 _SOCIO_FIELDS = (
     "guardian income", "household income", "family income", "parent income",
     "parents income", "income", "salary", "wage", "socioeconomic",
     "socio economic", "family background", "household background",
     "guardian occupation", "parent occupation", "occupation",
+    # social status / standing (Malaysian public-school context)
+    "dato", "datuk", "datin", "social status", "social title", "social standing",
+    "pibg", "家协", "committee member", "committee position", "committee role",
+    "donation potential", "donation", "donor", "donate",
     "家庭收入", "家长收入", "父母收入", "家长薪水", "薪水", "收入",
     "家庭背景", "家境", "收入水平", "父母职业", "家长职业", "社会经济",
+    "拿督", "拿汀", "社会地位", "家协地位", "捐款", "捐献", "捐款潜力",
 )
 # Personally-identifying numbers / contacts that must never be published.
 _PUBLIC_PII = (
@@ -74,10 +82,14 @@ _DIFFERENTIAL_CUES = (
     "according to income", "based on family", "rank parents", "called first",
     "who gets called", "contact first", "call order", "contact order",
     "single out", "target parents",
+    # differential favour / softening honesty by status (the PIBG/Dato' test)
+    "more strongly", "stronger praise", "praise one", "more attention",
+    "special attention", "favour", "favor", "preferential", "soften the",
+    "go easier", "less honest",
     # CJK kept narrow — only phrases that clearly mean differential treatment
     # or contact-ordering, not generic task-priority words like 优先/排序/针对.
     "区别对待", "差别对待", "按收入", "依收入", "按家庭", "个性化对待",
-    "先打电话", "先联系", "优先联系", "优先打给",
+    "先打电话", "先联系", "优先联系", "优先打给", "特别关照", "偏袒", "优待",
 )
 _PUBLIC_SCOPES = ("public", "public_release", "external")
 
