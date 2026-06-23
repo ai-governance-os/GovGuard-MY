@@ -80,8 +80,8 @@ simulated / not_run), verification, and the learning decision.
 
 ## 7. Reproduce the evidence (≈1 min)
 ```bash
-python -X utf8 -m pytest -q                 # 972 passed / 1 skipped / 0 failed
-python -X utf8 scripts/run_evals.py         # pass rate 1.0 (29 evaluated, 3 skipped)
+python -X utf8 -m pytest -q                 # 989 passed / 1 skipped / 0 failed
+python -X utf8 scripts/run_evals.py         # pass rate 1.0 (31 evaluated, 3 skipped)
 python -X utf8 scripts/verify_no_secrets.py # PASS
 ```
 

@@ -21,10 +21,12 @@ not test-trimmed relative to the 10.7.4 spine it derives from.
 
 ## Tier 2 — Public MAIC evaluation build (this repository)
 The exact, reproducible result of the public surface, in a clean zero-key env:
-- **pytest: 972 passed / 1 skipped / 0 failed** (973 collected).
-  - This includes the Workflow Autonomy layer (102W/101D) and its 23 new tests
-    in `tests/test_workflow_autonomy.py`. The pre-workflow baseline on this same
-    tree was 949 passed / 1 skipped / 0 failed (950 collected).
+- **pytest: 989 passed / 1 skipped / 0 failed** (990 collected).
+  - This includes the Workflow Autonomy layer (102W/101D) and its 39 tests in
+    `tests/test_workflow_autonomy.py` (the post-event reporting workflow plus the
+    National Athletics reporting workflow with its rich-DB field-selection,
+    self-block, and two-tier curated/live drafting). The pre-workflow baseline on
+    this same tree was 949 passed / 1 skipped / 0 failed (950 collected).
   - The 1 skip is documented (`tests/test_qpatch.py:256` — an intentional
     precision case).
 - **Task 5 fix is real and verified.** Before it, a clean-env run *failed* on
@@ -43,7 +45,7 @@ The exact, reproducible result of the public surface, in a clean zero-key env:
 
 ## Tier 3 — Offline governance eval
 Behaviour eval over the seed + public-school cases (offline, `smart_mock`):
-- **pass rate 1.0** — 32 cases: 29 evaluated (0 failed), 3 skipped (L2 cases that
+- **pass rate 1.0** — 34 cases: 31 evaluated (0 failed), 3 skipped (L2 cases that
   require a live semantic classifier; skipped offline by design, never failed).
 - Reproduce: `python -X utf8 scripts/run_evals.py`.
 

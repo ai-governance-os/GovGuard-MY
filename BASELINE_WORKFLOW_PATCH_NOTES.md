@@ -20,8 +20,10 @@ pytest                : 949 passed, 1 skipped, 0 failed   ← GREEN
 - pytest after **Phase 9** (workflow build): **964 passed, 1 skipped, 0 failed** (965 collected; = 949 + 15).
 - pytest after **V2 critique fixes** (this folder): **969 passed, 1 skipped, 0 failed** (970 collected; = 949 + 20).
 - pytest after **V2 live-key fixes**: **972 passed, 1 skipped, 0 failed** (973 collected; = 949 + 23).
-- Offline governance eval: **pass rate 1.0** (29 evaluated, 3 documented L2 skips) — unchanged.
-- New workflow tests: `tests/test_workflow_autonomy.py` — 23 total (adds: no-web-for-workflow, grounded-outputs, 3-LLM-call latency).
+- pytest after **readability hotfix**: **976 passed, 1 skipped, 0 failed** (977 collected; = 949 + 27).
+- pytest after **National Athletics workflow** (curated/live two-tier + demo coherence): **989 passed, 1 skipped, 0 failed** (990 collected; = 949 + 40).
+- Offline governance eval: **pass rate 1.0** (31 evaluated, 3 documented L2 skips) — +2 national cases (zh/en → behavior=plan, final_route=RED).
+- New workflow tests: `tests/test_workflow_autonomy.py` — 39 total (adds the National Athletics suite: detection, routes BLUE×8·RED×1·GREEN×1, six curated drafts, field-selection / no-leak, Xiao Le reminder kept + title-as-salutation, Ali BM, audit used/blocked, no invented people, live unfaithful→curated fallback, live faithful→used, server panel).
 - New intentional skips: none.
 
 > Doc-number correction: the shipped docs previously claimed **932/933** — stale

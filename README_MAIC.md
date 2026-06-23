@@ -121,11 +121,12 @@ tools are mock; after approval, execution is **simulated and labelled**, while
 the **audit trace and signed ticket are real**.
 
 ## Evidence (see [CLAIMS_CHECK.md](CLAIMS_CHECK.md) for the tiered, reproducible ledger)
-- **Public MAIC build (this repo):** `pytest` → 972 passed / 1 skipped / 0 failed (973 collected),
-  including the Workflow Autonomy layer (102W/101D) and its 23 tests. Pre-workflow
-  baseline on the same tree: 949 passed / 1 skipped / 0 failed.
+- **Public MAIC build (this repo):** `pytest` → 989 passed / 1 skipped / 0 failed (990 collected),
+  including the Workflow Autonomy layer (102W/101D) and its 39 tests (post-event +
+  National Athletics reporting workflows). Pre-workflow baseline on the same tree:
+  949 passed / 1 skipped / 0 failed.
 - **Offline governance eval:** `python -X utf8 scripts/run_evals.py` → pass rate **1.0**
-  (32 cases: 29 evaluated incl. the public-school cases, 3 documented L2 skips).
+  (34 cases: 31 evaluated incl. the public-school + National Athletics cases, 3 documented L2 skips).
 - **Secret scan:** `python -X utf8 scripts/verify_no_secrets.py` → PASS.
 
 **Not claimed:** no live government deployment, no live pilot impact metric, no
