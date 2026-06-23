@@ -208,12 +208,18 @@ function renderGovPipeline(bubble, d) {
     || decisions.reduce((a, de) => (rank[de.route] > rank[a] ? de.route : a),
                         decisions[0] ? decisions[0].route : "");
 
+  const wfDetected = !!(d.workflow && d.workflow.detected);
   const pre = events.find(e => e.module === "101A");
   let cat = "", mode = "";
   if (pre && pre.summary) {
     const mc = /category=(\S+)/.exec(pre.summary); if (mc) cat = mc[1];
     const mm = /mode=(\S+)/.exec(pre.summary); if (mm) mode = mm[1];
   }
+  // When 102W matched a workflow, show that instead of the raw 101A 'unknown'
+  // category (display only — the underlying 101A result is unchanged).
+  const preDet = wfDetected
+    ? `workflow: ${d.workflow.workflow_id || "post_event_reporting"} (detected by 102W)`
+    : `category: ${cat || "unknown"}${mode ? " · mode: " + mode : ""}`;
   const planned = events.some(e => e.module === "102" && e.event_type === "planner_called");
   const skipped = events.some(e => e.module === "102" && e.event_type === "planner_skipped");
   const plannerDet = planned ? "proposed a plan" : (skipped ? "direct plan (no remote LLM)" : "—");
@@ -232,11 +238,15 @@ function renderGovPipeline(bubble, d) {
   let approvalDet = needApproval ? (anyOk ? "approved by a human" : "approval required") :
                                    "not required (within policy)";
   let execDet;
-  if (route === "RED") { approvalDet = "—"; execDet = "blocked — nothing executed"; }
+  const okCount = execs.filter(e => e.status === "success").length;
+  if (route === "RED" && wfDetected) {
+    // Workflow: low-risk steps DID run; only the self-blocked step didn't.
+    approvalDet = "external release awaiting approval";
+    execDet = `${okCount} step(s) executed; 1 self-blocked`;
+  } else if (route === "RED") { approvalDet = "—"; execDet = "blocked — nothing executed"; }
   else if (route === "INFEASIBLE") { approvalDet = "—"; execDet = "not run — honest limitation"; }
   else {
-    const ok = execs.filter(e => e.status === "success").length;
-    execDet = ok ? `${ok} action(s) executed` : "not run";
+    execDet = okCount ? `${okCount} action(s) executed` : "not run";
   }
   const ver = d.verification;
   let verDet = "not run", verFail = false;
@@ -251,11 +261,14 @@ function renderGovPipeline(bubble, d) {
   el.innerHTML =
     `<div class="gp-title">Governance pipeline — the planner proposes, governance decides</div>`
     + step("106", "Intake", "request received &amp; normalized")
-    + step("101A", "Pre-governance", esc(`category: ${cat || "unknown"}${mode ? " · mode: " + mode : ""}`))
+    + step("101A", "Pre-governance", esc(preDet))
     + step("102", "Planner", esc(plannerDet) + " — <em>cannot self-authorise</em>")
     + step("101B", "Action risk", esc(riskDet))
     + step("103", "Decision",
-        `<b class="gp-route ${esc(route)}">${esc(route)}</b>${reason ? " — " + esc(reason) : ""}`,
+        `<b class="gp-route ${esc(route)}">${esc(route)}</b>${reason ? " — " + esc(reason) : ""}`
+        + (wfDetected && route === "RED"
+            ? `<div class="gp-note">Operational risk was low — the data-use guard (101D) blocked one internal action; it is a single step inside a governed workflow.</div>`
+            : ""),
         "gp-decision")
     + step("105", "Human gate", esc(approvalDet))
     + step("107", "Execution", esc(execDet))
@@ -785,6 +798,23 @@ function escapeAttr(s) {
 }
 
 function describeOutcome(d) {
+  // Workflow tasks: a self-blocked internal step must NOT read as a failed
+  // task. Summarise the governed workflow (display only — the route stays RED).
+  const wf = d.workflow;
+  if (wf && wf.detected) {
+    const sm = wf.summary || {};
+    const bits = [];
+    if (sm.auto) bits.push(`${sm.auto} done`);
+    if (sm.approval) bits.push(`${sm.approval} awaiting approval`);
+    if (sm.self_blocked) bits.push(`${sm.self_blocked} self-blocked`);
+    let msg = `Governed workflow — ${bits.join(" · ")}.`;
+    if (sm.self_blocked) {
+      msg += " One unsafe internal data-use proposal was self-blocked"
+        + " (using guardian income to differentiate parent communication).";
+    }
+    msg += " Nothing is sent or published in demo mode.";
+    return msg;
+  }
   const route = d.final_route;
   if (route === "INFEASIBLE") return "I can't do this — capability or resource constraint.";
   if (route === "RED") return "Blocked by governance.";
@@ -847,10 +877,21 @@ function renderArtifacts(el, d) {
       a.href = `/api/outputs/${encodeURIComponent(fn)}`;
       a.target = "_blank";
       a.download = fn;
-      a.innerHTML = `<span class="icon">${iconFor(fn)}</span><span>${escapeHtml(fn)}</span>`;
+      a.title = fn;
+      a.innerHTML = `<span class="icon">${iconFor(fn)}</span>`
+        + `<span>${escapeHtml(friendlyArtifactLabel(fn))}</span>`;
       el.appendChild(a);
     }
   }
+}
+
+function friendlyArtifactLabel(fn) {
+  return ({
+    "save_internal_report.md": "Internal Activity Report Draft",
+    "draft_internal_report.md": "Internal Activity Report Draft",
+    "draft_public_fb_post.md": "Public Facebook Post Draft",
+    "draft_parent_congrats_notice.md": "Parent Notice Draft",
+  })[fn] || fn;
 }
 
 function iconFor(name) {
@@ -1495,8 +1536,18 @@ async function loadHistory() {
       item.innerHTML = `<div class="h-goal"></div><div class="h-meta"><span class="chip"></span><span></span></div>`;
       item.querySelector(".h-goal").textContent = (t.raw_goal || "").slice(0, 100);
       const chip = item.querySelector(".chip");
-      chip.classList.add(t.final_route || "NONE");
-      chip.textContent = t.final_route || "NONE";
+      if (t.workflow_detected) {
+        // A governed workflow with a self-blocked step must not read as a
+        // failed RED task in the history list (display only; route stays RED).
+        const sm = t.workflow_summary || {};
+        chip.classList.add("WORKFLOW");
+        chip.textContent = sm.self_blocked ? "READY · 1 self-blocked" : "READY";
+        chip.title = `Governed workflow — ${sm.auto || 0} done · `
+          + `${sm.approval || 0} approval · ${sm.self_blocked || 0} self-blocked`;
+      } else {
+        chip.classList.add(t.final_route || "NONE");
+        chip.textContent = t.final_route || "NONE";
+      }
       item.querySelectorAll(".h-meta span")[1].textContent = (t.started_at || "").slice(11, 19);
       list.appendChild(item);
     }

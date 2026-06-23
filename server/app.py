@@ -564,7 +564,9 @@ def list_tasks() -> dict:
     with _app_state["lock"]:
         return {"tasks": [
             {"task_id": s.task_id, "status": s.status, "raw_goal": s.raw_goal,
-             "started_at": s.started_at, "final_route": s.final_route}
+             "started_at": s.started_at, "final_route": s.final_route,
+             "workflow_detected": bool(s.workflow and s.workflow.get("detected")),
+             "workflow_summary": (s.workflow or {}).get("summary")}
             for s in _app_state["tasks"].values()
         ]}
 

@@ -451,10 +451,17 @@ def _seed_results(workspace: Path) -> None:
     (wsdir / "results.md").write_text(
         "# Sports Day 2026 — Results\n"
         "- School: SK Demo Primary School\n"
+        "- Date: 15 March 2026\n"
         "- Overall Champion: Rumah Merah\n"
+        "- Winning classes: 5 Bestari, 6 Mawar\n"
         "- Student attendance: 96%\n\n"
         "## Public Summary\n"
+        "- School: SK Demo Primary School\n"
+        "- Event: Sports Day 2026\n"
+        "- Date: 15 March 2026\n"
         "- Overall Champion: Rumah Merah\n"
+        "- Best Spirit Award: Rumah Biru\n"
+        "- Winning classes: 5 Bestari, 6 Mawar\n"
         "- Student attendance: 96%\n", encoding="utf-8")
 
 
@@ -524,3 +531,67 @@ def test_workflow_status_steps_use_template_not_llm(isolated_workspace: Path):
     rt.synthesizer.chat_llm = _Counter()
     rt.run(raw_goal=WORKFLOW_GOAL_CN)
     assert calls["n"] == 3, f"expected 3 content-draft LLM calls, got {calls['n']}"
+
+
+# ── demo readability & output consistency (hotfix) ──────────────────────────
+
+def test_public_drafts_trilingual_grounded_no_placeholders(isolated_workspace: Path):
+    """Public drafts (FB + parent notice) are trilingual (中 / BM / English),
+    grounded in the real results, and contain NO unresolved placeholders."""
+    _seed_results(isolated_workspace)
+    rt = _runtime(isolated_workspace)
+    rt.run(raw_goal=WORKFLOW_GOAL_CN)
+    out = isolated_workspace / "outputs"
+    for fn in ("draft_public_fb_post.md", "draft_parent_congrats_notice.md"):
+        b = (out / fn).read_text(encoding="utf-8")
+        assert any(ord(c) > 0x4E00 for c in b), f"{fn}: no Chinese"
+        assert any(m in b for m in ("Bahasa Melayu", "Tahniah", "Hari Sukan",
+                                    "Ibu bapa")), f"{fn}: no Malay"
+        assert any(m in b for m in ("English", "Congratulations",
+                                    "Dear parents")), f"{fn}: no English"
+        assert "SK Demo Primary School" in b and "Rumah Merah" in b, f"{fn}: ungrounded"
+        for ph in ("[School Name]", "[Date]", "[Insert", "TODO", "placeholder",
+                   "sample content", "model failed", "retry later", "很抱歉"):
+            assert ph not in b, f"{fn}: unresolved placeholder {ph!r}"
+
+
+def test_workflow_outputs_no_invented_classes(isolated_workspace: Path):
+    """No generated output names a class absent from the canonical results — the
+    FB-post hallucination ('3 Gemilang', '4 Cemerlang') the live run showed."""
+    _seed_results(isolated_workspace)
+    rt = _runtime(isolated_workspace)
+    rt.run(raw_goal=WORKFLOW_GOAL_CN)
+    out = isolated_workspace / "outputs"
+    for fn in ("draft_public_fb_post.md", "draft_parent_congrats_notice.md",
+               "save_internal_report.md"):
+        b = (out / fn).read_text(encoding="utf-8")
+        for bad in ("3 Gemilang", "4 Cemerlang", "7 Bestari"):
+            assert bad not in b, f"{fn}: invented class {bad!r}"
+
+
+def test_task_list_surfaces_workflow_status_not_red(monkeypatch):
+    """The /api/tasks list exposes workflow_detected + summary so the history
+    badge shows a governed-workflow status instead of plain RED (Problem 1)."""
+    import time
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("TEOW_AGL_PLANNER", "smart_mock")
+    from fastapi.testclient import TestClient
+    from server.app import app
+
+    c = TestClient(app)
+    tid = c.post("/api/tasks", json={"raw_goal": WORKFLOW_GOAL_EN}).json()["task_id"]
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        st = c.get(f"/api/tasks/{tid}").json()
+        if st["status"] == "awaiting_approval":
+            c.post(f"/api/tasks/{tid}/decide",
+                   json={"approval_id": st["pending_approvals"][0]["approval_id"],
+                         "status": "rejected"})
+        if st["status"] in ("done", "error"):
+            break
+        time.sleep(0.2)
+    row = next(t for t in c.get("/api/tasks").json()["tasks"]
+               if t["task_id"] == tid)
+    assert row["workflow_detected"] is True
+    assert row["workflow_summary"]["self_blocked"] == 1
+    assert row["workflow_summary"]["auto"] >= 4

@@ -131,43 +131,62 @@ def _workflow_fallback_body(user_intent: str, meta: dict) -> str:
 
     if scope == "public_release" or "release" in step or "queue" in step or "approval" in step:
         return (
-            "【待人工批准 / Pending human approval】\n\n"
-            "以下内容已备好,只有在校方人员批准后才会发送 / 发布"
+            "【草稿已备好 — 待对外发布批准 / Drafts ready — pending approval for "
+            "external release / Draf siap — menunggu kelulusan】\n\n"
+            "低风险草稿已自动完成;以下内容已备好,**需校方人员批准后**才会发送 / 发布"
             "(示范模式下不会真的发出):\n"
-            "Ready for release ONLY after an educator approves (nothing is sent or "
-            "published in demo mode):\n\n"
-            "• 内部活动报告草稿 / Internal activity-report draft\n"
-            "• 公开版 Facebook 文案草稿 / Public Facebook-post draft\n"
-            "• 家长祝贺通知草稿 / Parent congratulation-notice draft\n\n"
+            "Low-risk drafts are done. The following are ready and will be sent / "
+            "published ONLY after an educator approves (nothing leaves in demo mode):\n\n"
+            "• 内部活动报告草稿 / Internal Activity Report Draft\n"
+            "• 公开版 Facebook 文案草稿 / Public Facebook Post Draft\n"
+            "• 家长祝贺通知草稿 / Parent Notice Draft\n\n"
             "对外发送 / 发布属于 GREEN —— 需人工批准后才会有任何对外动作。\n"
-            "Sending / publishing is GREEN: it requires human approval before any "
-            "outside action."
+            "Sending / publishing is GREEN: it needs human approval before any "
+            "outside action. / Penghantaran memerlukan kelulusan manusia."
         )
     if "parent" in scope or "parent" in step:
         body = (
-            "【家长祝贺通知草稿 / Parent Congratulation Notice — Draft】\n\n"
-            "亲爱的家长:恭喜贵子女所属班级在本次校运会中取得佳绩!感谢您一直以来的支持与鼓励。\n"
-            "Dear parents: congratulations to your child's class on their fine "
-            "results at our Sports Day! Thank you for your continued support.\n"
+            "【家长祝贺通知草稿 / Parent Congratulation Notice — Draft / "
+            "Draf Notis Tahniah】\n\n"
+            "=== 中文 ===\n"
+            "尊敬的家长:我们很高兴与您分享,本校在校运会中取得了优异的整体成绩。"
+            "谨向得奖班级的同学及全体家长致以祝贺,感谢您对孩子努力与团队精神的支持。\n\n"
+            "=== Bahasa Melayu ===\n"
+            "Ibu bapa yang dihormati: dengan sukacitanya kami berkongsi bahawa "
+            "sekolah kami mencapai keputusan keseluruhan yang cemerlang pada Hari "
+            "Sukan. Tahniah kepada kelas yang menang dan terima kasih atas sokongan "
+            "anda terhadap usaha serta semangat berpasukan murid.\n\n"
+            "=== English ===\n"
+            "Dear parents: we are pleased to share that our school achieved "
+            "excellent overall results at Sports Day. Congratulations to the "
+            "winning classes, and thank you for supporting your children's effort "
+            "and teamwork.\n"
         )
         if ctx:
-            body += "\n— 公开摘要 / Public summary —\n" + ctx + "\n"
-        body += ("\n(本通知不含家庭收入、身份证号、电话等敏感资料;发送前须校方批准。 / "
-                 "No household-income, IC, phone or address data; subject to school "
+            body += "\n— 公开摘要 / Public summary / Ringkasan awam —\n" + ctx + "\n"
+        body += ("\n(本通知庆祝学生的努力与团队精神,不含家庭收入、身份证号、电话或住址等"
+                 "敏感资料;发送前须校方批准。 / Celebrates student effort and teamwork; "
+                 "no household-income, IC, phone or address data; subject to school "
                  "approval before sending.)")
         return body + src_line
     if scope == "public_draft":
         body = (
-            "【公开草稿 — Facebook / Public draft — Facebook】\n\n"
-            "🎉 我们的校运会圆满结束!恭喜所有得奖班级与同学,也感谢老师与家长的支持。\n"
-            "Our Sports Day was a great success! Congratulations to all winning "
-            "classes and students, and thank you to our teachers and parents.\n"
+            "【公开草稿 — Facebook / Public Draft — Facebook / Draf Awam】\n\n"
+            "=== 中文 ===\n"
+            "🎉🏆 我们的校运会圆满结束!恭喜所有得奖班级,也感谢老师、同学与家长的支持与团队精神。\n\n"
+            "=== Bahasa Melayu ===\n"
+            "🎉🏆 Hari Sukan kami berjaya dengan gemilang! Tahniah kepada semua kelas "
+            "yang menang, dan terima kasih kepada guru, murid serta ibu bapa atas "
+            "sokongan dan semangat berpasukan.\n\n"
+            "=== English ===\n"
+            "🎉🏆 Our Sports Day was a wonderful success! Congratulations to all the "
+            "winning classes, and thank you to our teachers, students and parents.\n"
         )
         if ctx:
-            body += "\n— 公开摘要 / Public summary —\n" + ctx + "\n"
+            body += "\n— 公开摘要 / Public summary / Ringkasan awam —\n" + ctx + "\n"
         body += ("\n(本公开草稿不含身份证号、MyKid、电话、住址或家庭收入,需校方批准后发布。 / "
-                 "No IC, MyKid, phone, home-address or household-income data; "
-                 "released only after school approval.)")
+                 "No IC, MyKid, phone, home-address or household-income data; released "
+                 "only after school approval.)")
         return body + src_line
     # default — internal activity report (grounded in the full results data)
     body = (
@@ -1205,23 +1224,34 @@ class ContentSynthesizer:
         ctx = str(meta.get("workflow_result_context") or "").strip()
         scope = str(meta.get("output_scope") or "").lower()
         public = scope not in ("internal", "")
-        system = (
+        common = (
             "You are drafting content INSIDE a configured GovGuard MY school "
             "workflow. Use ONLY the authoritative results below and the task "
-            "intent. Do NOT use web knowledge or web search. Do NOT invent "
-            "winners, classes, dates or numbers — if a fact is missing write "
-            "'[please confirm]'. Produce a clean bilingual draft (中文 + "
-            "English), file body only, no preamble. The governance route has "
-            "already been decided elsewhere — do not mention, alter, or justify "
-            "it. "
-            + ("This is PUBLIC-FACING content: do NOT include IC, MyKid, "
-               "passport, phone, home address, guardian income, occupation, "
-               "family background, health or discipline data. Names of winning "
-               "CLASSES (e.g. '5 Bestari') and houses are fine."
-               if public else
-               "This is an INTERNAL report for educators — include the concrete "
-               "results, standings, attendance and programme.")
+            "intent. Do NOT use web knowledge or web search. Do NOT invent or "
+            "rename winners, classes, houses, dates or numbers — use ONLY the "
+            "names that appear verbatim in the results; if a fact is missing, "
+            "OMIT it (do NOT write placeholders like [School Name], [Date], "
+            "TODO, or 'sample'). File body only, no preamble. The governance "
+            "route has already been decided elsewhere — do not mention, alter, "
+            "or justify it. "
         )
+        if public:
+            system = common + (
+                "This is PUBLIC-FACING Malaysian public-school content: write it "
+                "in THREE sections clearly headed '=== 中文 ===', '=== Bahasa "
+                "Melayu ===', '=== English ===' with consistent meaning. Do NOT "
+                "include IC, MyKid, passport, phone, home address, guardian "
+                "income, occupation, family background, health or discipline "
+                "data. Names of winning CLASSES (e.g. '5 Bestari') and houses "
+                "(e.g. 'Rumah Merah') are fine. Do NOT claim any individual "
+                "child won — celebrate the classes' and school's achievement."
+            )
+        else:
+            system = common + (
+                "This is an INTERNAL report for educators — include the concrete "
+                "results, standings, attendance and programme. A clean bilingual "
+                "(中文 + English) draft is fine."
+            )
         user = (
             f"Task: {action.purpose or user_intent}\n\n"
             f"Authoritative results — use ONLY this:\n"

@@ -42,6 +42,9 @@
 
 ## 公开摘要 / Public Summary
 （公开内容只用这一段;不含任何个人身份资料 / Public content uses ONLY this section — no personal identifiers.）
+- 学校 / School: SK Demo Primary School
+- 活动 / Event: Sports Day 2026 (校运会)
+- 日期 / Date: 15 March 2026 (2026-03-15)
 - 总冠军 / Overall Champion: Rumah Merah
 - 最佳精神奖 / Best Spirit Award: Rumah Biru
 - 得奖班级 / Winning classes: 5 Bestari, 5 Cerdas, 6 Mawar, 4 Jaya, 6 Cemerlang
