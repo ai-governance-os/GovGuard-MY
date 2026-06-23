@@ -239,6 +239,27 @@ def _public_summary_section(results_md: str) -> str:
     return text or "Overall results summary (public-safe): see school records."
 
 
+def _parse_curated_drafts(text: str) -> dict[str, str]:
+    """Parse a curated-drafts file delimited by '## [step_id]' headers into a
+    {step_id: draft_text} map. Used to ground a workflow's content steps with
+    deterministic, faithful drafts (smart_mock output + live-model fallback)."""
+    out: dict[str, str] = {}
+    cur: str | None = None
+    buf: list[str] = []
+    for line in text.splitlines():
+        m = re.match(r"^##\s*\[([^\]]+)\]\s*$", line.strip())
+        if m:
+            if cur is not None:
+                out[cur] = "\n".join(buf).strip()
+            cur = m.group(1).strip()
+            buf = []
+        elif cur is not None:
+            buf.append(line)
+    if cur is not None:
+        out[cur] = "\n".join(buf).strip()
+    return out
+
+
 def _is_identity_question(text: str, card: dict | None = None) -> bool:
     """True for explicit identity / capability questions ('who are you',
     'what can you do', '你是谁', '介绍一下你自己', …)."""
@@ -2058,11 +2079,30 @@ class Runtime:
 
     def _attach_workflow_context(self, plan: CandidatePlan,
                                  envelope: TaskEnvelope) -> None:
-        """Ground workflow content steps in the local results file. Reads the
-        workspace results file once and attaches it as authoritative context so
-        the synthesizer (deterministic template AND live model) drafts from real
-        facts. Internal steps get the FULL data; public-facing steps get only
-        the delimited public-safe summary (no personal identifiers)."""
+        """Ground workflow content steps. (1) If the workflow declares per-step
+        `curated_drafts`, attach each step's curated draft (deterministic mock
+        content + the fallback when a live model drifts). (2) For workflows that
+        ground in a local results file, attach the results text (full to internal
+        steps; the public-safe summary to public-facing steps). The synthesizer
+        prefers a live-model draft, then the curated draft, then a generic
+        template — never inventing data outside what is attached here."""
+        wf = (getattr(envelope, "metadata", {}) or {}).get("workflow") or {}
+        # (1) curated per-step drafts (e.g. national_athletics_reporting)
+        curated_rel = wf.get("curated_drafts")
+        if curated_rel:
+            cpath = self.config_dir.parent / curated_rel
+            try:
+                drafts = (_parse_curated_drafts(cpath.read_text(encoding="utf-8"))
+                          if cpath.exists() else {})
+            except OSError:
+                drafts = {}
+            for a in plan.actions:
+                sid = a.metadata.get("workflow_step_id")
+                if sid and sid in drafts:
+                    a.metadata["curated_draft"] = drafts[sid]
+                    a.metadata.setdefault("workflow_source_file",
+                                          "the school student/parent database")
+        # (2) results-file grounding (e.g. post_event_reporting)
         roots = list(getattr(envelope, "workspace_roots", []) or [])
         if not roots:
             roots = list(getattr(self.profile, "workspace_roots", []) or [])
@@ -2083,8 +2123,8 @@ class Runtime:
         public = _public_summary_section(full)
         for a in plan.actions:
             md = a.metadata
-            if not md.get("workflow_id"):
-                continue
+            if not md.get("workflow_id") or md.get("curated_draft"):
+                continue  # curated draft already grounds this step
             scope = str(md.get("output_scope", "")).lower()
             internal = scope in ("internal", "")
             md["workflow_result_context"] = full if internal else public

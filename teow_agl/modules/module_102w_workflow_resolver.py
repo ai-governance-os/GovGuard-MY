@@ -128,6 +128,8 @@ class WorkflowResolver:
             "deadline_hours": tpl.get("deadline_hours", 24),
             "priority": tpl.get("default_priority", "high"),
             "steps": tpl.get("steps", []),
+            "curated_drafts": tpl.get("curated_drafts"),
+            "results_source": tpl.get("results_source"),
             "_source_path": tpl.get("_source_path"),
         }
 
@@ -177,7 +179,7 @@ class WorkflowResolver:
             # The real content drafts (internal report save, FB post, parent
             # notice) are the only steps the live model drafts.
             if (op == "draft_report" or route_hint == "RED"
-                    or output_scope == "public_release"):
+                    or output_scope in ("public_release", "audit")):
                 md["workflow_template_only"] = True
             # Content is produced by the 102B synthesizer (a presentable
             # bilingual workflow draft with no key, or richer text under a live

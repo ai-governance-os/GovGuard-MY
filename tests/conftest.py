@@ -51,6 +51,12 @@ def isolated_workspace(tmp_path: Path) -> Path:
             shutil.copytree(f, dst / "prompts" / f.name)
         else:
             shutil.copy(f, dst / "prompts" / f.name)
+    # demo_data/ holds config-driven workflow assets (rich DB + curated drafts)
+    # that workflows reference relative to the repo root (config_dir.parent), so
+    # the isolated workspace must mirror that layout for them to resolve.
+    demo_src = src_root / "demo_data"
+    if demo_src.is_dir():
+        shutil.copytree(demo_src, dst / "demo_data")
     return dst
 
 

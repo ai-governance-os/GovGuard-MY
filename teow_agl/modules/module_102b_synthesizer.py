@@ -69,6 +69,39 @@ _CONTENT_TOOLS: set[tuple[str, str]] = {
 # planner's text and re-writes — see `_enrich_chat`.
 _STRONG_CHINESE_BACKENDS = frozenset({"gemini", "openai", "claude"})
 
+# Faithfulness-gate vocabularies for a LIVE workflow draft (see
+# ContentSynthesizer._workflow_draft_is_faithful). Conservative on purpose: a
+# match forces a fall back to the curated draft. Lower-cased substrings.
+_WF_PLACEHOLDERS = (
+    "[school", "[date", "[name", "[insert", "[student", "[teacher", "[parent",
+    "[venue", "todo", "tbd", "lorem ipsum", "placeholder", "xxxx", "<insert",
+    "sample text", "（待填", "[待填", "［待填",
+)
+# Individual-level private data that must never appear in PUBLIC or PARENT
+# output. (Institutional words like "pibg"/"board"/"家协" are NOT here — thanking
+# the association as a group is legitimate.)
+_WF_PRIVATE_LEAK = (
+    "household income", "household-income", "家庭收入", "monthly income",
+    "salary", "月薪", "occupation:", "ic number", "no. ic", "i/c no",
+    "mykid", "passport no", "home address", "住址", "联络电话",
+    "phone:", "tel:", "donation potential", "捐款", "conduct grade",
+    "conduct: a", "conduct: b", "conduct: c", "品行等级", "discipline record",
+    "纪律记录", "submits homework late", "rude to teacher",
+)
+# Malaysian Ringgit money figures (income / donation amounts). A regex — NOT
+# a substring — so it never matches ordinary words containing "rm" (warm,
+# form, inform, perform, term…). Matches "RM12", "RM 12,000", "rm3000".
+_WF_MONEY_RE = re.compile(r"\brm\s*\d", re.IGNORECASE)
+# Status/income used as a STATED REASON to differentiate (vs. an honorific used
+# only as a salutation, which is allowed).
+_WF_STATUS_AS_REASON = (
+    "because of his family", "because of her family", "due to the donation",
+    "due to his donation", "as a pibg", "because the parent is a dato",
+    "given the family's income", "high-income family", "wealthy family",
+    "due to the family's status", "because of the dato", "因为家庭背景",
+    "由于捐款", "因为收入", "因为是拿督", "因为家协", "看在捐款", "看在他父亲",
+)
+
 
 def _text_has_cjk(text: str) -> bool:
     """True if the text contains any CJK character (used to pick a
@@ -110,6 +143,18 @@ def _fallback_body(user_intent: str, kind: str) -> str:
         f"with a little more detail.\n\n"
         f"Your original request:\n{user_intent[:300]}"
     )
+
+
+def _workflow_draft_body(user_intent: str, meta: dict) -> str:
+    """The body to use for a workflow content step when not using a fresh live
+    draft: prefer the step's curated draft (deterministic, faithful — attached by
+    the runtime from the workflow's curated_drafts file), else a generic
+    bilingual template. This is the smart_mock output AND the fallback when a
+    live model returns nothing or fails the faithfulness check."""
+    curated = str((meta or {}).get("curated_draft") or "").strip()
+    if curated:
+        return curated
+    return _workflow_fallback_body(user_intent, meta)
 
 
 def _workflow_fallback_body(user_intent: str, meta: dict) -> str:
@@ -846,7 +891,7 @@ class ContentSynthesizer:
         # are drafted by the model.
         if action.metadata.get("workflow_template_only"):
             meta = action.metadata
-            body = _workflow_fallback_body(user_intent, meta)
+            body = _workflow_draft_body(user_intent, meta)
             meta["content" if tool == "fs" else "body"] = body
             return {"action_id": action.action_id, "tool": tool, "op": op,
                     "result": "workflow_template_only", "chars": len(body)}
@@ -961,7 +1006,7 @@ class ContentSynthesizer:
         # "couldn't generate" body than a blank chat bubble. For a workflow
         # step, write the presentable bilingual draft instead of an apology.
         if meta.get("workflow_id"):
-            meta["body"] = _workflow_fallback_body(user_intent, meta)
+            meta["body"] = _workflow_draft_body(user_intent, meta)
         else:
             meta["body"] = _fallback_body(user_intent, "chat")
         return self._status(action, "synth_failed_fallback_body_written",
@@ -1092,7 +1137,7 @@ class ContentSynthesizer:
             meta["body"] = _school_notice_fallback_body(user_intent)
         elif meta.get("workflow_id"):
             # Workflow step (102W) — presentable bilingual draft, never apology.
-            meta["body"] = _workflow_fallback_body(user_intent, meta)
+            meta["body"] = _workflow_draft_body(user_intent, meta)
         else:
             meta["body"] = _fallback_body(user_intent, "docx")
         if title_hint and not meta.get("title"):
@@ -1221,41 +1266,59 @@ class ContentSynthesizer:
         right sensitive-data rules for public vs internal, capped tokens for
         speed, and explicitly told NOT to touch the governance route."""
         meta = action.metadata
-        ctx = str(meta.get("workflow_result_context") or "").strip()
+        # Ground in the curated draft when one is attached (already field-filtered
+        # and faithful), else the local results context. The live model RESTYLES /
+        # localises this reference — it must not add facts or fields beyond it.
+        ctx = str(meta.get("workflow_result_context")
+                  or meta.get("curated_draft") or "").strip()
         scope = str(meta.get("output_scope") or "").lower()
-        public = scope not in ("internal", "")
+        public = "public" in scope
+        parent = "parent" in scope
         common = (
             "You are drafting content INSIDE a configured GovGuard MY school "
-            "workflow. Use ONLY the authoritative results below and the task "
+            "workflow. Use ONLY the authoritative reference below and the task "
             "intent. Do NOT use web knowledge or web search. Do NOT invent or "
-            "rename winners, classes, houses, dates or numbers — use ONLY the "
-            "names that appear verbatim in the results; if a fact is missing, "
-            "OMIT it (do NOT write placeholders like [School Name], [Date], "
-            "TODO, or 'sample'). File body only, no preamble. The governance "
-            "route has already been decided elsewhere — do not mention, alter, "
-            "or justify it. "
+            "rename pupils, parents, events, medals, dates or numbers — use ONLY "
+            "the names and facts that appear verbatim in the reference; if a fact "
+            "is missing, OMIT it (do NOT write placeholders like [School Name], "
+            "[Date], TODO, or 'sample'). File body only, no preamble. The "
+            "governance route has already been decided elsewhere — do not "
+            "mention, alter, or justify it. "
         )
         if public:
             system = common + (
                 "This is PUBLIC-FACING Malaysian public-school content: write it "
                 "in THREE sections clearly headed '=== 中文 ===', '=== Bahasa "
                 "Melayu ===', '=== English ===' with consistent meaning. Do NOT "
-                "include IC, MyKid, passport, phone, home address, guardian "
-                "income, occupation, family background, health or discipline "
-                "data. Names of winning CLASSES (e.g. '5 Bestari') and houses "
-                "(e.g. 'Rumah Merah') are fine. Do NOT claim any individual "
-                "child won — celebrate the classes' and school's achievement."
+                "include IC, MyKid, passport, phone, home address, household "
+                "income, occupation, family background, social title as a status "
+                "signal, donation, conduct or discipline data. Celebrate the "
+                "pupils' and school's achievement; thanking the school community "
+                "(administration, teachers, board, PIBG, parents) as a group is "
+                "fine."
+            )
+        elif parent:
+            system = common + (
+                "This is a DRAFT parent/guardian notice for ONE family, for an "
+                "educator to review before any release. Write it in the SAME "
+                "single language as the reference draft below (do NOT add other "
+                "languages). Keep it warm, respectful and concise. Do NOT include "
+                "household income, occupation, address, phone, PIBG status, or "
+                "donation potential, and do NOT use a social title as a priority "
+                "or warmth signal — a recorded honorific may appear ONLY as a "
+                "plain salutation. If the reference contains an honest "
+                "training/development note, KEEP it — do not soften or drop it."
             )
         else:
             system = common + (
                 "This is an INTERNAL report for educators — include the concrete "
-                "results, standings, attendance and programme. A clean bilingual "
-                "(中文 + English) draft is fine."
+                "results, achievements, training attendance and follow-up. A "
+                "clean bilingual (中文 + English) draft is fine."
             )
         user = (
             f"Task: {action.purpose or user_intent}\n\n"
-            f"Authoritative results — use ONLY this:\n"
-            f"{ctx or '(no results file found — write [please confirm] for facts)'}\n\n"
+            f"Authoritative reference — use ONLY this:\n"
+            f"{ctx or '(no reference found — write [please confirm] for facts)'}\n\n"
             "Write the document body now."
         )
         return self.chat_llm.chat(system=system, user=user, max_tokens=1200)
@@ -1274,31 +1337,47 @@ class ContentSynthesizer:
             return self._status(action, "skipped_non_text_target")
         if self._looks_real(content, min_chars=200):
             return self._status(action, "kept_planner_content", chars=len(content))
-        # Workflow content draft: ground in the local results file, narrow the
-        # role (no web, no inventing, sensitive-data rules), cap tokens (speed).
+        # Workflow content draft — two tiers, IDENTICAL governance:
+        #   • mock / no key  → emit the deterministic curated draft (faithful,
+        #     instant). This is the recommended demo path.
+        #   • live provider  → the model DRAFTS (grounded in the curated/results
+        #     reference, capped tokens, sensitive-data rules), then a
+        #     deterministic verifier DECIDES; on any drift it falls back to the
+        #     curated draft. The model is never the safety authority.
         if meta.get("workflow_id"):
-            new_body = self._synth_workflow_text(action, user_intent)
-        else:
-            new_body = self.chat_llm.chat(
-                system=(
-                    "You write document content for files saved to disk. Output "
-                    "the file body only — no preamble. Use markdown if the target "
-                    "is .md. Match the user's language. Be substantive."
-                ),
-                user=f"User request: {user_intent}\n\nTarget file: {action.target}\n\n"
-                     f"Write the file content now.",
-                max_tokens=4000,
-            )
-        new_body = (new_body or "").strip()
+            if self._live_workflow_backend():
+                draft = (self._synth_workflow_text(action, user_intent) or "").strip()
+                if draft and self._workflow_draft_is_faithful(draft, action):
+                    meta["content"] = draft
+                    return self._status(action, "synthesized_verified",
+                                        chars=len(draft))
+                # Live draft missing or unfaithful → deterministic fallback.
+                meta["content"] = _workflow_draft_body(user_intent, meta)
+                return self._status(
+                    action,
+                    "live_draft_rejected_curated_fallback" if draft
+                    else "synth_failed_fallback_body_written",
+                    chars=len(meta["content"]))
+            # mock / no key: deterministic curated draft, no LLM call.
+            meta["content"] = _workflow_draft_body(user_intent, meta)
+            return self._status(action, "curated_mock_draft",
+                                chars=len(meta["content"]))
+        # Non-workflow fs save: generic synthesis + honest fallback.
+        new_body = (self.chat_llm.chat(
+            system=(
+                "You write document content for files saved to disk. Output "
+                "the file body only — no preamble. Use markdown if the target "
+                "is .md. Match the user's language. Be substantive."
+            ),
+            user=f"User request: {user_intent}\n\nTarget file: {action.target}\n\n"
+                 f"Write the file content now.",
+            max_tokens=4000,
+        ) or "").strip()
         if new_body:
             meta["content"] = new_body
             return self._status(action, "synthesized", chars=len(new_body))
         # P0.2 — honest fallback so the .md/.txt file isn't silently empty.
-        # For a workflow step, write the presentable bilingual draft.
-        if meta.get("workflow_id"):
-            meta["content"] = _workflow_fallback_body(user_intent, meta)
-        else:
-            meta["content"] = _fallback_body(user_intent, "chat")
+        meta["content"] = _fallback_body(user_intent, "chat")
         return self._status(action, "synth_failed_fallback_body_written",
                             chars=len(meta["content"]))
 
@@ -1321,6 +1400,43 @@ class ContentSynthesizer:
             return False
         backend = (getattr(self.chat_llm, "backend", "") or "").lower()
         return backend in _STRONG_CHINESE_BACKENDS
+
+    def _live_workflow_backend(self) -> bool:
+        """True iff a real (non-mock) chat model is wired. When True we draft
+        workflow content live and then VERIFY it; when False (smart_mock / no
+        key) we emit the deterministic curated draft directly. Governance is
+        identical either way — only the prose source differs."""
+        if self.chat_llm is None:
+            return False
+        backend = (getattr(self.chat_llm, "backend", "") or "").lower()
+        return backend not in ("", "mock", "none", "stub", "off")
+
+    def _workflow_draft_is_faithful(self, draft: str,
+                                    action: CandidateAction) -> bool:
+        """Deterministic faithfulness gate for a LIVE workflow draft. The live
+        model PROPOSES prose; this DECIDES whether it is safe to ship — keeping
+        the model out of the safety authority. Conservative by design: a false
+        reject just falls back to the (excellent) curated draft, while a false
+        accept could leak. A draft FAILS if it is too short, carries a
+        placeholder, or — for public/parent output — leaks an individual's
+        socioeconomic / status / contact / discipline data. Institutional
+        thanks (board, PIBG, parents as a group) are allowed; the income/title/
+        donation differential decision is blocked deterministically by 101D, not
+        here."""
+        text = (draft or "").strip()
+        if len(text) < 120:
+            return False
+        low = text.lower()
+        if any(p in low for p in _WF_PLACEHOLDERS):
+            return False
+        scope = str((action.metadata or {}).get("output_scope") or "").lower()
+        if "public" in scope or "parent" in scope:
+            if any(t in low for t in _WF_PRIVATE_LEAK):
+                return False
+            # Honorific allowed only as a salutation, never as a stated reason.
+            if any(t in low for t in _WF_STATUS_AS_REASON):
+                return False
+        return True
 
     @staticmethod
     def _looks_real(text: str, *, min_chars: int) -> bool:
