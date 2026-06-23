@@ -58,17 +58,25 @@ DEMO_DIR = ROOT / "demo"
 
 
 def _seed_demo_results() -> None:
-    """Seed a sample results file into the workspace so the post-event workflow's
-    first step (extract results) reads real data instead of showing `not_found`
-    in a fresh clone. Demo convenience only — never overwrites a real upload."""
-    try:
-        sample = DEMO_DIR / "sports_day_results.md"
-        target = WORKSPACE_DIR / "results.md"
-        if sample.exists() and not target.exists():
-            WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
-            target.write_text(sample.read_text(encoding="utf-8"), encoding="utf-8")
-    except OSError:
-        pass
+    """Seed the sample (public-safe) results files into the workspace so a
+    workflow's first step (extract results) reads real data instead of showing
+    `not_found` in a fresh clone. Demo convenience only — never overwrites a
+    real upload. Each workflow reads its own file via the step's `read_target`
+    (post-event → results.md; national athletics → national_athletics_results.md;
+    the rich student/parent database stays a backend source, never seeded here)."""
+    seeds = {
+        "sports_day_results.md": "results.md",
+        "national_athletics_results.md": "national_athletics_results.md",
+    }
+    for src_name, dst_name in seeds.items():
+        try:
+            sample = DEMO_DIR / src_name
+            target = WORKSPACE_DIR / dst_name
+            if sample.exists() and not target.exists():
+                WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+                target.write_text(sample.read_text(encoding="utf-8"), encoding="utf-8")
+        except OSError:
+            pass
 
 
 _seed_demo_results()

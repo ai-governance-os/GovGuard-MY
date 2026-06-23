@@ -234,7 +234,10 @@ class WorkflowResolver:
         inputs = Path(roots[0]) if roots else Path("workspace")
         step_id = step.get("step_id", "draft")
         if op == "read_safe":
-            return str(inputs / "results.md")
+            # A workflow may name its own (public-safe) results file via the
+            # step's `read_target`; defaults to results.md for the generic case.
+            rel = step.get("read_target") or "results.md"
+            return str(inputs / rel)
         if op == "save_under_outputs":
             return str(outputs / f"{step_id}.md")
         if op == "draft_report":

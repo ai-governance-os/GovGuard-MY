@@ -848,3 +848,48 @@ def test_live_faithful_draft_is_used(isolated_workspace: Path):
     rt.run(raw_goal=NAT_GOAL_CN)
     notice = (isolated_workspace / "outputs" / "notice_mei_xin.md").read_text(encoding="utf-8")
     assert "UNIQUE_LIVE_MARKER_42" in notice, "verifier rejected a clean live draft"
+
+
+def test_server_exposes_national_workflow_panel(monkeypatch):
+    """End-to-end through the server (the demo path): the national goal seeds +
+    reads its own public-safe results file, detects national_athletics_reporting,
+    and serves a 10-step panel with the self-block (RED) + external release
+    (GREEN). Proves the recorded-demo path, not just the isolated unit path."""
+    import time
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("TEOW_AGL_PLANNER", "smart_mock")
+    from fastapi.testclient import TestClient
+    from server.app import app
+
+    c = TestClient(app)
+    tid = c.post("/api/tasks", json={"raw_goal": NAT_GOAL_CN}).json()["task_id"]
+
+    def _poll(*want, timeout=20):
+        dl = time.time() + timeout
+        st = None
+        while time.time() < dl:
+            st = c.get(f"/api/tasks/{tid}").json()
+            if st["status"] in want:
+                return st
+            time.sleep(0.2)
+        return st
+
+    state = _poll("awaiting_approval", "done", "error")
+    if state["status"] == "awaiting_approval":
+        appr = state["pending_approvals"][0]
+        c.post(f"/api/tasks/{tid}/decide",
+               json={"approval_id": appr["approval_id"], "status": "rejected",
+                     "note": "demo: no real external publish"})
+        state = _poll("done", "error")
+    assert state is not None and state["status"] == "done", f"final: {state}"
+    wf = state.get("workflow")
+    assert wf and wf["detected"] is True
+    assert wf["workflow_id"] == "national_athletics_reporting"
+    assert len(wf["steps"]) == 10
+    routes = [s["route"] for s in wf["steps"]]
+    assert "GREEN" in routes and "RED" in routes, routes
+    assert all(r in ("BLUE", "GREEN", "RED") for r in routes), routes
+    assert wf["summary"]["self_blocked"] == 1 and wf["summary"]["approval"] == 1
+    assert any("differential treatment" in r
+               for b in wf["blocked"] for r in b.get("reasons", []))
