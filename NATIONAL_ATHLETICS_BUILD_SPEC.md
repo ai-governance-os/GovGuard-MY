@@ -68,7 +68,35 @@ default (no test depends on a real key); additive (don't rewrite existing module
 both tiers.
 
 ## Status log (update as phases land)
-- [ ] Phase 1: reference docs copied to demo_data/ + 101D lexicon extended + tested.
-- [ ] Phase 2: workflow config (10 steps) + field-filtering + mock curated drafts.
-- [ ] Phase 3: data-selection audit + content verifier/fallback.
-- [ ] Phase 4: tests + docs + full green + GitHub re-sync.
+- [x] Phase 1 (`8c6af71`): reference docs copied to demo_data/ + 101D lexicon
+  extended (dato/datuk/拿督/social status/pibg/家协/committee/donation/捐款 +
+  differential cues) + tested.
+- [x] Phase 2+3 (`ad7bb6d`): workflow config (10 steps) + curated drafts
+  (demo_data/national_athletics/curated_drafts.md, keyed `## [step_id]`) +
+  data-selection audit + two-tier drafting. mock=curated; live=draft→verify→
+  fallback. Resolver carries curated_drafts/results_source; runtime
+  `_parse_curated_drafts` + `_attach_workflow_context` attach per-step drafts;
+  102b `_workflow_draft_body` (curated-first), `_synth_workflow_text` grounded
+  in the curated reference (public/parent/internal branches), `_enrich_fs`
+  two-tier, `_live_workflow_backend` + `_workflow_draft_is_faithful`
+  (placeholder/money-regex/private-leak/status-as-reason). conftest mirrors
+  demo_data/.
+- [x] Phase 4 (`ad7bb6d`,`3171c75`): +13 tests (detection CN/EN, no post_event
+  collision, routes BLUE×8·RED×1·GREEN×1, self-block RED, six curated drafts,
+  no forbidden fields in public/parent drafts [disclaimer excluded], Xiao Le
+  reminder kept + title-as-salutation, Ali BM, audit used/blocked, no invented
+  people, live unfaithful→curated fallback, live faithful→used, national server
+  panel). Demo coherence: demo/national_athletics_results.md (public-safe) read
+  via step `read_target`; server seeds it; rich DB stays backend. **Suite 989
+  passed / 1 skipped, provider keys UNSET.**
+- [ ] Remaining: evals 1.0 check; docs/README doc-count alignment; GitHub
+  re-sync to `GovGuard_Workflow_V2_提交版_GitHub`. Owner: rotate the leaked key;
+  verify the real gpt-4o path with a fresh key.
+
+## Determinism note (workflow ordering)
+Templates load alphabetically; `national_athletics_reporting.json` sorts before
+`post_event_reporting.json`, so for the national goal (which embeds "成绩出来了",
+matched by both) the national template wins on first match. The post-event goal
+does NOT contain a national anchor, so post-event still owns it. If a future
+template name reorders this, make detection pick the highest-confidence /
+longest-match instead of first-match.
