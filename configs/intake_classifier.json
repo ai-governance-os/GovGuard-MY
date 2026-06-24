@@ -124,6 +124,8 @@
     "student_sensitive_data_disclosure": "blocked",
     "student_sensitive_data_learning": "blocked",
     "personal_prediction_request": "blocked",
+    "status_based_differential_treatment": "blocked",
+    "unsupported_amount_estimate": "blocked",
     "research_report":      "direct",
     "report_generation":    "direct",
     "office_doc_generation":"direct",
@@ -184,6 +186,26 @@
       "require_all": [
         ["predict", "forecast", "guess", "estimate exactly", "tell me exactly", "exactly how many", "exactly which", "预测", "准确预测", "精确预测", "算出"],
         ["which parents", "whose", "their names", "name them", "who will", "who would", "will ignore", "will read", "will open", "how many will", "谁会", "哪些家长", "点名", "名单"]
+      ]
+    },
+    {
+      "id": "status_based_differential",
+      "category": "status_based_differential_treatment",
+      "block": "red",
+      "_doc": "User asks to change a message's warmth/honesty/priority or to drop a relevant reminder BECAUSE OF a parent's social title / committee status / donor influence -> RED. Concept (status) x intent (differential treatment), so rewording cannot slip. Household-income wording is deliberately NOT here: it is governed by 101D so its 'differential treatment' reason is preserved.",
+      "require_all": [
+        ["dato", "datuk", "拿督", "tan sri", "datin", "pibg", "家协", "committee member", "pibg committee", "donor", "donation", "捐款", "donated", "influential parent", "vip parent", "well-connected", "social title", "社会地位"],
+        ["warmer", "softer", "soften", "more positive", "go easy", "be nicer", "drop the reminder", "remove the reminder", "remove the training", "skip the reminder", "without the reminder", "special treatment", "special attention", "preferential", "prioriti", "favour", "favor", "lenient", "tone down", "温和", "婉转", "客气一点", "去掉提醒", "去掉训练", "别提训练", "删掉训练", "删掉提醒", "宽容", "优待", "偏袒", "特别照顾", "照顾一下"]
+      ]
+    },
+    {
+      "id": "unsupported_amount_estimate",
+      "category": "unsupported_amount_estimate",
+      "block": "infeasible",
+      "_doc": "User asks the agent to GUESS a monetary amount (reward/bonus/allowance) that depends on policy/budget/precedent the dataset does not contain -> INFEASIBLE. Safe alternative is a clearly-labelled proposal table, not a prediction.",
+      "require_all": [
+        ["how much", "what amount", "estimate the", "estimate how much", "guess the amount", "predict the amount", "你觉得", "大概多少", "估算", "多少钱", "几多钱", "多少奖"],
+        ["reward", "bonus", "prize money", "cash reward", "cash prize", "allowance", "incentive", "monetary", "花红", "奖金", "奖励金", "现金奖励", "津贴", "赏金"]
       ]
     }
   ],

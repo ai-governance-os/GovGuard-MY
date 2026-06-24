@@ -155,6 +155,21 @@ async function startTask() {
 function hideWelcome() {
   const w = $("#welcome");
   if (w) w.style.display = "none";
+  // Reveal the persistent dock so the demo prompts stay one click away after
+  // the hero is gone — no page refresh needed to run a follow-up probe.
+  const dock = $("#demo-dock");
+  if (dock) dock.hidden = false;
+}
+
+// Clone the welcome's demo buttons (section labels + grids) into the persistent
+// dock above the composer. Single HTML source of truth — the dock is a runtime
+// copy, so the scripted-button guard test only ever sees the welcome copy.
+function buildDemoDock() {
+  const body = $("#demo-dock-body");
+  const src = $("#welcome");
+  if (!body || !src || body.childElementCount) return;
+  src.querySelectorAll(".demo-section-label, .example-grid").forEach(
+    (n) => body.appendChild(n.cloneNode(true)));
 }
 
 function appendUserMessage(text) {
@@ -1618,12 +1633,23 @@ document.addEventListener("DOMContentLoaded", () => {
     e.target.value = "";
   });
 
-  // example chips
-  $$(".example").forEach(b => b.addEventListener("click", () => {
+  // example chips — event delegation so it covers BOTH the welcome buttons and
+  // the cloned dock buttons (added after this handler is bound).
+  buildDemoDock();
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest(".example");
+    if (!b) return;
     $("#goal").value = b.dataset.prompt;
     autoSizeTextarea($("#goal"));
     $("#goal").focus();
-  }));
+  });
+  const dockToggle = $("#demo-dock-toggle");
+  if (dockToggle) dockToggle.addEventListener("click", () => {
+    const body = $("#demo-dock-body");
+    if (!body) return;
+    body.hidden = !body.hidden;
+    dockToggle.textContent = body.hidden ? "▸" : "▾";
+  });
 
   // Send shortcuts
   $("#goal").addEventListener("input", (e) => autoSizeTextarea(e.target));
