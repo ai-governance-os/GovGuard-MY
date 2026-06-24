@@ -22,8 +22,9 @@ pytest                : 949 passed, 1 skipped, 0 failed   ← GREEN
 - pytest after **V2 live-key fixes**: **972 passed, 1 skipped, 0 failed** (973 collected; = 949 + 23).
 - pytest after **readability hotfix**: **976 passed, 1 skipped, 0 failed** (977 collected; = 949 + 27).
 - pytest after **National Athletics workflow** (curated/live two-tier + demo coherence): **989 passed, 1 skipped, 0 failed** (990 collected; = 949 + 40).
-- Offline governance eval: **pass rate 1.0** (31 evaluated, 3 documented L2 skips) — +2 national cases (zh/en → behavior=plan, final_route=RED).
-- New workflow tests: `tests/test_workflow_autonomy.py` — 39 total (adds the National Athletics suite: detection, routes BLUE×8·RED×1·GREEN×1, six curated drafts, field-selection / no-leak, Xiao Le reminder kept + title-as-salutation, Ali BM, audit used/blocked, no invented people, live unfaithful→curated fallback, live faithful→used, server panel).
+- pytest after **post-main-demo governance probes** (user-input governance on the same dataset + persistent demo dock): **1001 passed, 1 skipped, 0 failed** (1002 collected; = 949 + 52).
+- Offline governance eval: **pass rate 1.0** (37 evaluated, 3 documented L2 skips) — +2 national + 6 probe cases.
+- New workflow tests: `tests/test_workflow_autonomy.py` — 39 (National Athletics suite). Probe tests: `tests/test_post_main_demo_governance_probes.py` — 12 (BLUE/RED×2/GREEN/INFEASIBLE routes, no-side-effect for blocked probes, not-a-workflow, CJK reword-proof RED, over-fire guards). Two new reword-proof `risk_rules` (status_based_differential → RED; unsupported_amount_estimate → INFEASIBLE).
 - New intentional skips: none.
 
 > Doc-number correction: the shipped docs previously claimed **932/933** — stale
