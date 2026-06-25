@@ -329,11 +329,15 @@ function renderWorkflowPanel(bubble, d) {
   };
   const rows = steps.map((s, i) => {
     const route = s.route || "—";
-    const note = route === "GREEN" ? "external release — needs approval"
+    const note = route === "RED" ? "unsafe data-use blocked"
+      : route === "GREEN" ? "external release — needs approval"
       : (s.output_scope === "public_draft"
           ? "public draft — sensitive fields blocked"
-          : (s.output_scope === "internal" ? "internal data allowed" : ""));
-    const st = route === "GREEN" ? "waiting approval" : statusLabel(s.status);
+          : (s.output_scope === "audit" ? "data-selection audit"
+          : (s.output_scope === "internal" ? "internal data allowed" : "")));
+    const st = route === "RED" ? "self-blocked"
+      : route === "GREEN" ? "waiting approval"
+      : statusLabel(s.status);
     return `<div class="wf-step">`
       + `<span class="wf-n">${i + 1}</span>`
       + `<span class="wf-name">${esc(s.step_name || s.step_id)}</span>`
@@ -370,10 +374,12 @@ function renderWorkflowPanel(bubble, d) {
     statusLine = `<div class="wf-statusline">Governed workflow — `
       + `${esc(bits.join(" · "))}</div>`;
   }
-  const srcLine = wf.source_file
-    ? `<div class="wf-source">Using <code>${esc(wf.source_file)}</code> `
-      + `as the authoritative event-results file.</div>`
-    : "";
+  const srcLine = wf.database_note
+    ? `<div class="wf-source"><b>Data source:</b> ${esc(wf.database_note)}</div>`
+    : (wf.source_file
+        ? `<div class="wf-source">Using <code>${esc(wf.source_file)}</code> `
+          + `as the authoritative event-results file.</div>`
+        : "");
   el.innerHTML =
     `<div class="wf-title">Workflow autonomy — more autonomy, without loss of control</div>`
     + statusLine
@@ -406,7 +412,7 @@ function appendAgentMessage(task_id) {
         <div class="task-tree-body"></div>
       </details>
       <details class="reflection-block" hidden>
-        <summary>What I learned</summary>
+        <summary>Learning &amp; memory policy</summary>
         <div class="reflection-body"></div>
       </details>
       <details class="details" hidden>
@@ -697,8 +703,10 @@ function renderAgentMessage(node, d) {
   // and one-line summaries. Hidden when this task wasn't decomposed.
   renderTaskTree(bubble.querySelector(".task-tree-block"), d);
 
-  // pipeline detail
-  const details = bubble.querySelector("details");
+  // pipeline detail — target the .details block specifically. A bare
+  // querySelector("details") would grab the FIRST <details> in the bubble
+  // (the Sub-goals task-tree block) and wrongly un-hide that empty box.
+  const details = bubble.querySelector("details.details");
   const events = d.events || [];
   if (events.length) {
     details.hidden = false;
@@ -825,14 +833,19 @@ function describeOutcome(d) {
     let msg = `Governed workflow — ${bits.join(" · ")}.`;
     if (sm.self_blocked) {
       msg += " One unsafe internal data-use proposal was self-blocked"
-        + " (using guardian income to differentiate parent communication).";
+        + " (using a parent's social title / PIBG status / household income or"
+        + " donation potential to change a parent message's tone, priority or"
+        + " honest reminder).";
     }
     msg += " Nothing is sent or published in demo mode.";
     return msg;
   }
   const route = d.final_route;
-  if (route === "INFEASIBLE") return "I can't do this — capability or resource constraint.";
-  if (route === "RED") return "Blocked by governance.";
+  if (route === "INFEASIBLE") return "I can't answer this reliably — the available "
+    + "data doesn't support a confident answer (no relevant policy, budget or "
+    + "precedent on file). Rather than guess a number, I'd prepare a clearly-"
+    + "labelled proposal for a human to decide.";
+  if (route === "RED") return "Blocked by governance — see the reason in the pipeline below.";
   if (!d.executions || !d.executions.length) {
     if (route === "GREEN") return "Approved and ran.";
     return "Done.";
@@ -941,13 +954,30 @@ function renderReflection(el, d) {
                 ? r.confidence.toFixed(2) : "?");
   const reasoning = r.reasoning || "";
 
+  // Governance highlight: a RED / INFEASIBLE task is deliberately EXCLUDED from
+  // the skill-distiller, so "nothing learned" here is a feature, not an empty
+  // box. Reframe it (and the collapsed summary chip) affirmatively.
+  const routeExcluded = !!(r.skipped && /route_excluded/i.test(String(r.skipped)));
+  const summaryEl = el.querySelector("summary");
+  if (summaryEl) {
+    summaryEl.innerHTML = "Learning &amp; memory policy"
+      + (routeExcluded
+          ? ` <span class="refl-chip">🔒 not learned · governed route excluded</span>`
+          : "");
+  }
+
   const header = document.createElement("div");
   header.className = "reflection-header";
-  header.innerHTML =
-    `<span class="reflection-disp reflection-disp-${escapeAttr(disp)}">`
-    + `${escapeHtml(disp)}</span>`
-    + ` · confidence ${escapeHtml(conf)}`
-    + (reasoning ? ` · ${escapeHtml(reasoning)}` : "");
+  if (routeExcluded) {
+    header.innerHTML = `<span class="reflection-disp reflection-disp-governed">`
+      + `🔒 No memory update</span> · governed route excluded from learning`;
+  } else {
+    header.innerHTML =
+      `<span class="reflection-disp reflection-disp-${escapeAttr(disp)}">`
+      + `${escapeHtml(disp)}</span>`
+      + ` · confidence ${escapeHtml(conf)}`
+      + (reasoning ? ` · ${escapeHtml(reasoning)}` : "");
+  }
   body.appendChild(header);
 
   if (disp === "applied" || disp === "pending_review") {
@@ -996,9 +1026,15 @@ function renderReflection(el, d) {
              || disp === "applied_skipped_no_memory") {
     const msg = document.createElement("div");
     msg.className = "reflection-muted";
-    msg.textContent = r.skipped
-      ? `Skipped: ${r.skipped}`
-      : `Logged only (confidence ${conf} below apply threshold).`;
+    if (routeExcluded) {
+      msg.textContent = "No memory or skill was distilled from this task. "
+        + "RED / INFEASIBLE routes are excluded from the skill-distiller — "
+        + "sensitive student / parent data is never distilled into persistent memory.";
+    } else if (r.skipped) {
+      msg.textContent = "No memory update this task.";
+    } else {
+      msg.textContent = `Logged only (confidence ${conf} below apply threshold).`;
+    }
     body.appendChild(msg);
   }
 
@@ -1071,39 +1107,60 @@ function renderTaskTree(el, d) {
 }
 
 function renderApprovals(el, d) {
-  el.innerHTML = "";
-  if (!d.pending_approvals || !d.pending_approvals.length) return;
-  for (const a of d.pending_approvals) {
-    const card = document.createElement("div");
-    card.className = "approval-card";
-    card.innerHTML = `
-      <div class="summary"></div>
-      <div class="reasons"></div>
-      <div class="actions">
-        <input type="text" placeholder="Optional note…" />
-        <button class="approve">Approve</button>
-        <button class="reject">Reject</button>
-      </div>
-      <div class="approval-status"></div>
-    `;
-    card.querySelector(".summary").textContent = a.summary || "Action needs approval";
-    const reasons = (a.context && a.context.reasons) || [];
-    card.querySelector(".reasons").textContent = "reasons: " + reasons.join(" · ");
-
+  const pending = d.pending_approvals || [];
+  const wantIds = new Set(pending.map(a => a.approval_id));
+  // Drop cards no longer pending.
+  for (const card of [...el.querySelectorAll(".approval-card")]) {
+    if (!wantIds.has(card.dataset.approvalId)) card.remove();
+  }
+  for (const a of pending) {
+    const sel = (window.CSS && CSS.escape) ? CSS.escape(a.approval_id) : a.approval_id;
+    let card = el.querySelector(`.approval-card[data-approval-id="${sel}"]`);
+    // Build each card ONCE (keyed by approval_id). Previously the 500ms poller
+    // wiped + rebuilt the whole card every tick — a click landing mid-rebuild
+    // hit a button that was being destroyed (the "needs 2-3 clicks" bug), and
+    // any typed note was erased. Now we create once and only update status.
+    if (!card) {
+      card = document.createElement("div");
+      card.className = "approval-card";
+      card.dataset.approvalId = a.approval_id;
+      card.innerHTML = `
+        <div class="summary"></div>
+        <div class="reasons"></div>
+        <div class="actions">
+          <input type="text" placeholder="Optional note…" />
+          <button class="approve">Approve</button>
+          <button class="reject">Reject</button>
+        </div>
+        <div class="approval-status"></div>
+      `;
+      card.querySelector(".summary").textContent = a.summary || "Action needs approval";
+      const reasons = (a.context && a.context.reasons) || [];
+      card.querySelector(".reasons").textContent = "reasons: " + reasons.join(" · ");
+      const note0 = card.querySelector("input");
+      const approveBtn0 = card.querySelector(".approve");
+      const rejectBtn0 = card.querySelector(".reject");
+      const statusEl0 = card.querySelector(".approval-status");
+      approveBtn0.addEventListener("click", () =>
+        submitDecision(d.task_id, a.approval_id, "approved",
+                       note0, approveBtn0, rejectBtn0, statusEl0));
+      rejectBtn0.addEventListener("click", () =>
+        submitDecision(d.task_id, a.approval_id, "rejected",
+                       note0, approveBtn0, rejectBtn0, statusEl0));
+      el.appendChild(card);
+    }
+    // Reflect the submit state machine (submitting / submitted / error) in
+    // place — no rebuild, so the click is never lost.
     const note = card.querySelector("input");
     const approveBtn = card.querySelector(".approve");
     const rejectBtn = card.querySelector(".reject");
     const statusEl = card.querySelector(".approval-status");
-
-    // Reflect any prior click for this approval in this session. Without
-    // this the 500ms poller re-renders the card every tick and wipes the
-    // "submitting…" / "submitted" feedback, which is what made the first
-    // click look like nothing happened.
     const prev = state.approvals[a.approval_id];
     if (prev) {
-      approveBtn.disabled = true;
-      rejectBtn.disabled = true;
-      note.disabled = true;
+      const lock = prev.status === "submitting" || prev.status === "submitted";
+      approveBtn.disabled = lock;
+      rejectBtn.disabled = lock;
+      note.disabled = lock;
       if (prev.status === "submitting") {
         statusEl.textContent = "Sending…";
         statusEl.className = "approval-status status-pending";
@@ -1113,20 +1170,8 @@ function renderApprovals(el, d) {
       } else if (prev.status === "error") {
         statusEl.textContent = `! ${prev.error || "submit failed"}`;
         statusEl.className = "approval-status status-err";
-        // Allow retry by clearing slot on next user interaction
-        approveBtn.disabled = false;
-        rejectBtn.disabled = false;
-        note.disabled = false;
       }
     }
-
-    approveBtn.addEventListener("click", () =>
-      submitDecision(d.task_id, a.approval_id, "approved",
-                     note, approveBtn, rejectBtn, statusEl));
-    rejectBtn.addEventListener("click", () =>
-      submitDecision(d.task_id, a.approval_id, "rejected",
-                     note, approveBtn, rejectBtn, statusEl));
-    el.appendChild(card);
   }
 }
 
@@ -1639,9 +1684,12 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("click", (e) => {
     const b = e.target.closest(".example");
     if (!b) return;
+    // One-click demo: load the prompt AND run it (no separate Send press).
+    // Guard against a double-submit while a task is already starting.
+    if ($("#run-btn").disabled) return;
     $("#goal").value = b.dataset.prompt;
     autoSizeTextarea($("#goal"));
-    $("#goal").focus();
+    startTask();
   });
   const dockToggle = $("#demo-dock-toggle");
   if (dockToggle) dockToggle.addEventListener("click", () => {

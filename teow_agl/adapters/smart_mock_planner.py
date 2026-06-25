@@ -37,6 +37,8 @@ class SmartMockPlanner:
                                  f"{category} best handled by 102R staged template")
         if category in ("file_write",):
             return self._fs_write_plan(task_id, intent, planning_brief)
+        if category == "parent_message_draft_edit":
+            return self._parent_message_edit_plan(task_id, intent, planning_brief)
         return self._refusal(task_id, "empty_plan", f"smart_mock has no template for category={category}")
 
     def _office_plan(self, task_id: str, intent: str, brief: dict) -> dict:
@@ -86,6 +88,45 @@ class SmartMockPlanner:
                 "metadata": {"content": f"# {title}\n\n{body}\n"},
             },
         ])
+
+    def _parent_message_edit_plan(self, task_id: str, intent: str, brief: dict) -> dict:
+        """A safe internal edit to a parent-message DRAFT (BLUE): add the
+        requested follow-up logistics, keep a warm tone, send nothing. Mock mode
+        emits a deterministic, faithful revised draft (no LLM, no apology, no
+        placeholder) so the demo's BLUE probe always shows a real updated notice.
+        Governance is unchanged — editing a draft is BLUE; only releasing/sending
+        is GREEN."""
+        body = (
+            "【已更新草稿 / Updated draft — Parent Notice for Mei Xin】  "
+            "Safe internal edit (BLUE) — the requested follow-up details were added; "
+            "nothing is sent.\n\n"
+            "Subject: Congratulations on Mei Xin's National-Level Achievement and New Record\n\n"
+            "Dear Mr. Lee,\n\n"
+            "Warm greetings from Demo Primary School. We are very proud that Mei Xin won the "
+            "Gold Medal in the Long Jump U12 Girls event at the 2026 National Primary Schools "
+            "Athletics Championship and set a new national primary schools record.\n\n"
+            "We would also like to share a preliminary follow-up arrangement. The Malaysia "
+            "Schools Invitational Athletics Meet in Singapore is expected to take place about "
+            "one month after this national championship. To support Mei Xin's preparation, a "
+            "five-day centralised training session will be held one week before the Singapore "
+            "event at Johor Bahru Sports Arena. The school will share the confirmed schedule, "
+            "consent form and travel-related details once they are finalised.\n\n"
+            "Congratulations once again to Mei Xin and your family.\n\n"
+            "With appreciation,\nTeacher-in-charge of Athletics Team, Demo Primary School\n\n"
+            "(Safe internal draft edit — nothing is sent in demo mode. The warm wording "
+            "follows this parent's recorded school-message style; no household income, "
+            "occupation, address, phone, PIBG status or donation data was used to set tone "
+            "or priority. Contact data, if used, is limited to authorised delivery routing only.)"
+        )
+        return self._wrap(task_id, brief, [{
+            "action_id": f"act_{uuid.uuid4().hex[:8]}",
+            "tool": "chat", "operation": "answer",
+            "target": "", "purpose": "revise Mei Xin's parent-message draft (safe internal edit)",
+            "expected_effect": "updated parent-notice draft (not sent)",
+            "reversibility": "high", "uncertainty": "low",
+            "risk_factors": [], "requires_governance": True,
+            "metadata": {"body": body, "synthesis_skip": True},
+        }])
 
     def _gui_plan(self, task_id: str, intent: str, brief: dict) -> dict:
         low = intent.lower()

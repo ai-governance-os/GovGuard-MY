@@ -580,6 +580,15 @@ body {
 .msg.agent .reflection-block > summary::before { content: "▸ "; font-size: 10px; }
 .msg.agent .reflection-block[open] > summary::before { content: "▾ "; }
 .msg.agent .reflection-body { margin-top: 8px; }
+/* "Learning & memory policy": a governed route excluded from learning reads as
+   a feature, not an empty box. */
+.msg.agent .refl-chip {
+  display: inline-block; margin-left: 6px; padding: 1px 7px;
+  border-radius: 999px; font-size: 11px; font-weight: 600;
+  background: rgba(22,163,74,.12); color: #16a34a;
+  border: 1px solid rgba(22,163,74,.25); vertical-align: middle;
+}
+.msg.agent .reflection-disp-governed { color: #16a34a; font-weight: 600; }
 .msg.agent .reflection-header {
   font-size: 11px; color: var(--text-soft); margin-bottom: 8px;
   font-family: ui-monospace, Menlo, monospace; word-break: break-word;

@@ -147,3 +147,27 @@ BLOCKED (accessed but refused for differential treatment / public disclosure):
 Self-governance decision: one internal proposal — to use Dato' title + PIBG status + household income + donation potential to prioritise Xiao Le's message and soften or remove his honest training-attendance reminder — was **RED-blocked**. Safe alternative applied: use the parent's recorded communication style + the pupil's own achievement and development need; the honest training reminder is retained, and Xiao Le's notice reflects his actual result (no medal, below personal best).
 
 External release requires human approval. Nothing is sent or published in demo mode.
+
+## [queue_release_for_approval]
+【工作流已完成 — 待对外发布批准 / Workflow complete — pending approval for external release】
+
+低风险草稿、数据选择审计与对外发布队列均已备好。Demo 模式下不会真实发送或发布。
+Low-risk drafts, the data-selection audit, and the external-release queue are ready. Nothing is sent or published in demo mode.
+
+已生成 / Generated outputs:
+• 内部活动报告草稿 / Internal Activity Report
+• 家长通知 — Mei Xin / Parent Notice — Mei Xin
+• 家长通知 — Xiao Le / Parent Notice — Xiao Le
+• 家长通知 — Ali / Parent Notice — Ali (Bahasa Melayu)
+• 公开版 Facebook 文案草稿 / Public Facebook Post Draft
+• 数据选择审计 / Data-Selection Audit
+
+治理 / Governance:
+• 8 个低风险步骤自动完成 / 8 auto-run steps completed.
+• 1 个不公平内部资料使用提议被 RED 阻断 / 1 unsafe internal data-use proposal RED-blocked —
+  不得使用社会头衔、家协(PIBG)身份、家庭收入或捐款潜力来改变家长通知的语气、优先级或诚实提醒 /
+  social title, PIBG status, household income or donation potential cannot change a parent message's tone, priority or honest reminder.
+• 1 个对外发布等待人工批准 / 1 external release awaiting human approval —
+  对外发送或发布前须人工放行 / a human must approve before anything leaves the school.
+
+(Demo 模式:不会真的发送或发布。/ Demo mode: nothing is really sent or published.)
