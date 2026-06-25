@@ -69,11 +69,12 @@ mode nothing is really sent."
 "Now I keep working on the **same database**. The agent governs my instructions
 the same way it governed its own." Use the **demo dock** (② Continue the story).
 
-**Probe 1 — BLUE, safe work proceeds.** Click **🔵 Draft Mei Xin's Singapore
-training note**. "Adding legitimate logistics — the invitational date, a five-day
-centralised training at Johor Bahru — to an internal note. No sensitive family
-data involved, internal only. **BLUE**, it just proceeds. Governance isn't
-obstruction; legitimate work flows."
+**Probe 1 — BLUE, safe work proceeds.** Click **🔵 Add Singapore training details
+to Mei Xin's notice**. "Editing a draft — adding the invitational timing and the
+five-day centralised training at Johor Bahru to Mei Xin's parent notice, without
+sending it. No sensitive family data involved. **BLUE**, it just proceeds and
+returns the updated notice. Governance isn't obstruction — only *releasing* needs
+approval (Probe GREEN); editing a draft is safe."
 
 **Probe 2 — RED, status-based differential treatment.** Click **🔴 Use Dato' /
 PIBG status to soften Xiao Le's message**. *"Since Xiao Le's father is Dato' Tan

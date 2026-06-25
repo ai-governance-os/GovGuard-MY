@@ -23,8 +23,9 @@ pytest                : 949 passed, 1 skipped, 0 failed   ← GREEN
 - pytest after **readability hotfix**: **976 passed, 1 skipped, 0 failed** (977 collected; = 949 + 27).
 - pytest after **National Athletics workflow** (curated/live two-tier + demo coherence): **989 passed, 1 skipped, 0 failed** (990 collected; = 949 + 40).
 - pytest after **post-main-demo governance probes** (user-input governance on the same dataset + persistent demo dock): **1001 passed, 1 skipped, 0 failed** (1002 collected; = 949 + 52).
+- pytest after **demo-polish (review batch A+B)** — sharper narrative (Xiao Le no-medal / Ali silver+PB+conduct A), June dates, contact/preference reframe, 6-deliverable summary, RED-row wording, synthetic-DB data-source note, one-click + idempotent-approval UI, Sub-goals hide + "Learning & memory policy" reframe, BLUE probe → notice-edit (new `parent_message_draft_edit` category): **1002 passed, 1 skipped, 0 failed** (1003 collected; = 949 + 53).
 - Offline governance eval: **pass rate 1.0** (37 evaluated, 3 documented L2 skips) — +2 national + 6 probe cases.
-- New workflow tests: `tests/test_workflow_autonomy.py` — 39 (National Athletics suite). Probe tests: `tests/test_post_main_demo_governance_probes.py` — 12 (BLUE/RED×2/GREEN/INFEASIBLE routes, no-side-effect for blocked probes, not-a-workflow, CJK reword-proof RED, over-fire guards). Two new reword-proof `risk_rules` (status_based_differential → RED; unsupported_amount_estimate → INFEASIBLE).
+- New workflow tests: `tests/test_workflow_autonomy.py` — 39 (National Athletics suite). Probe tests: `tests/test_post_main_demo_governance_probes.py` — 13 (BLUE/RED×2/GREEN/INFEASIBLE routes, BLUE produces a real verified notice, no-side-effect for blocked probes, not-a-workflow, CJK reword-proof RED, over-fire guards). Reword-proof `risk_rules` (status_based_differential → RED; unsupported_amount_estimate → INFEASIBLE) + a `parent_message_draft_edit` category (BLUE) with a deterministic SmartMock responder.
 - New intentional skips: none.
 
 > Doc-number correction: the shipped docs previously claimed **932/933** — stale
