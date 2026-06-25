@@ -28,21 +28,23 @@ The landing page has two clearly-labelled sections, and after the first run a
 **Beat W — one sentence becomes a governed workflow.** Set the scene: *"A few
 pupils represented the school at a **national athletics championship** — medals,
 a national record, a place at an international meet. The results are in the school
-system."* Click the headline button **🏆 National athletics results are ready →
-run the full workflow** (or type *全国赛成绩出来了,处理一下。*).
+system."* Click the headline button **🏆 A teacher's national-athletics follow-up →
+run the full workflow** — a realistic teacher prompt (the meet's facts + *"please
+handle the full follow-up…"*), not a magic phrase.
 
-"One line. It detected the **National Athletics Reporting workflow** and built a
-**ten-step plan** — the panel's status line reads **Governed workflow — 8 auto-run
-· 1 awaiting approval · 1 self-blocked**. It reads the rich student/parent database
-in the backend and
-produces **six deliverables**: a detailed **internal report**, **three
-personalised parent notices** — Mei Xin's warm (gold + national record), Ali's in
-**Bahasa Melayu** because that's the parent's recorded language, Xiao Le's direct
-and **keeping an honest training-attendance reminder** — a **trilingual Facebook
-post**, and a **Data-Selection Audit**. All **BLUE**, automatic. The audit is the
-key artifact: it lists what the agent **accessed**, what it **used** per output,
-and what it **blocked** — household income, address, phone, Dato' title, PIBG
-status, donation potential. *Access is not permission to use.*"
+"One realistic prompt. It detected the **National Athletics Reporting workflow** and
+built an **eleven-step plan** — the panel's status line reads **Governed workflow —
+9 auto-run · 1 awaiting verification · 1 self-blocked**, and the panel is fully
+visible *while* it waits. It reads the rich student/parent database in the backend
+and produces **seven outputs**: a detailed **internal report**, **three personalised
+parent notices** — Mei Xin's warm (gold + 4.82m national record), Ali's in **Bahasa
+Melayu** because that's the parent's recorded language, Xiao Le's honest and
+supportive (no medal, below personal best) and **keeping the training-attendance
+reminder** — a **trilingual Facebook post**, a **Data-Selection Audit**, and a
+**Proposed Official Record Update**. The audit is the key artifact: it lists what
+the agent **accessed**, what it **used** per output, and what it **blocked** —
+household income, address, phone, Dato' title, PIBG status, donation potential.
+*Access is not permission to use.*"
 
 **Beat W2 — the agent governs its OWN plan (the moment that matters).** Point at
 the **RED** step in the panel — *Consider softening Xiao Le's reminder by family
@@ -58,9 +60,17 @@ communication style and the pupil's real development need; keep the honest
 reminder. The agent governs **itself**. The whole task still completes — only that
 one step is blocked (the route row shows it as *self-blocked*, not failed)."
 
-Then the last step — **queue notices + Facebook post for approval → GREEN**: "it
-stops and asks me, because anything that leaves the school needs a human. In demo
-mode nothing is really sent."
+**Beat W3 — the high-impact GREEN (the differentiator).** Point at the **GREEN**
+step — *Verify & write official record update — Mei Xin*: "This is the strong GREEN.
+The agent noticed Mei Xin's **4.82m** beats the previous **4.70m** national record,
+and prepared a **proposed official record update** (a visible draft). But writing to
+the **official** school achievement record is high-impact and largely irreversible —
+so the agent **stops and asks a human to verify the official result sheet before it
+writes the record**. Not a generic 'ask before publishing' that any agent does — it
+paused at the consequential step *inside its own autonomous workflow*. The approval
+card says exactly that, and the panel shows everything else is already done. In demo
+mode no official record is written." (External sending/publishing is a *separate*
+governed boundary — shown as a follow-up probe, not the main highlight.)
 
 ---
 
