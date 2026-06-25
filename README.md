@@ -73,7 +73,7 @@ execution is **simulated and labelled**, while the **audit trace and signed
 ticket are real**.
 
 ## Evidence (tiered & reproducible — see [CLAIMS_CHECK.md](CLAIMS_CHECK.md))
-- **pytest** (zero-key env) → **1004 passed / 1 skipped / 0 failed** (1005 collected), incl. the Workflow Autonomy layer (102W/101D), the National Athletics reporting workflow, and the post-main-demo user-input governance probes.
+- **pytest** (zero-key env) → **1005 passed / 1 skipped / 0 failed** (1006 collected), incl. the Workflow Autonomy layer (102W/101D), the National Athletics reporting workflow, and the post-main-demo user-input governance probes.
 - **Offline governance eval** → `python -X utf8 scripts/run_evals.py` → pass rate **1.0** (37 evaluated, 3 skipped).
 - **Secret scan** → `python -X utf8 scripts/verify_no_secrets.py` → PASS.
 
