@@ -2203,12 +2203,19 @@ class Runtime:
             risk.task_id = envelope.task_id
             # GREEN elevation (after 101B; only raise, never lower; this action
             # only). 101D GREEN while risk says BLUE → elevate to GREEN (§G).
-            if (data_use.get("decision") == "GREEN"
-                    and risk.recommended_route == "BLUE"):
-                risk.recommended_route = "GREEN"
-                risk.risk_level = "medium"
-                risk.risk_score = max(risk.risk_score, 0.55)
-                risk.reasons.append("data_use_guard_green: human approval required")
+            if data_use.get("decision") == "GREEN":
+                if risk.recommended_route == "BLUE":
+                    risk.recommended_route = "GREEN"
+                    risk.risk_level = "medium"
+                    risk.risk_score = max(risk.risk_score, 0.55)
+                    risk.reasons.append("data_use_guard_green: human approval required")
+                # Surface 101D's SPECIFIC reason on the decision (so the approval
+                # card explains WHY — e.g. "official record write needs human
+                # verification" — not a bare "risk_recommended:GREEN"), whether
+                # or not 101B had already routed this GREEN.
+                for r in (data_use.get("reasons") or []):
+                    if r not in risk.reasons:
+                        risk.reasons.append(r)
                 risk.features["data_use_guard"] = data_use
             self._emit("101B", "action_risk_assessed",
                        envelope.task_id, envelope.session_id,

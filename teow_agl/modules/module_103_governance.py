@@ -88,6 +88,12 @@ class GovernanceModule:
 
         route: str = risk.recommended_route
         reasons.append(f"risk_recommended:{route}")
+        # Carry forward 101D's SPECIFIC data-use reason (e.g. "official record
+        # write needs human verification") so the approval card / decision
+        # explains WHY, not just a bare "risk_recommended:GREEN".
+        for _r in ((risk.features or {}).get("data_use_guard") or {}).get("reasons", []):
+            if _r and _r not in reasons:
+                reasons.append(_r)
 
         matched_approval = self._match_action_names(risk.features, self.profile.approval_required_actions)
         if matched_approval:
@@ -138,10 +144,18 @@ class GovernanceModule:
                 policy_version=self.policy_version,
             )
 
+        # Prefer a human-readable label for the approval card: the workflow
+        # step name, else the action's purpose, else the raw tool.op fallback.
+        # (A bare "chat.answer on (unresolved target)" reads as confusion, not
+        # governance.)
+        _label = (action.metadata.get("workflow_step_name")
+                  or action.purpose
+                  or f"{action.tool}.{action.operation} on "
+                     f"{action.target or '(unresolved target)'}")
         approval = ApprovalRequest(
             approval_id=f"appr_{uuid.uuid4().hex[:12]}",
             task_id=risk.task_id, action_id=action.action_id,
-            summary=f"{action.tool}.{action.operation} on {action.target or '(unresolved target)'}",
+            summary=str(_label),
             risk_factors=[k for k, v in risk.features.items() if v],
             context={"reasons": reasons, "purpose": action.purpose,
                      "user_intent": action.metadata.get("user_intent", "")},

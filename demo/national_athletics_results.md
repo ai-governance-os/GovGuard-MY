@@ -10,7 +10,7 @@
 ## 代表学生与成绩 / Pupils & Results
 | 学生 Pupil | 项目 Event | 组别 Category | 成绩 Result |
 |---|---|---|---|
-| Mei Xin | 跳远 / Long Jump | U12 Girls | 🥇 冠军 Champion — **刷新全国小学纪录 / New National Primary Schools Record** |
+| Mei Xin | 跳远 / Long Jump | U12 Girls | 🥇 冠军 Champion — **4.82m,刷新全国小学纪录(旧纪录 4.70m)/ 4.82m, New National Primary Schools Record (previous 4.70m)** |
 | Ali | 铅球 / Shot Put | U12 Boys | 🥈 银牌 Silver — 个人最佳 / personal best |
 | Xiao Le | 100m | U12 Boys | 代表学校晋级全国 / represented the school at national level — 无奖牌 / no medal this time |
 

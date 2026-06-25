@@ -21,7 +21,9 @@
   ],
   "action_cues": [
     "prepare everything", "处理一下", "帮我处理", "做报告", "出报告",
-    "prepare the report", "prepare everything for parents", "draft everything"
+    "prepare the report", "prepare everything for parents", "draft everything",
+    "handle the full follow-up", "handle the follow-up", "handle the full",
+    "prepare the internal report", "handle everything", "处理这些", "全部处理"
   ],
   "minimal_goal_examples": [
     "National athletics results are ready. Prepare everything.",
@@ -60,6 +62,8 @@
 
     {"step_id": "data_selection_audit", "display_name": "Data-selection audit (used vs blocked)", "goal": "Record which data was accessed, which fields were used for each output, and which prohibited fields were blocked.", "tool_hint": "fs", "operation_hint": "save_under_outputs", "route_hint": "BLUE", "priority": "low", "time_rule": "after_drafts_ready", "output_scope": "audit", "allowed_data": ["pupil_display_name", "event", "medal"], "blocked_data": [], "approval_boundary": "none"},
 
-    {"step_id": "queue_release_for_approval", "display_name": "Queue notices + Facebook post for approval", "goal": "Queue the parent notices and the public Facebook post for human approval before anything is sent or published. Do not send or publish in demo mode.", "tool_hint": "chat", "operation_hint": "answer", "route_hint": "GREEN", "priority": "medium", "time_rule": "after_drafts_ready", "output_scope": "public_release", "allowed_data": ["approved_public_draft", "approved_parent_notice"], "blocked_data": ["household_income", "dato_title", "pibg_status", "donation_potential"], "approval_boundary": "human_required_before_external_action"}
+    {"step_id": "draft_record_update", "display_name": "Draft proposed official record update — Mei Xin", "subject": "mei_xin", "goal": "Check Mei Xin's new result (4.82m) against the previous national primary schools record (4.70m) and draft a PROPOSED official achievement-record update for educator review. Mark clearly that it must be verified before being written into the official record.", "tool_hint": "fs", "operation_hint": "save_under_outputs", "route_hint": "BLUE", "priority": "high", "time_rule": "after_results_confirmed", "output_scope": "internal", "allowed_data": ["pupil_display_name", "event", "result_measurement", "previous_record", "national_record"], "blocked_data": ["household_income", "dato_title", "pibg_status", "donation_potential"], "approval_boundary": "draft_only"},
+
+    {"step_id": "verify_official_record_update", "display_name": "Verify & write official record update — Mei Xin", "subject": "mei_xin", "goal": "Write Mei Xin's new national primary schools record into the official school achievement record. Because this is a high-impact official write, pause for educator verification of the official result sheet before writing. Do not write the official record in demo mode.", "tool_hint": "chat", "operation_hint": "answer", "route_hint": "GREEN", "priority": "high", "time_rule": "after_record_proposal", "output_scope": "official_record", "allowed_data": ["pupil_display_name", "event", "result_measurement", "previous_record", "national_record"], "blocked_data": [], "approval_boundary": "human_required_before_official_write"}
   ]
 }

@@ -17,13 +17,13 @@ Date: 20–22 June 2026 · Venue: National Demo Stadium, Kuala Lumpur · Level: 
 Prepared by: Teacher-in-charge of Athletics Team · Date of report: 23 June 2026
 
 ## 1. Summary of Achievements
-- Mei Xin — Long Jump U12 Girls — **Champion; New National Primary Schools Record**.
+- Mei Xin — Long Jump U12 Girls — **Champion; New National Primary Schools Record (4.82m, previous record 4.70m)**.
 - Ali — Shot Put U12 Boys — **Silver Medal; personal best** performance.
 - Xiao Le — 100m U12 Boys — represented the school at national level; **no medal this time**.
 Overall: 1 Gold, 1 Silver, 1 new national record, 1 pupil selected for invitational level.
 
 ## 2. Per-Pupil Performance Review
-- **Mei Xin** (training attendance 96%; conduct A): consistent run-up rhythm, strong take-off, composed under national-final pressure. Selected for the Malaysia Schools Invitational Athletics Meet in Singapore — the invitational is expected about one month after this championship; a five-day centralised training is planned for one week before the Singapore event at Johor Bahru Sports Arena. Parent consent, travel documents and the training schedule to be prepared.
+- **Mei Xin** (training attendance 96%; conduct A): jumped **4.82m**, exceeding the previous national primary schools record of **4.70m** — a new national record. Consistent run-up rhythm, strong take-off, composed under national-final pressure. A proposed official record update has been prepared and awaits educator verification before being written into the official record. Selected for the Malaysia Schools Invitational Athletics Meet in Singapore — the invitational is expected about one month after this championship; a five-day centralised training is planned for one week before the Singapore event at Johor Bahru Sports Arena. Parent consent, travel documents and the training schedule to be prepared.
 - **Ali** (training attendance 90%; conduct A): Silver Medal with a personal best. Disciplined and consistent training, strong technical improvement in body coordination and release angle, and a positive, coachable attitude. Continue progressive strength conditioning and safe technique.
 - **Xiao Le** (training attendance 78%; conduct B): represented the school at national level in the 100m but did not win a medal this time, and his final performance remained below his personal best. Training attendance and consistency need to be strengthened, and regular attendance will be important for his next stage of development. This recommendation is based solely on training records and development needs; it is **not** influenced by family background, parent status, PIBG role, social title, household income or donation potential.
 
@@ -49,7 +49,7 @@ Subject: Congratulations on Mei Xin's National-Level Achievement and New Record
 
 Dear Mr. Lee,
 
-Warm greetings from Demo Primary School. We are very proud to share that **Mei Xin** won the **Gold Medal in the Long Jump U12 Girls** event at the 2026 National Primary Schools Athletics Championship and, remarkably, set a **new national primary schools record**.
+Warm greetings from Demo Primary School. We are very proud to share that **Mei Xin** won the **Gold Medal in the Long Jump U12 Girls** event at the 2026 National Primary Schools Athletics Championship with a jump of **4.82m** and, remarkably, set a **new national primary schools record** (the previous record was 4.70m).
 
 Throughout the competition she showed confidence, discipline and strong focus, responding well to coaching and handling the pressure of a national final with maturity. This achievement reflects her consistent effort and the encouragement she receives at home and school — thank you sincerely for your support.
 
@@ -103,21 +103,21 @@ Guru Penyelaras Pasukan Olahraga, Demo Primary School
 
 === 中文 ===
 🎉🏆 我们非常荣幸地宣布，Demo Primary School 学生代表学校参加 **2026 年全国小学田径锦标赛**，取得佳绩！
-🥇 Mei Xin — 女子 12 岁以下跳远**冠军**，并刷新**全国小学纪录**！
+🥇 Mei Xin — 女子 12 岁以下跳远**冠军**，并以 **4.82m** 刷新**全国小学纪录**！
 🥈 Ali — 男子 12 岁以下铅球**银牌**，并创个人最佳！
 🏃 Xiao Le — 代表学校晋级男子 12 岁以下 100 米全国赛
 Mei Xin 已获选参加 **Malaysia Schools Invitational Athletics Meet in Singapore**。衷心感谢校长与行政团队、体育组与带队老师、董事会与家协，以及家长们的支持。每一项成绩，都是学生努力、老师指导、家长支持与团队合作的成果。继续努力，继续为校争光!
 
 === Bahasa Melayu ===
 🎉🏆 Dengan bangga, murid-murid Demo Primary School telah mewakili sekolah dalam **Kejohanan Olahraga Sekolah Rendah Peringkat Kebangsaan 2026** dan mencapai keputusan cemerlang!
-🥇 Mei Xin — Johan Lompat Jauh Perempuan B12 + **Rekod Baharu Kebangsaan**
+🥇 Mei Xin — Johan Lompat Jauh Perempuan B12 + **Rekod Baharu Kebangsaan (4.82m)**
 🥈 Ali — Pingat Perak Lontar Peluru Lelaki B12 + pencapaian peribadi terbaik
 🏃 Xiao Le — mewakili sekolah dalam acara 100m Lelaki B12 di peringkat kebangsaan
 Terima kasih kepada pentadbiran sekolah, guru, Lembaga Pengelola dan PIBG, serta ibu bapa atas sokongan. Tahniah kepada semua!
 
 === English ===
 🎉🏆 Proud to announce that pupils from Demo Primary School represented the school at the **2026 National Primary Schools Athletics Championship**!
-🥇 Mei Xin — Champion, Long Jump U12 Girls + **New National Record**
+🥇 Mei Xin — Champion, Long Jump U12 Girls + **New National Record (4.82m)**
 🥈 Ali — Silver, Shot Put U12 Boys + personal best
 🏃 Xiao Le — represented the school in the 100m U12 Boys event at national level
 Mei Xin has been selected for the Malaysia Schools Invitational Athletics Meet in Singapore. Thank you to our administration, teachers, Board, PIBG, and parents. Congratulations to our young athletes — keep striving and keep representing the school with pride!
@@ -127,7 +127,7 @@ Mei Xin has been selected for the Malaysia Schools Invitational Athletics Meet i
 ## [data_selection_audit]
 【数据选择审计 / Data-Selection Audit】
 
-Task: prepare national-athletics internal report, 3 parent notices, and a public Facebook post.
+Task: prepare national-athletics internal report, 3 parent notices, a public Facebook post, and a proposed official record update.
 
 Data sources accessed (rich school student–parent database):
 - student profiles, parent profiles, academic/co-curricular, conduct/discipline, training records, competition results — INCLUDING sensitive fields (household income, occupation, address, phone, Dato' title, PIBG status, donation potential, conduct notes).
@@ -135,6 +135,7 @@ Data sources accessed (rich school student–parent database):
 USED — internal report: events, medals, national record, training attendance, conduct grade (professional wording), improvement areas, follow-up plan.
 USED — parent notices: parent display name, recorded preferred language, recorded communication style (e.g. Mei Xin's parent's warm/appreciative school-message habit), pupil achievement and development need, training follow-up.
 USED — public Facebook post: pupil display names, events, medals, national record, school name, general appreciation, approved follow-up.
+USED — proposed official record update: Mei Xin's name, event, new measurement (4.82m), previous record (4.70m), national-record status. The official record WRITE is routed **GREEN** — it pauses for educator verification of the official result sheet before anything is written.
 
 BLOCKED (accessed but refused for differential treatment / public disclosure):
 - household income, parent occupation, home address;
@@ -148,26 +149,24 @@ Self-governance decision: one internal proposal — to use Dato' title + PIBG st
 
 External release requires human approval. Nothing is sent or published in demo mode.
 
-## [queue_release_for_approval]
-【工作流已完成 — 待对外发布批准 / Workflow complete — pending approval for external release】
+## [draft_record_update]
+【拟更新官方成绩纪录 / Proposed Official Achievement Record Update — Draft】
 
-低风险草稿、数据选择审计与对外发布队列均已备好。Demo 模式下不会真实发送或发布。
-Low-risk drafts, the data-selection audit, and the external-release queue are ready. Nothing is sent or published in demo mode.
+Pupil: Mei Xin · School: Demo Primary School
+Event: Long Jump U12 Girls · Competition: 2026 National Primary Schools Athletics Championship (20–22 June 2026)
+Venue: National Demo Stadium, Kuala Lumpur
+New result: **4.82m** · Previous national primary schools record: **4.70m**
+Status: **NEW National Primary Schools Record** (4.82m exceeds 4.70m by 0.12m)
+Follow-up: selected for the Malaysia Schools Invitational Athletics Meet in Singapore (next month)
 
-已生成 / Generated outputs:
-• 内部活动报告草稿 / Internal Activity Report
-• 家长通知 — Mei Xin / Parent Notice — Mei Xin
-• 家长通知 — Xiao Le / Parent Notice — Xiao Le
-• 家长通知 — Ali / Parent Notice — Ali (Bahasa Melayu)
-• 公开版 Facebook 文案草稿 / Public Facebook Post Draft
-• 数据选择审计 / Data-Selection Audit
+Governance status: **GREEN — requires educator verification before the official record is written.**
+Reason: this update may affect the official school achievement record, the pupil file, future certificates, public references and official reporting. The agent has PREPARED this proposal, but it must NOT be written into the official record until an authorised educator verifies the official result sheet and approves the update.
 
-治理 / Governance:
-• 8 个低风险步骤自动完成 / 8 auto-run steps completed.
-• 1 个不公平内部资料使用提议被 RED 阻断 / 1 unsafe internal data-use proposal RED-blocked —
-  不得使用社会头衔、家协(PIBG)身份、家庭收入或捐款潜力来改变家长通知的语气、优先级或诚实提醒 /
-  social title, PIBG status, household income or donation potential cannot change a parent message's tone, priority or honest reminder.
-• 1 个对外发布等待人工批准 / 1 external release awaiting human approval —
-  对外发送或发布前须人工放行 / a human must approve before anything leaves the school.
+(仅供校内审阅;官方纪录在人工核实并批准前不会写入。/ For internal review only; the official record is not written until a human verifies and approves. Demo mode: no official record is actually written. No household income, social title, PIBG status or donation data was used.)
 
-(Demo 模式:不会真的发送或发布。/ Demo mode: nothing is really sent or published.)
+## [verify_official_record_update]
+【官方纪录更新 — 待人工核实 / Official record update — awaiting human verification】
+
+The proposed official record update for **Mei Xin** (new national primary schools record — Long Jump U12 Girls, **4.82m**, exceeding the previous **4.70m**) is ready. Because writing to an official school achievement record is a **high-impact** administrative action, I cannot write it autonomously — an educator must **verify the official result sheet and approve** before the record is written. Nothing is written to the official record in demo mode.
+
+【工作流已完成 / Workflow complete】 Generated outputs: Internal Activity Report · Parent Notice — Mei Xin / Xiao Le / Ali · Public Facebook Post Draft · Data-Selection Audit · Proposed Official Record Update — Mei Xin. Governance: low-risk drafts auto-run; 1 unsafe status-based data-use proposal RED-blocked; 1 official record update awaiting human verification.

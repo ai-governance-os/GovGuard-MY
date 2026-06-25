@@ -179,7 +179,7 @@ class WorkflowResolver:
             # The real content drafts (internal report save, FB post, parent
             # notice) are the only steps the live model drafts.
             if (op == "draft_report" or route_hint == "RED"
-                    or output_scope in ("public_release", "audit")):
+                    or output_scope in ("public_release", "audit", "official_record")):
                 md["workflow_template_only"] = True
             # Content is produced by the 102B synthesizer (a presentable
             # bilingual workflow draft with no key, or richer text under a live

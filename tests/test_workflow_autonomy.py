@@ -651,18 +651,55 @@ def test_national_goal_not_taken_by_post_event(isolated_workspace: Path):
     assert res["workflow_id"] != "post_event_reporting"
 
 
-def test_national_routes_blue8_red1_green1(isolated_workspace: Path):
-    """The 10-step plan governs to BLUE×8 · RED×1 · GREEN×1: the self-block
-    (status/income personalisation) is the only RED, the external release is
-    the only GREEN, everything else is auto BLUE."""
+def test_national_routes_blue9_red1_green1(isolated_workspace: Path):
+    """The 11-step plan governs to BLUE×9 · RED×1 · GREEN×1: the self-block
+    (status/income personalisation) is the only RED, the high-impact OFFICIAL
+    RECORD UPDATE is the only GREEN (human verification before official write),
+    everything else is auto BLUE."""
     _, res = _nat_run(isolated_workspace)
     routes = _routes_by_step(res)
-    assert len(routes) == 10, routes
+    assert len(routes) == 11, routes
     from collections import Counter
     counts = Counter(routes.values())
-    assert counts["BLUE"] == 8 and counts["RED"] == 1 and counts["GREEN"] == 1, counts
+    assert counts["BLUE"] == 9 and counts["RED"] == 1 and counts["GREEN"] == 1, counts
     assert routes["consider_status_personalisation"] == "RED"
-    assert routes["queue_release_for_approval"] == "GREEN"
+    assert routes["verify_official_record_update"] == "GREEN"
+    # the record proposal is a BLUE draft (visible); only the official WRITE is GREEN
+    assert routes["draft_record_update"] == "BLUE"
+
+
+def test_national_natural_teacher_prompt_detected(isolated_workspace: Path):
+    """A realistic, long teacher prompt (facts + 'handle the full follow-up')
+    still detects the workflow via anchor+cue — not only the short trigger, so
+    the main demo no longer feels like a magic phrase."""
+    nat = ("I brought three pupils to the 2026 National Primary Schools "
+           "Athletics Championship held from 20-22 June 2026. Mei Xin won the "
+           "U12 Girls Long Jump with 4.82m and broke the national primary "
+           "schools record. Ali won silver in U12 Boys Shot Put with a personal "
+           "best. Xiao Le did not win a medal and performed below his personal "
+           "best. Please handle the full follow-up: prepare the internal report, "
+           "parent messages, public Facebook draft, data-use audit, and any "
+           "school-record update that requires approval.")
+    res = _resolver(isolated_workspace).resolve(_envelope(nat), None)
+    assert res is not None and res["workflow_id"] == "national_athletics_reporting"
+
+
+def test_national_green_is_official_record_update(isolated_workspace: Path):
+    """The main GREEN is a high-impact OFFICIAL RECORD UPDATE needing human
+    verification (not a generic publish gate). The record PROPOSAL is a visible
+    BLUE draft (with the numbers); only the official WRITE is GREEN."""
+    _, res = _nat_run(isolated_workspace)
+    routes = _routes_by_step(res)
+    greens = [sid for sid, r in routes.items() if r == "GREEN"]
+    assert greens == ["verify_official_record_update"], greens
+    g = next(a for a in res.plan.actions
+             if a.metadata.get("workflow_step_id") == "verify_official_record_update")
+    dec = next(d for d in res.decisions if d.action_id == g.action_id)
+    assert any("official school achievement record" in r.lower() for r in dec.reasons), dec.reasons
+    proposal = isolated_workspace / "outputs" / "draft_record_update.md"
+    assert proposal.exists(), "record proposal draft (BLUE) was not produced"
+    body = proposal.read_text(encoding="utf-8")
+    assert "4.82m" in body and "4.70m" in body
 
 
 def test_national_self_block_is_red_and_no_side_effect(isolated_workspace: Path):
@@ -851,10 +888,11 @@ def test_live_faithful_draft_is_used(isolated_workspace: Path):
 
 
 def test_server_exposes_national_workflow_panel(monkeypatch):
-    """End-to-end through the server (the demo path): the national goal seeds +
-    reads its own public-safe results file, detects national_athletics_reporting,
-    and serves a 10-step panel with the self-block (RED) + external release
-    (GREEN). Proves the recorded-demo path, not just the isolated unit path."""
+    """End-to-end through the server (the demo path): the national goal detects
+    national_athletics_reporting and serves an 11-step panel with the self-block
+    (RED) + the high-impact OFFICIAL RECORD UPDATE (GREEN, human verification).
+    The panel must already be visible WHILE awaiting approval (not a bare card),
+    and the approval card must carry a human-readable label."""
     import time
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -877,16 +915,26 @@ def test_server_exposes_national_workflow_panel(monkeypatch):
 
     state = _poll("awaiting_approval", "done", "error")
     if state["status"] == "awaiting_approval":
+        # G1: the governed workflow panel is built WHILE paused at the gate, so
+        # the GREEN reads as "work done, awaiting verification", not "asked
+        # before doing anything".
+        pwf = state.get("workflow")
+        assert pwf and pwf["detected"] and len(pwf["steps"]) == 11, pwf
+        assert pwf["summary"]["self_blocked"] == 1 and pwf["summary"]["approval"] == 1
+        # the approval card has a meaningful label + the official-record reason
         appr = state["pending_approvals"][0]
+        assert "official record" in (appr.get("summary") or "").lower()
+        assert any("official school" in r.lower()
+                   for r in (appr.get("context") or {}).get("reasons", []))
         c.post(f"/api/tasks/{tid}/decide",
                json={"approval_id": appr["approval_id"], "status": "rejected",
-                     "note": "demo: no real external publish"})
+                     "note": "demo: no official record written"})
         state = _poll("done", "error")
     assert state is not None and state["status"] == "done", f"final: {state}"
     wf = state.get("workflow")
     assert wf and wf["detected"] is True
     assert wf["workflow_id"] == "national_athletics_reporting"
-    assert len(wf["steps"]) == 10
+    assert len(wf["steps"]) == 11
     routes = [s["route"] for s in wf["steps"]]
     assert "GREEN" in routes and "RED" in routes, routes
     assert all(r in ("BLUE", "GREEN", "RED") for r in routes), routes

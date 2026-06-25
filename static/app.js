@@ -330,7 +330,9 @@ function renderWorkflowPanel(bubble, d) {
   const rows = steps.map((s, i) => {
     const route = s.route || "—";
     const note = route === "RED" ? "unsafe data-use blocked"
-      : route === "GREEN" ? "external release — needs approval"
+      : route === "GREEN" ? (s.output_scope === "official_record"
+          ? "official record — needs human verification"
+          : "external action — needs human approval")
       : (s.output_scope === "public_draft"
           ? "public draft — sensitive fields blocked"
           : (s.output_scope === "audit" ? "data-selection audit"

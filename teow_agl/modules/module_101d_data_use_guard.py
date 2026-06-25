@@ -266,6 +266,22 @@ class DataUseGuard:
                                 "and access-controlled."],
                     "features": features}
 
+        # ── GREEN: writing/updating an OFFICIAL record is high-impact → verify ─
+        # Stronger than ordinary external release: this is the agent reaching a
+        # formal administrative write inside its own autonomous workflow and
+        # pausing for a human, not a generic publish gate.
+        if (scope in ("official_record", "official_write")
+                or "official" in approval_boundary):
+            return {"decision": "GREEN",
+                    "reasons": ["Writing or updating an official school "
+                                "achievement record is a high-impact "
+                                "administrative action — an educator must verify "
+                                "the official result before it is written.",
+                                "safe_alternative: Prepare the proposed update; a "
+                                "human verifies the official result sheet and "
+                                "approves before the record is written."],
+                    "features": features}
+
         # ── GREEN: external publish/send/submit needs human approval ──
         if is_public and scope != "public_draft":
             return {"decision": "GREEN",

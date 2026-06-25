@@ -561,6 +561,12 @@ def get_task(task_id: str) -> dict:
         if live_for_task and state.status not in ("done", "error"):
             state.pending_approvals = live_for_task
             state.status = "awaiting_approval"
+            # The run is blocked at its human gate, so the final result isn't
+            # built yet. Reconstruct the workflow panel from the trace so the
+            # paused GREEN reads as "work done, awaiting verification", not
+            # "asked before doing anything". Replaced by the full view on done.
+            if state.workflow is None:
+                state.workflow = _partial_workflow_view_from_events(state.events)
         elif not live_for_task and state.status == "awaiting_approval":
             state.pending_approvals = []
             state.status = "running"
@@ -1069,6 +1075,74 @@ def serve_output(filename: str) -> FileResponse:
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+def _database_note(results_source) -> str | None:
+    """A redacted one-line note naming the rich backend database, so judges see
+    it exists WITHOUT dumping it ("access ≠ permission to use")."""
+    rs = str(results_source or "").lower()
+    if "database" in rs or "student_parent" in rs:
+        return (
+            "Synthetic Student–Parent Database (rich; backend) — student & parent "
+            "profiles, training records, competition results, plus sensitive "
+            "governance-test fields (household income, social title, PIBG status, "
+            "address, phone, donation potential). Sensitive fields are accessed for "
+            "governance only and are never used for unfair treatment or public "
+            "disclosure — see the Data-Selection Audit for what was used vs blocked.")
+    return None
+
+
+def _partial_workflow_view_from_events(events: list) -> dict | None:
+    """While a workflow task is PAUSED at its GREEN human gate, rt.run() is still
+    blocked in the worker thread, so the final TaskRunResult — and thus
+    _workflow_view() — isn't available yet. Reconstruct the panel from the 102W
+    `workflow_detected` trace event (which carries the resolution + steps) so the
+    user immediately sees the GOVERNED WORKFLOW (low-risk steps done, the unsafe
+    proposal self-blocked, the high-impact step awaiting verification) instead of
+    a bare approval card that reads as "asked before doing any work". Per-step
+    route uses the planned route_hint (which matches the actual governed route
+    for these configured workflows); the full view replaces this on completion."""
+    wf_ev = None
+    for ev in events or []:
+        if ev.get("module") == "102W" and ev.get("event_type") == "workflow_detected":
+            wf_ev = ev  # last one wins
+    if not wf_ev:
+        return None
+    res = wf_ev.get("details") or {}
+    raw_steps = res.get("steps") or []
+    if not raw_steps:
+        return None
+    steps = []
+    for s in raw_steps:
+        route = str(s.get("route_hint") or "BLUE").upper()
+        steps.append({
+            "step_id": s.get("step_id"),
+            "step_name": s.get("display_name", s.get("step_id")),
+            "route": route,
+            "output_scope": s.get("output_scope"),
+            "status": ("denied" if route == "RED"
+                       else "skipped" if route == "GREEN" else "success"),
+        })
+    summary = {
+        "auto": sum(1 for s in steps if s["route"] == "BLUE"),
+        "approval": sum(1 for s in steps if s["route"] == "GREEN"),
+        "self_blocked": sum(1 for s in steps if s["route"] == "RED"),
+        "total": len(steps),
+    }
+    return {
+        "detected": True,
+        "workflow_id": res.get("workflow_id"),
+        "workflow_name": res.get("workflow_name"),
+        "priority": res.get("priority"),
+        "deadline_hours": res.get("deadline_hours"),
+        "confidence": res.get("confidence"),
+        "steps": steps,
+        "blocked": [],            # full reasons appear in the completed view
+        "summary": summary,
+        "source_file": None,
+        "database_note": _database_note(res.get("results_source")),
+        "partial": True,
+    }
+
+
 def _workflow_view(result) -> dict | None:
     """Build the UI workflow panel from a finished TaskRunResult.
 
@@ -1122,16 +1196,7 @@ def _workflow_view(result) -> dict | None:
     # Make the rich backend database visible to judges WITHOUT dumping it
     # ("access ≠ permission to use"): if the workflow is backed by a synthetic
     # student/parent database, surface a redacted one-line note.
-    results_source = str((wf or {}).get("results_source") or "").lower()
-    database_note = None
-    if "database" in results_source or "student_parent" in results_source:
-        database_note = (
-            "Synthetic Student–Parent Database (rich; backend) — student & parent "
-            "profiles, training records, competition results, plus sensitive "
-            "governance-test fields (household income, social title, PIBG status, "
-            "address, phone, donation potential). Sensitive fields are accessed for "
-            "governance only and are never used for unfair treatment or public "
-            "disclosure — see the Data-Selection Audit for what was used vs blocked.")
+    database_note = _database_note((wf or {}).get("results_source"))
     # Workflow-aware headline status (Option 2): summarise the steps so a
     # self-blocked step reads as "1 self-blocked" inside a governed workflow,
     # not as a failed task. Core route semantics are unchanged.
