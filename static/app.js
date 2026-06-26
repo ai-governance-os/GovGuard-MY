@@ -312,11 +312,31 @@ function renderGovPipeline(bubble, d) {
   else {
     execDet = okCount ? `${okCount} action(s) executed` : "not run";
   }
+  // Verification (110) — honest, route-aware text. Never a bare "not run":
+  // a blocked or infeasible route has nothing to verify; a workflow awaiting
+  // your sign-off defers verification of the high-impact step until then.
   const ver = d.verification;
-  let verDet = "not run", verFail = false;
-  if (ver && ver.enabled !== false && (ver.checks || []).length) {
+  const verChecks = (ver && ver.checks) ? ver.checks.length : 0;
+  const passLbl = `passed (${verChecks} check${verChecks === 1 ? "" : "s"})`;
+  let verDet, verFail = false;
+  if (wfDetected) {
+    if (sm.approval) {
+      verDet = "deferred — runs after you verify the high-impact step";
+    } else if (verChecks) {
+      verFail = !ver.pass;
+      verDet = ver.pass ? passLbl : ("FAILED: " + (ver.summary || ""));
+    } else {
+      verDet = "low-risk drafts — verified inline";
+    }
+  } else if (route === "RED") {
+    verDet = "n/a — nothing executed to verify";
+  } else if (route === "INFEASIBLE") {
+    verDet = "n/a — no action was taken";
+  } else if (ver && ver.enabled !== false && verChecks) {
     verFail = !ver.pass;
-    verDet = ver.pass ? "passed" : ("FAILED: " + (ver.summary || ""));
+    verDet = ver.pass ? passLbl : ("FAILED: " + (ver.summary || ""));
+  } else {
+    verDet = "no automated checks for this output type";
   }
 
   const step = (mod, lab, det, extra) =>
@@ -1046,42 +1066,61 @@ function renderReflection(el, d) {
   const body = el.querySelector(".reflection-body");
   body.innerHTML = "";
 
+  const route = (d.final_route || "").toUpperCase();
   const disp = r.disposition || (r.skipped ? "skipped" : "unknown");
-  const conf = (typeof r.confidence === "number"
-                ? r.confidence.toFixed(2) : "?");
-  const reasoning = r.reasoning || "";
+  // A REAL, owner-gated non-personal procedure proposal (Module 109B SOP path).
+  const sop = r.workflow_sop || null;
+  // 101A category — lets the boundary explanation name the exact probe.
+  let cat = "";
+  const pre = (d.events || []).find(e => e.module === "101A");
+  if (pre && pre.summary) { const m = /category=(\S+)/.exec(pre.summary); if (m) cat = m[1]; }
 
-  // Governance highlight: a RED / INFEASIBLE task is deliberately EXCLUDED from
-  // the skill-distiller, so "nothing learned" here is a feature, not an empty
-  // box. Reframe it (and the collapsed summary chip) affirmatively.
-  const routeExcluded = !!(r.skipped && /route_excluded/i.test(String(r.skipped)));
+  // Declarative notes ACTUALLY written / queued to memory this task. The
+  // confidence number is shown ONLY when such a real scored learning exists —
+  // so a governed "nothing personal learned" run never shows a bare "0.00".
+  const updates = [
+    ...(r.user_md_updates || []).map(u => ({ ...u, scope: "USER" })),
+    ...(r.memory_md_updates || []).map(u => ({ ...u, scope: "MEMORY" })),
+  ];
+  const hasRealLearning =
+    (disp === "applied" || disp === "pending_review") && updates.length > 0;
+
+  // ---- collapsed summary chip (honest, never an empty box) ----------
   const summaryEl = el.querySelector("summary");
   if (summaryEl) {
-    summaryEl.innerHTML = "Learning &amp; memory policy"
-      + (routeExcluded
-          ? ` <span class="refl-chip">🔒 not learned · governed route excluded</span>`
-          : "");
+    let chip;
+    if (sop) chip = `<span class="refl-chip refl-chip-pos">📘 1 procedure proposed · owner approval</span>`;
+    else if (hasRealLearning) chip = `<span class="refl-chip refl-chip-pos">✅ memory updated</span>`;
+    else chip = `<span class="refl-chip">🔒 no personal data learned</span>`;
+    summaryEl.innerHTML = "Learning &amp; memory policy " + chip;
   }
 
+  // ---- headline + the "why" (boundary reasoning), per route ---------
   const header = document.createElement("div");
   header.className = "reflection-header";
-  if (routeExcluded) {
-    header.innerHTML = `<span class="reflection-disp reflection-disp-governed">`
-      + `🔒 No memory update</span> · governed route excluded from learning`;
-  } else {
-    header.innerHTML =
-      `<span class="reflection-disp reflection-disp-${escapeAttr(disp)}">`
-      + `${escapeHtml(disp)}</span>`
-      + ` · confidence ${escapeHtml(conf)}`
-      + (reasoning ? ` · ${escapeHtml(reasoning)}` : "");
-  }
+  header.innerHTML = reflectionHeadline(route, hasRealLearning, sop);
   body.appendChild(header);
 
-  if (disp === "applied" || disp === "pending_review") {
-    const updates = [
-      ...(r.user_md_updates || []).map(u => ({ ...u, scope: "USER" })),
-      ...(r.memory_md_updates || []).map(u => ({ ...u, scope: "MEMORY" })),
-    ];
+  const why = document.createElement("div");
+  why.className = "reflection-why";
+  why.textContent = reflectionWhy(route, cat, hasRealLearning, sop);
+  body.appendChild(why);
+
+  // ---- the POSITIVE half: a real, non-personal procedure proposal ---
+  if (sop) {
+    const card = document.createElement("div");
+    card.className = "reflection-sop";
+    card.innerHTML =
+      `<div class="rs-title">📘 Procedure proposed for your approval</div>`
+      + `<div class="rs-name">${escapeHtml(sop.name || "workflow procedure")}</div>`
+      + `<div class="rs-meta">${escapeHtml(String(sop.steps || "?"))} steps · `
+      + `non-personal (PII-free) · status: <b>pending owner approval</b> · `
+      + `review it in the Curator panel</div>`;
+    body.appendChild(card);
+  }
+
+  // ---- real declarative updates (only when they exist) --------------
+  if (hasRealLearning) {
     const ul = document.createElement("ul");
     ul.className = "reflection-list";
     for (const u of updates) {
@@ -1093,49 +1132,72 @@ function renderReflection(el, d) {
         + `<span class="reflection-text">${escapeHtml(u.text || u.old_substring || "")}</span>`;
       ul.appendChild(li);
     }
-    if (updates.length === 0) {
-      const noopMsg = document.createElement("div");
-      noopMsg.className = "reflection-noop";
-      noopMsg.textContent = "(nothing to apply — proposal was empty)";
-      body.appendChild(noopMsg);
-    } else {
-      body.appendChild(ul);
+    body.appendChild(ul);
+    if (typeof r.confidence === "number") {
+      const c = document.createElement("div");
+      c.className = "reflection-conf";
+      c.textContent = `confidence ${r.confidence.toFixed(2)}`;
+      body.appendChild(c);
     }
-    // Skipped entries (delta-budget-exhausted, char limit, etc.)
-    if ((r.skipped_updates || []).length) {
-      const skipUl = document.createElement("ul");
-      skipUl.className = "reflection-list reflection-skipped";
-      for (const s of r.skipped_updates) {
-        const li = document.createElement("li");
-        li.textContent = `[skipped] ${s.scope || ""} · `
-          + `${s.action || ""} · ${s.skip_reason || ""} · `
-          + `"${(s.text || s.old_substring || "").slice(0, 60)}"`;
-        skipUl.appendChild(li);
-      }
-      body.appendChild(skipUl);
-    }
-  } else if (disp === "rejected_by_policy") {
+  }
+
+  // ---- an explicit policy rejection is still surfaced verbatim ------
+  if (disp === "rejected_by_policy") {
     const msg = document.createElement("div");
     msg.className = "reflection-rejection";
-    msg.textContent = `Rejected by policy: ${r.rejection_reason || "?"}`;
-    body.appendChild(msg);
-  } else if (disp === "skipped" || disp === "logged_only"
-             || disp === "applied_skipped_no_memory") {
-    const msg = document.createElement("div");
-    msg.className = "reflection-muted";
-    if (routeExcluded) {
-      msg.textContent = "No memory or skill was distilled from this task. "
-        + "RED / INFEASIBLE routes are excluded from the skill-distiller — "
-        + "sensitive student / parent data is never distilled into persistent memory.";
-    } else if (r.skipped) {
-      msg.textContent = "No memory update this task.";
-    } else {
-      msg.textContent = `Logged only (confidence ${conf} below apply threshold).`;
-    }
+    msg.textContent = `Memory write rejected by policy: ${r.rejection_reason || "?"}`;
     body.appendChild(msg);
   }
 
   el.hidden = false;
+}
+
+// Honest one-line headline for the learning panel, by governance route.
+function reflectionHeadline(route, hasRealLearning, sop) {
+  if (sop) return `<span class="reflection-disp reflection-disp-pos">`
+    + `📘 Procedure learned (proposed)</span> · no personal data used`;
+  if (hasRealLearning) return `<span class="reflection-disp reflection-disp-applied">`
+    + `✅ Memory updated</span> · non-personal note`;
+  if (route === "RED") return `<span class="reflection-disp reflection-disp-governed">`
+    + `🔒 Learning boundary enforced</span> · nothing personal learned`;
+  if (route === "INFEASIBLE") return `<span class="reflection-disp reflection-disp-governed">`
+    + `🔒 Nothing guessed, nothing learned</span>`;
+  if (route === "GREEN") return `<span class="reflection-disp reflection-disp-governed">`
+    + `🔒 Paused for your approval</span> · no memory change yet`;
+  return `<span class="reflection-disp reflection-disp-governed">`
+    + `🔒 No personal data learned</span> · boundary held`;
+}
+
+// The honest "why" — explains what the boundary did, naming the exact probe.
+function reflectionWhy(route, cat, hasRealLearning, sop) {
+  if (sop) return "The system distilled the workflow's PROCEDURE — the governed "
+    + "step shape, including the self-block — into a reusable, non-personal SOP. "
+    + "No student or parent data was written to memory; the procedure is queued "
+    + "for your approval before it can be reused.";
+  const c = cat || "";
+  if (/learning|sensitive_data_learning|student_data/.test(c))
+    return "You asked the system to train on the student database. That is exactly "
+      + "what the learning boundary forbids: personal student / parent data is never "
+      + "distilled into the model or memory. The refusal is recorded in the audit "
+      + "trail — the data is not.";
+  if (route === "RED")
+    return "This route was self-blocked for unsafe data use, so nothing was learned "
+      + "from it — by design. Sensitive student / parent data is never distilled into "
+      + "persistent memory; what persists is the governance decision in the audit trail.";
+  if (route === "INFEASIBLE")
+    return "The system did not guess and did not store a fabricated fact. What it "
+      + "recorded is which policy data it WOULD need to answer — surfaced to you as a "
+      + "proposal framework, not learned as truth.";
+  if (route === "GREEN")
+    return "The high-impact action is paused for your approval, so no memory was "
+      + "changed. Only after you decide can the outcome (never the underlying "
+      + "personal data) inform future routing.";
+  if (hasRealLearning)
+    return "A non-personal, general note was written to memory (shown below). "
+      + "Sensitive student / parent data is never included.";
+  return "No personal data was written to memory, and this one-off task did not "
+    + "produce a general, non-personal procedure worth saving. The "
+    + "governance↔learning boundary held.";
 }
 
 // Phase 13 — Task Tree visualisation. Shows the leaves with their

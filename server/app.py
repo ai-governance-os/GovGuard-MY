@@ -526,6 +526,19 @@ def start_task(req: StartTaskRequest) -> dict:
                     spid = sp.get("proposal_id")
                     if not spid or spid in _app_state["curator_proposals"]:
                         continue
+                    # Dedupe the deterministic workflow-SOP across runs/restarts.
+                    # A fresh runtime per task can't see SOPs queued by a prior
+                    # run, so the runtime's own per-run dedupe is not enough —
+                    # guard HERE, where the persistent store lives. At most one
+                    # undecided/applied SOP per workflow; otherwise every demo
+                    # run of the same workflow would pile up identical proposals.
+                    if sp.get("source_module") == "109B-SOP":
+                        wfid = sp.get("source_workflow")
+                        if any(e.get("source_module") == "109B-SOP"
+                               and e.get("source_workflow") == wfid
+                               and e.get("status") in ("pending", "approved", "applied")
+                               for e in _app_state["curator_proposals"].values()):
+                            continue
                     sp_with_task = {**sp, "task_id": task_id}
                     _app_state["curator_proposals"][spid] = sp_with_task
                     _curator_store.append(sp_with_task)

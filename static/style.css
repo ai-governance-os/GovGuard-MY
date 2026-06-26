@@ -637,6 +637,35 @@ body {
 .msg.agent .reflection-muted { color: var(--text-mute); font-style: italic; }
 .msg.agent .reflection-noop { color: var(--text-mute); font-style: italic; }
 
+/* Honest per-route learning panel (P3a). A real, owner-gated procedure
+   proposal reads as POSITIVE learning; everything else explains the boundary. */
+.msg.agent .refl-chip-pos {
+  background: rgba(13,148,136,.12); color: #0d9488;
+  border-color: rgba(13,148,136,.30);
+}
+.msg.agent .reflection-disp-pos { background: rgba(13,148,136,.14); color: #0d9488; }
+.msg.agent .reflection-why {
+  font-size: 12px; color: var(--text-soft); line-height: 1.5;
+  margin: 2px 0 8px; word-break: break-word;
+}
+.msg.agent .reflection-sop {
+  border: 1px solid rgba(13,148,136,.30); border-radius: 8px;
+  background: rgba(13,148,136,.06); padding: 8px 10px; margin: 6px 0 2px;
+}
+.msg.agent .reflection-sop .rs-title {
+  font-size: 11px; font-weight: 700; color: #0d9488; margin-bottom: 2px;
+}
+.msg.agent .reflection-sop .rs-name {
+  font-size: 13px; font-weight: 600; color: var(--text); word-break: break-word;
+}
+.msg.agent .reflection-sop .rs-meta {
+  font-size: 11px; color: var(--text-soft); margin-top: 3px;
+}
+.msg.agent .reflection-conf {
+  font-size: 11px; color: var(--text-mute); margin-top: 4px;
+  font-family: ui-monospace, Menlo, monospace;
+}
+
 /* Scrollbar (subtle) */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }

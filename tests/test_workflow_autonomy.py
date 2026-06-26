@@ -702,6 +702,38 @@ def test_national_green_is_official_record_update(isolated_workspace: Path):
     assert "4.82m" in body and "4.70m" in body
 
 
+def test_national_proposes_non_personal_sop(isolated_workspace: Path):
+    """The national workflow distils a REUSABLE, NON-PERSONAL procedure (SOP)
+    and queues it for OWNER approval — even though the composite route is RED
+    (one step self-blocked). The proposal carries NO student / parent name and
+    dedupes across runs. This is the honest 'the system learns' proof: it learns
+    the PROCEDURE, never the PEOPLE."""
+    rt, res = _nat_run(isolated_workspace)
+    sops = [p for p in rt.curator_proposals if p.get("source_module") == "109B-SOP"]
+    assert len(sops) == 1, sops
+    sop = sops[0]
+    assert sop["kind"] == "create_skill" and sop["status"] == "pending"
+    assert sop["source_workflow"] == "national_athletics_reporting"
+    # owner-gated AND route-independent: it fired on a RED composite route, which
+    # the LLM distiller's BLUE/GREEN failure-isolation gate would have excluded.
+    assert res.final_route == "RED" and sop["source_route"] == "RED"
+    # PII-free: no synthetic subject name appears anywhere in the proposal text.
+    blob = (sop["name"] + " " + sop["description"] + " " + sop["procedure"]).lower()
+    for name in ("mei xin", "xiao le", "dato", "siti", "mr. lee"):
+        assert name not in blob, f"SOP leaked a name: {name!r}"
+    # the self-block + the human-verification pause are captured as the lesson.
+    assert "self-block" in sop["procedure"].lower()
+    assert "human verification" in sop["procedure"].lower()
+    # surfaced to the per-task learning panel (the positive half).
+    panel = (res.reflection or {}).get("workflow_sop") or {}
+    assert panel.get("proposal_id") == sop["proposal_id"]
+    assert panel.get("pii_free") is True
+    # dedupe — a second identical run does not queue another SOP.
+    rt.run(raw_goal=NAT_GOAL_CN)
+    sops2 = [p for p in rt.curator_proposals if p.get("source_module") == "109B-SOP"]
+    assert len(sops2) == 1, "SOP proposal must dedupe per workflow_id"
+
+
 def test_national_fb_excludes_xiao_le_private_issue(isolated_workspace: Path):
     """Xiao Le's attendance issue / below-personal-best result belong in the
     INTERNAL report and his PRIVATE notice — never in the public Facebook post
@@ -957,3 +989,25 @@ def test_server_exposes_national_workflow_panel(monkeypatch):
     assert wf["summary"]["self_blocked"] == 1 and wf["summary"]["approval"] == 1
     assert any("differential treatment" in r
                for b in wf["blocked"] for r in b.get("reasons", []))
+
+    # P3a — once the run settles, the learning panel surfaces the POSITIVE half:
+    # a real, non-personal procedure proposal queued for owner approval. This is
+    # the honest "the system learns" evidence the judge sees after deciding.
+    sop = (state.get("reflection") or {}).get("workflow_sop")
+    assert sop and sop.get("pii_free") is True, state.get("reflection")
+    assert sop.get("status") == "pending_owner_approval"
+    props = c.get("/api/curator/proposals").json().get("proposals", [])
+    # Exactly one SOP per workflow: server-layer dedupe holds across the fresh-
+    # runtime-per-task model AND across restarts (the store is seeded from disk),
+    # so repeated demo runs never pile up duplicates. The surviving proposal may
+    # be an earlier dedupe-winner, so we do NOT require its id to equal THIS run's
+    # (the reflection panel above already carries this run's proposal id).
+    sop_props = [p for p in props if p.get("source_module") == "109B-SOP"
+                 and p.get("source_workflow") == "national_athletics_reporting"]
+    assert len(sop_props) == 1, sop_props
+    assert sop_props[0].get("status") == "pending"
+    # PII-free end to end: no synthetic subject name in the queued procedure.
+    blob = (sop_props[0].get("name", "") + " "
+            + sop_props[0].get("procedure", "")).lower()
+    for name in ("mei xin", "xiao le", "dato"):
+        assert name not in blob, f"queued SOP leaked a name: {name!r}"

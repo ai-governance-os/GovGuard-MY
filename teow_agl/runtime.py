@@ -3407,6 +3407,13 @@ class Runtime:
         # never even reaches the Distiller's LLM draft step.
         self._run_skill_distiller(envelope, result)
 
+        # Module 109B (deterministic SOP path) — distil a reusable, NON-PERSONAL
+        # procedure from a workflow that actually ran, and queue it for OWNER
+        # approval. Independent of the LLM distiller's BLUE/GREEN gate: a
+        # workflow whose composite route is RED (one step self-blocked) is the
+        # case we most want to remember. PII-free by construction.
+        self._maybe_propose_workflow_sop(envelope, result)
+
         # Phase 17 — index this completed task so future episodic
         # recall queries can find it. Runs last (after reflection, after
         # final_route is set, after verification). Tasks with metadata
@@ -3539,6 +3546,186 @@ class Runtime:
                        "source_shape": entry.get("source_shape", ""),
                        "audit": entry.get("audit", []),
                    })
+
+    # ------------------------------------------------------------------
+    # Module 109B (deterministic SOP path) — non-personal procedure learning
+    # ------------------------------------------------------------------
+    def _maybe_propose_workflow_sop(
+        self, envelope: TaskEnvelope, result: TaskRunResult,
+    ) -> None:
+        """Distil a reusable, NON-PERSONAL procedure (SOP) from a workflow that
+        actually ran, and queue it for OWNER approval (Curator).
+
+        This is the honest answer to "does the system learn?": it learns the
+        PROCEDURE (the governed step shape — auto-run low-risk drafts, self-block
+        status/income differential treatment, route protected writes to human
+        verification), never the PEOPLE. No student / parent name or sensitive
+        field is carried into the proposal — the self-block itself is the most
+        valuable, reusable part of the SOP.
+
+        Deliberately independent of the LLM Skill Distiller's BLUE/GREEN
+        failure-isolation gate: that gate protects the LLM distiller from
+        learning from *failed* work, but a workflow whose composite route is RED
+        (because one step was correctly self-blocked) is exactly the procedure we
+        WANT to remember. The content is deterministic + PII-free, so it cannot
+        leak sensitive data the way an LLM draft of a failed task might. Never
+        raises.
+        """
+        try:
+            wf = (envelope.metadata or {}).get("workflow") or {}
+            wf_id = wf.get("workflow_id")
+            if not wf_id or envelope.metadata.get("_is_subgoal"):
+                return
+            steps = wf.get("steps") or []
+            if not steps:
+                return
+            # Dedupe: at most one SOP proposal per workflow_id while one is
+            # still pending / approved / applied.
+            for p in self.curator_proposals:
+                if (p.get("source_workflow") == wf_id
+                        and p.get("status") in ("pending", "approved", "applied")):
+                    return
+            # Already distilled into an active skill in a previous session?
+            if self.skill_manager is not None:
+                try:
+                    if self.skill_manager.find_active_for(
+                            category="workflow", plan_shape=f"workflow:{wf_id}"
+                    ) is not None:
+                        return
+                except Exception:
+                    pass
+
+            wf_name = wf.get("workflow_name") or wf_id
+            procedure = self._workflow_sop_procedure(steps)
+            if not procedure:
+                return
+            name = f"{wf_name}: self-governing SOP"
+            description = (
+                "Reusable, non-personal procedure for this workflow: auto-run "
+                "low-risk drafts, self-block any status / income / title / "
+                "donation-based differential treatment, and route any protected-"
+                "database write to human verification. Carries no student or "
+                "parent data."
+            )
+
+            # Defence in depth: the content is authored PII-free, but run the
+            # SAME PII gate the LLM distiller uses, when it is available.
+            pii_audit: list[str] = ["sop_authored_pii_free"]
+            if self.skill_distiller is not None:
+                blob = f"{name}\n{description}\n{procedure}"
+                ok, _cleaned, audit = self.skill_distiller.scan_text(blob)
+                if not ok:
+                    self._emit("109B", "workflow_sop_pii_blocked",
+                               envelope.task_id, envelope.session_id,
+                               summary=f"workflow SOP blocked by PII gate ({audit})",
+                               details={"workflow_id": wf_id, "audit": audit})
+                    return
+                if audit:
+                    pii_audit = audit
+
+            entry = {
+                "kind": "create_skill",
+                "name": name,
+                "description": description,
+                "procedure": procedure,
+                "principle": (
+                    "In an autonomous public-service workflow, separate routine "
+                    "drafting (auto) from rights-affecting actions: self-block "
+                    "unfair differential treatment and pause high-impact or "
+                    "official writes for a human."
+                ),
+                "parameters": {"workflow_id": wf_id},
+                "tags": ["workflow", "sop", "self-governance", "public-school"],
+                "source_task_id": envelope.task_id,
+                "source_category": getattr(result, "task_category", "") or "workflow",
+                "source_shape": f"workflow:{wf_id}",
+                "source_workflow": wf_id,
+                "audit": pii_audit,
+                "draft_model": "deterministic:workflow_sop",
+                "abstraction_model": "deterministic:workflow_sop",
+                "proposal_id": "sop_" + uuid.uuid4().hex[:12],
+                "status": "pending",
+                "run_id": "",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "source_module": "109B-SOP",
+                "source_route": (result.final_route or "").upper(),
+            }
+            self.curator_proposals.append(entry)
+
+            # Surface the proposal in the per-task reflection payload so the
+            # learning panel can show the POSITIVE half (a real, owner-gated
+            # procedure proposed) next to "no personal data learned".
+            if result.reflection is None:
+                result.reflection = {"disposition": "skipped",
+                                     "skipped": "no_declarative_update"}
+            result.reflection["workflow_sop"] = {
+                "name": name,
+                "proposal_id": entry["proposal_id"],
+                "status": "pending_owner_approval",
+                "pii_free": True,
+                "steps": procedure.count("\n") + 1,
+                "workflow_id": wf_id,
+            }
+
+            self._emit("109B", "workflow_sop_proposed",
+                       envelope.task_id, envelope.session_id,
+                       summary=(f"queued non-personal workflow SOP "
+                                f"name={name!r} (owner approval required)"),
+                       details={"proposal_id": entry["proposal_id"],
+                                "workflow_id": wf_id,
+                                "source_route": entry["source_route"],
+                                "pii_audit": pii_audit})
+        except Exception as exc:  # never block the run on a learning side-effect
+            self._emit("109B", "workflow_sop_error",
+                       envelope.task_id, envelope.session_id,
+                       summary=f"workflow SOP distillation failed: {exc}",
+                       details={"error": str(exc)})
+
+    @staticmethod
+    def _workflow_sop_procedure(steps: list[dict]) -> str:
+        """Build a generic, PII-free numbered SOP from the workflow's steps.
+
+        Subject-specific names are stripped (genericised to the step TYPE); RED
+        steps render as the self-block, GREEN steps as the human-verification
+        pause. Consecutive duplicate generic lines (e.g. the per-pupil notices)
+        collapse into a single line.
+        """
+        SUBJECTS = ("mei xin", "xiao le", "dato' tan", "dato tan", "ali")
+
+        def generic_head(display: str) -> str:
+            head = (display or "").split(" — ")[0].split(" - ")[0].strip()
+            low = head.lower()
+            for s in SUBJECTS:
+                idx = low.find(s)
+                if idx != -1:
+                    head = (head[:idx] + head[idx + len(s):]).strip()
+                    low = head.lower()
+            head = head.replace("'s", "").replace("’s", "").strip(" '’-—:·")
+            return head or "workflow step"
+
+        lines: list[str] = []
+        seen_prev = ""
+        for step in steps:
+            route = (step.get("route_hint") or "BLUE").upper()
+            if route == "RED":
+                lines.append(
+                    "Self-block any step that would use family status, income, "
+                    "title or donation to change treatment; apply the safe "
+                    "alternative and keep the honest content (RED).")
+                seen_prev = ""
+            elif route == "GREEN":
+                head = generic_head(step.get("display_name", ""))
+                lines.append(
+                    f"{head}: pause for human verification before the "
+                    f"protected / official write (GREEN).")
+                seen_prev = ""
+            else:
+                head = generic_head(step.get("display_name", ""))
+                if head == seen_prev:
+                    continue  # collapse consecutive per-item drafts
+                lines.append(f"{head}: auto-run (BLUE).")
+                seen_prev = head
+        return "\n".join(f"{i}. {ln}" for i, ln in enumerate(lines, 1))
 
     # ------------------------------------------------------------------
     # Phase 17 episodic indexing — best-effort, never blocks

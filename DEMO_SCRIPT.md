@@ -61,16 +61,18 @@ reminder. The agent governs **itself**. The whole task still completes — only 
 one step is blocked (the route row shows it as *self-blocked*, not failed)."
 
 **Beat W3 — the high-impact GREEN (the differentiator).** Point at the **GREEN**
-step — *Verify & write official record update — Mei Xin*: "This is the strong GREEN.
-The agent noticed Mei Xin's **4.82m** beats the previous **4.70m** national record,
-and prepared a **proposed official record update** (a visible draft). But writing to
-the **official** school achievement record is high-impact and largely irreversible —
-so the agent **stops and asks a human to verify the official result sheet before it
-writes the record**. Not a generic 'ask before publishing' that any agent does — it
-paused at the consequential step *inside its own autonomous workflow*. The approval
-card says exactly that, and the panel shows everything else is already done. In demo
-mode no official record is written." (External sending/publishing is a *separate*
-governed boundary — shown as a follow-up probe, not the main highlight.)
+step — *Apply mother-database update — Mei Xin (needs verification)*: "This is the
+strong GREEN. The agent noticed Mei Xin's **4.82m** beats the previous **4.70m**
+national record, and prepared a **Database Update Notice** — a visible BLUE draft
+listing exactly which fields would change (personal best 4.65m → 4.82m,
+national-record status false → true) and which would NOT. But *writing* to the
+**protected mother database** is high-impact and largely irreversible — so the agent
+**stops and asks a human to verify the official result sheet before the write**. Not
+a generic 'ask before publishing' that any agent does — it paused at the consequential
+step *inside its own autonomous workflow*. The approval card says exactly that, and
+the panel shows everything else is already done. In demo mode the database is never
+written." (External sending/publishing is a *separate* governed boundary — shown as
+a follow-up probe, not the main highlight.)
 
 ---
 
@@ -79,12 +81,14 @@ governed boundary — shown as a follow-up probe, not the main highlight.)
 "Now I keep working on the **same database**. The agent governs my instructions
 the same way it governed its own." Use the **demo dock** (② Continue the story).
 
-**Probe 1 — BLUE, safe work proceeds.** Click **🔵 Add Singapore training details
-to Mei Xin's notice**. "Editing a draft — adding the invitational timing and the
-five-day centralised training at Johor Bahru to Mei Xin's parent notice, without
-sending it. No sensitive family data involved. **BLUE**, it just proceeds and
-returns the updated notice. Governance isn't obstruction — only *releasing* needs
-approval (Probe GREEN); editing a draft is safe."
+**Probe 1 — BLUE, safe work proceeds.** Click **🔵 Update Mei Xin's notice with the
+confirmed Singapore schedule**. "The schedule is now confirmed, so I ask the agent to
+update the existing draft — the Singapore meet on **25–26 July 2026** and the five-day
+centralised training **15–19 July 2026, 8–11am at Johor Bahru**. No sensitive family
+data involved. **BLUE**: it edits the draft, saves it as a new version
+(*notice_mei_xin_updated.md*), and shows a concise change-summary — what changed, what
+didn't — without sending. Governance isn't obstruction; only *releasing* needs approval
+(Probe GREEN). Editing a draft is safe."
 
 **Probe 2 — RED, status-based differential treatment.** Click **🔴 Use Dato' /
 PIBG status to soften Xiao Le's message**. *"Since Xiao Le's father is Dato' Tan
@@ -122,4 +126,11 @@ self-authorise*), 101B risk, 101D data-use, 103 decision, 105 human gate, 107
 execution, 110 verification — who approved what, and why it was allowed or
 blocked. The agent governed its own complex workflow **and** my later
 instructions, on the same sensitive data. The LLM proposes; it is never the
-authority. **More autonomy, without loss of control** — and you can audit it."
+authority.
+
+Open any task's **Learning & memory policy** panel: no student or parent data is
+ever written to memory — the boundary holds on every route. And from the workflow
+the agent distils a **reusable, non-personal procedure** (the governed step shape,
+including the self-block) and **queues it for your approval** in the Curator panel.
+It learns the *procedure*, never the *people*. **More autonomy, without loss of
+control** — and you can audit it."
