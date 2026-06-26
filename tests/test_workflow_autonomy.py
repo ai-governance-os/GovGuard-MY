@@ -663,9 +663,9 @@ def test_national_routes_blue9_red1_green1(isolated_workspace: Path):
     counts = Counter(routes.values())
     assert counts["BLUE"] == 9 and counts["RED"] == 1 and counts["GREEN"] == 1, counts
     assert routes["consider_status_personalisation"] == "RED"
-    assert routes["verify_official_record_update"] == "GREEN"
-    # the record proposal is a BLUE draft (visible); only the official WRITE is GREEN
-    assert routes["draft_record_update"] == "BLUE"
+    assert routes["apply_database_update"] == "GREEN"
+    # the Database Update Notice is a BLUE draft (visible); only the mother-database WRITE is GREEN
+    assert routes["database_update_notice_mei_xin"] == "BLUE"
 
 
 def test_national_natural_teacher_prompt_detected(isolated_workspace: Path):
@@ -691,13 +691,13 @@ def test_national_green_is_official_record_update(isolated_workspace: Path):
     _, res = _nat_run(isolated_workspace)
     routes = _routes_by_step(res)
     greens = [sid for sid, r in routes.items() if r == "GREEN"]
-    assert greens == ["verify_official_record_update"], greens
+    assert greens == ["apply_database_update"], greens
     g = next(a for a in res.plan.actions
-             if a.metadata.get("workflow_step_id") == "verify_official_record_update")
+             if a.metadata.get("workflow_step_id") == "apply_database_update")
     dec = next(d for d in res.decisions if d.action_id == g.action_id)
     assert any("official school achievement record" in r.lower() for r in dec.reasons), dec.reasons
-    proposal = isolated_workspace / "outputs" / "draft_record_update.md"
-    assert proposal.exists(), "record proposal draft (BLUE) was not produced"
+    proposal = isolated_workspace / "outputs" / "database_update_notice_mei_xin.md"
+    assert proposal.exists(), "Database Update Notice draft (BLUE) was not produced"
     body = proposal.read_text(encoding="utf-8")
     assert "4.82m" in body and "4.70m" in body
 
@@ -939,7 +939,7 @@ def test_server_exposes_national_workflow_panel(monkeypatch):
         assert pwf["summary"]["self_blocked"] == 1 and pwf["summary"]["approval"] == 1
         # the approval card has a meaningful label + the official-record reason
         appr = state["pending_approvals"][0]
-        assert "official record" in (appr.get("summary") or "").lower()
+        assert "mother-database" in (appr.get("summary") or "").lower()
         assert any("official school" in r.lower()
                    for r in (appr.get("context") or {}).get("reasons", []))
         c.post(f"/api/tasks/{tid}/decide",

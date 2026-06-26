@@ -90,43 +90,83 @@ class SmartMockPlanner:
         ])
 
     def _parent_message_edit_plan(self, task_id: str, intent: str, brief: dict) -> dict:
-        """A safe internal edit to a parent-message DRAFT (BLUE): add the
-        requested follow-up logistics, keep a warm tone, send nothing. Mock mode
-        emits a deterministic, faithful revised draft (no LLM, no apology, no
-        placeholder) so the demo's BLUE probe always shows a real updated notice.
-        Governance is unchanged — editing a draft is BLUE; only releasing/sending
-        is GREEN."""
-        body = (
-            "【已更新草稿 / Updated draft — Parent Notice for Mei Xin】  "
-            "Safe internal edit (BLUE) — the requested follow-up details were added; "
-            "nothing is sent.\n\n"
+        """A safe internal edit to a parent-message DRAFT (BLUE): replace the
+        preliminary follow-up arrangement with the now-confirmed schedule, keep a
+        warm tone, save it as a NEW version, and send nothing.
+
+        The demo value here is "the agent edits an existing draft on the user's
+        instruction": it (1) writes a real versioned artifact
+        (notice_mei_xin_updated.md) and (2) shows a concise change-summary — not a
+        re-printed letter. Mock mode emits both deterministically (no LLM, no
+        apology, no placeholder). Governance is unchanged — editing a draft is
+        BLUE; only releasing/sending the notice would be a separate GREEN step."""
+        # The full updated letter — written to a versioned artifact, not dumped
+        # into the chat bubble. Only the follow-up schedule changed (preliminary
+        # → confirmed dates / time / venue); the congratulation, the warm tone and
+        # the data boundary are untouched.
+        letter = (
+            "Parent Notice — Mei Xin (updated · version 2)\n\n"
             "Subject: Congratulations on Mei Xin's National-Level Achievement and New Record\n\n"
             "Dear Mr. Lee,\n\n"
-            "Warm greetings from Demo Primary School. We are very proud that Mei Xin won the "
-            "Gold Medal in the Long Jump U12 Girls event at the 2026 National Primary Schools "
-            "Athletics Championship and set a new national primary schools record.\n\n"
-            "We would also like to share a preliminary follow-up arrangement. The Malaysia "
-            "Schools Invitational Athletics Meet in Singapore is expected to take place about "
-            "one month after this national championship. To support Mei Xin's preparation, a "
-            "five-day centralised training session will be held one week before the Singapore "
-            "event at Johor Bahru Sports Arena. The school will share the confirmed schedule, "
-            "consent form and travel-related details once they are finalised.\n\n"
-            "Congratulations once again to Mei Xin and your family.\n\n"
+            "Warm greetings from Demo Primary School, and we hope you and your family are "
+            "well. We are very proud that Mei Xin won the Gold Medal in the Long Jump U12 "
+            "Girls event at the 2026 National Primary Schools Athletics Championship and set "
+            "a new national primary schools record.\n\n"
+            "We are now able to share the confirmed follow-up schedule. Mei Xin has been "
+            "selected for the Malaysia Schools Invitational Athletics Meet in Singapore, "
+            "which will be held on 25–26 July 2026. To support her preparation, a five-day "
+            "centralised training session will be held on 15–19 July 2026, from 8:00 a.m. to "
+            "11:00 a.m. daily, at Johor Bahru Sports Arena. The consent form and travel-"
+            "related details will follow shortly.\n\n"
+            "Congratulations once again to Mei Xin and your family. We wish her smooth "
+            "preparation for the Singapore meet.\n\n"
             "With appreciation,\nTeacher-in-charge of Athletics Team, Demo Primary School\n\n"
-            "(Safe internal draft edit — nothing is sent in demo mode. The warm wording "
-            "follows this parent's recorded school-message style; no household income, "
-            "occupation, address, phone, PIBG status or donation data was used to set tone "
-            "or priority. Contact data, if used, is limited to authorised delivery routing only.)"
+            "(Updated draft for educator review — version 2; nothing is sent in demo mode. "
+            "Only the follow-up schedule was changed, from a preliminary arrangement to the "
+            "confirmed dates, time and venue. The warm wording follows this parent's recorded "
+            "school-message style; no household income, occupation, address, phone, PIBG "
+            "status or donation data was used to set tone or priority. Contact data, if used, "
+            "is limited to authorised delivery routing only.)"
         )
-        return self._wrap(task_id, brief, [{
-            "action_id": f"act_{uuid.uuid4().hex[:8]}",
-            "tool": "chat", "operation": "answer",
-            "target": "", "purpose": "revise Mei Xin's parent-message draft (safe internal edit)",
-            "expected_effect": "updated parent-notice draft (not sent)",
-            "reversibility": "high", "uncertainty": "low",
-            "risk_factors": [], "requires_governance": True,
-            "metadata": {"body": body, "synthesis_skip": True},
-        }])
+        # The concise change-summary shown in the chat bubble. Keeps the "before"
+        # phrasing (one month after / one week before) so the diff is legible.
+        summary = (
+            "Updated Mei Xin's parent notice and saved it as a new version "
+            "(notice_mei_xin_updated.md). This is a safe internal draft edit (BLUE); "
+            "nothing was sent.\n\n"
+            "What changed — only the follow-up schedule:\n"
+            "• Singapore Invitational: \"about one month after the championship\" → "
+            "confirmed 25–26 July 2026.\n"
+            "• Centralised training: \"one week before, five days\" → confirmed "
+            "15–19 July 2026, 8:00–11:00 a.m. daily.\n"
+            "• Venue: Johor Bahru Sports Arena — now stated as confirmed.\n\n"
+            "What did NOT change: the congratulations, the warm tone, and the data "
+            "boundary — no household income, occupation, address, phone, PIBG status or "
+            "donation data was used to set tone or priority. Releasing or sending the "
+            "notice would be a separate GREEN step that needs your approval."
+        )
+        target = Path(self.default_outputs_dir) / "notice_mei_xin_updated.md"
+        return self._wrap(task_id, brief, [
+            {
+                "action_id": f"act_{uuid.uuid4().hex[:8]}",
+                "tool": "fs", "operation": "save_under_outputs",
+                "target": str(target),
+                "purpose": "save the updated Mei Xin parent-notice draft (version 2)",
+                "expected_effect": "updated parent-notice draft saved under outputs (not sent)",
+                "reversibility": "high", "uncertainty": "low",
+                "risk_factors": [], "requires_governance": True,
+                "metadata": {"content": letter, "synthesis_skip": True},
+            },
+            {
+                "action_id": f"act_{uuid.uuid4().hex[:8]}",
+                "tool": "chat", "operation": "answer",
+                "target": "", "purpose": "summarise what changed in Mei Xin's parent-notice draft",
+                "expected_effect": "concise change summary (not sent)",
+                "reversibility": "high", "uncertainty": "low",
+                "risk_factors": [], "requires_governance": True,
+                "metadata": {"body": summary, "synthesis_skip": True},
+            },
+        ])
 
     def _gui_plan(self, task_id: str, intent: str, brief: dict) -> dict:
         low = intent.lower()
