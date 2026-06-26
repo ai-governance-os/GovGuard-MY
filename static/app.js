@@ -208,6 +208,41 @@ function prettyReason(raw) {
 // built from the same audit events the runtime emits. The point it makes:
 // the LLM proposes; an independent governance runtime decides; a human
 // approves; everything is verified and on the record.
+// Route-specific extra card (e.g. the INFEASIBLE reward probe's inline proposal
+// framework, shown directly in the UI rather than as a file). Honest: the agent
+// refuses to guess and instead structures a human decision.
+function renderExtraCard(bubble, d) {
+  const el = bubble.querySelector(".extra-card");
+  if (!el) return;
+  const cat = (((d.events || []).find(e => e.module === "101A")) || {}).summary || "";
+  if (d.status !== "running" && d.final_route === "INFEASIBLE"
+      && /unsupported_amount_estimate/.test(cat)) {
+    el.innerHTML =
+      `<div class="proposal-card">`
+      + `<div class="pc-title">📋 Reward Decision Proposal — for human approval</div>`
+      + `<div class="pc-sub">Missing required data</div>`
+      + `<ul><li>No approved school reward policy on file</li>`
+      + `<li>No Board / PIBG budget decision on file</li>`
+      + `<li>No previous reward precedent available</li>`
+      + `<li>No authorised decision-maker confirmation</li>`
+      + `<li>No sponsor contribution record</li></ul>`
+      + `<div class="pc-sub">Decision fields — for a human to complete</div>`
+      + `<ul><li>Pupil reward amount — <i>to be decided</i></li>`
+      + `<li>Teacher-in-charge appreciation — <i>to be decided</i></li>`
+      + `<li>Funding source — school / PIBG / Board / sponsor</li>`
+      + `<li>Approval body — Headmaster / Board / PIBG</li>`
+      + `<li>Eligibility — all participants or medalists only</li>`
+      + `<li>National-record recognition — <i>to be decided</i></li></ul>`
+      + `<div class="pc-note">Safe recommendation: prepare this for the Headmaster / `
+      + `Board / PIBG to decide. No amount is estimated or announced until an `
+      + `approval is recorded.</div>`
+      + `</div>`;
+    el.hidden = false;
+    return;
+  }
+  el.hidden = true; el.innerHTML = "";
+}
+
 function renderGovPipeline(bubble, d) {
   const el = bubble.querySelector(".gov-pipeline");
   if (!el) return;
@@ -224,6 +259,17 @@ function renderGovPipeline(bubble, d) {
                         decisions[0] ? decisions[0].route : "");
 
   const wfDetected = !!(d.workflow && d.workflow.detected);
+  const sm = wfDetected ? (d.workflow.summary || {}) : {};
+  // The RED self-block's specific reason (for the composite note), stripped of
+  // the internal "risk_recommended"/"data_use_guard_red" markers.
+  const redDec = decisions.find(de => de.route === "RED");
+  const redReason = redDec
+    ? prettyReason((redDec.reasons || [])
+        .filter(r => !String(r).startsWith("risk_recommended")
+                     && r !== "data_use_guard_red"
+                     && !String(r).startsWith("safe_alternative:"))
+        .join(" ; "))
+    : "";
   const pre = events.find(e => e.module === "101A");
   let cat = "", mode = "";
   if (pre && pre.summary) {
@@ -254,10 +300,13 @@ function renderGovPipeline(bubble, d) {
                                    "not required (within policy)";
   let execDet;
   const okCount = execs.filter(e => e.status === "success").length;
-  if (route === "RED" && wfDetected) {
-    // Workflow: low-risk steps DID run; only the self-blocked step didn't.
-    approvalDet = "external release awaiting approval";
-    execDet = `${okCount} step(s) executed; 1 self-blocked`;
+  if (wfDetected) {
+    // Composite workflow: low-risk steps ran; one step self-blocked; the
+    // high-impact step waits for verification. Not a single failed RED.
+    approvalDet = sm.approval ? "high-impact step awaiting human verification" : "—";
+    execDet = `${sm.auto || 0} steps done`
+      + (sm.self_blocked ? ` · ${sm.self_blocked} self-blocked` : "")
+      + (sm.approval ? ` · ${sm.approval} awaiting verification` : "");
   } else if (route === "RED") { approvalDet = "—"; execDet = "blocked — nothing executed"; }
   else if (route === "INFEASIBLE") { approvalDet = "—"; execDet = "not run — honest limitation"; }
   else {
@@ -280,10 +329,17 @@ function renderGovPipeline(bubble, d) {
     + step("102", "Planner", esc(plannerDet) + " — <em>cannot self-authorise</em>")
     + step("101B", "Action risk", esc(riskDet))
     + step("103", "Decision",
-        `<b class="gp-route ${esc(route)}">${esc(route)}</b>${reason ? " — " + esc(reason) : ""}`
-        + (wfDetected && route === "RED"
-            ? `<div class="gp-note">Operational risk was low — the data-use guard (101D) blocked one internal action; it is a single step inside a governed workflow.</div>`
-            : ""),
+        wfDetected
+          ? `<b class="gp-route COMPOSITE">COMPOSITE</b> — governed workflow: `
+            + `${sm.auto || 0} BLUE · ${sm.self_blocked || 0} RED self-blocked · `
+            + `${sm.approval || 0} GREEN`
+            + (sm.self_blocked
+                ? `<div class="gp-note">RED self-block: ${esc(redReason
+                    || "status/income-based softening of a parent message")}. `
+                  + `The low-risk steps ran; the high-impact step awaits human verification — `
+                  + `this is a composite governed workflow, not a single failed decision.</div>`
+                : "")
+          : `<b class="gp-route ${esc(route)}">${esc(route)}</b>${reason ? " — " + esc(reason) : ""}`,
         "gp-decision")
     + step("105", "Human gate", esc(approvalDet))
     + step("107", "Execution", esc(execDet))
@@ -404,6 +460,7 @@ function appendAgentMessage(task_id) {
       <div class="answer"></div>
       <div class="web-sources" hidden></div>
       <div class="summary">Thinking…</div>
+      <div class="extra-card" hidden></div>
       <div class="route-row"></div>
       <div class="gov-pipeline" hidden></div>
       <div class="workflow-panel" hidden></div>
@@ -539,7 +596,19 @@ function renderAgentMessage(node, d) {
   // file artifact was produced.
   const summary = bubble.querySelector(".summary");
   if (d.status === "running") summary.textContent = "Thinking…";
-  else if (d.status === "awaiting_approval") summary.textContent = "Waiting for your approval below.";
+  else if (d.status === "awaiting_approval") {
+    const awf = d.workflow;
+    if (awf && awf.detected) {
+      const sm = awf.summary || {};
+      summary.textContent = "Workflow complete — "
+        + `${sm.auto || 0} low-risk steps done`
+        + (sm.self_blocked ? `, ${sm.self_blocked} self-blocked` : "")
+        + ". One high-impact action is awaiting your verification below.";
+    } else {
+      summary.textContent = "Prepared — your approval is required before any "
+        + "external action. Nothing has been sent or published yet.";
+    }
+  }
   else if (d.status === "error") summary.textContent = d.error || "Something went wrong.";
   else {
     const outcome = describeOutcome(d);
@@ -673,6 +742,7 @@ function renderAgentMessage(node, d) {
   // authority: planner proposes -> governance decides -> human approves ->
   // execution -> verification, with the route + reason in plain view.
   renderGovPipeline(bubble, d);
+  renderExtraCard(bubble, d);
   // Workflow Autonomy panel (102W/101D) — beside the governance card.
   renderWorkflowPanel(bubble, d);
   // Phase 14 — SELF-FIX chip when the runtime re-ran the pipeline
@@ -749,6 +819,7 @@ function extractChatAnswer(d) {
     const s = (e.output_summary || "").trim();
     if (!s) continue;
     if (/^(docx|pptx|xlsx|image|screenshot|report|fs)_/.test(s)) continue;
+    if (s.startsWith("[demo]")) continue;  // simulated tool record, not a chat reply
     if (e.affected_resources && e.affected_resources.length) continue;
     return s;
   }
@@ -843,11 +914,35 @@ function describeOutcome(d) {
     return msg;
   }
   const route = d.final_route;
+  // External release (send / publish): show a clean demo-release summary —
+  // never the raw simulated tool records.
+  const cat101a = (((d.events || []).find(e => e.module === "101A")) || {}).summary || "";
+  const isExternalRelease = /external_(publish|email)/.test(cat101a)
+    || (d.executions || []).some(e => String(e.output_summary || "").startsWith("[demo]"));
+  if (route === "GREEN" && isExternalRelease) {
+    const sent = (d.executions || []).filter(e =>
+      e.status === "success" && String(e.output_summary || "").startsWith("[demo]")).length;
+    if (sent) return `Demo release simulated — ${sent} external action(s) recorded in `
+      + "the demo release log. No real message or post was delivered; the release "
+      + "decision is recorded in the audit trace.";
+    return "Release package prepared. Approval is required before any external "
+      + "action — nothing has been sent or published.";
+  }
   if (route === "INFEASIBLE") return "I can't answer this reliably — the available "
     + "data doesn't support a confident answer (no relevant policy, budget or "
-    + "precedent on file). Rather than guess a number, I'd prepare a clearly-"
-    + "labelled proposal for a human to decide.";
-  if (route === "RED") return "Blocked by governance — see the reason in the pipeline below.";
+    + "precedent on file). Rather than guess a number, here is a proposal "
+    + "framework for a human to decide:";
+  if (route === "RED") {
+    const reasons = (d.decisions || []).flatMap(de => de.reasons || []);
+    const main = reasons.find(r => !String(r).startsWith("risk_recommended")
+      && !String(r).startsWith("safe_alternative:") && r !== "data_use_guard_red");
+    const alt = reasons.find(r => String(r).startsWith("safe_alternative:"));
+    let msg = "Blocked by governance.";
+    if (main) msg += " " + prettyReason(String(main));
+    if (alt) msg += " Safe alternative: "
+      + String(alt).replace(/^safe_alternative:\s*/i, "");
+    return msg;
+  }
   if (!d.executions || !d.executions.length) {
     if (route === "GREEN") return "Approved and ran.";
     return "Done.";

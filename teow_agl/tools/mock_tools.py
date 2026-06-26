@@ -14,4 +14,12 @@ class MockTool:
             "tool": action.tool, "operation": action.operation,
             "target": action.target, "purpose": action.purpose,
         })
-        return {"status": "success", "summary": f"mock_{action.operation}", "affected": []}
+        # Honest, user-safe summary: in demo mode this records the action without
+        # doing real I/O. Never leak the raw internal "mock_<operation>" name to
+        # the UI — it reads as a fake/unfinished system. The "[demo]" prefix lets
+        # the UI recognise a simulated tool record (see extractChatAnswer).
+        return {"status": "success",
+                "summary": f"[demo] {action.tool} action simulated — no real "
+                           f"external delivery (demo mode)",
+                "operation": action.operation,
+                "affected": []}
