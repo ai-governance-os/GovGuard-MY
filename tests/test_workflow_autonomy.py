@@ -946,7 +946,13 @@ def test_server_exposes_national_workflow_panel(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("TEOW_AGL_PLANNER", "smart_mock")
     from fastapi.testclient import TestClient
-    from server.app import app
+    from server.app import app, _app_state
+
+    # Deterministic start: a prior session may have left an applied/pending SOP on
+    # disk (seeded into _app_state at import); clear it so this run proposes a
+    # FRESH pending SOP (the server dedupes per workflow_id).
+    with _app_state["lock"]:
+        _app_state["curator_proposals"].clear()
 
     c = TestClient(app)
     tid = c.post("/api/tasks", json={"raw_goal": NAT_GOAL_CN}).json()["task_id"]
@@ -1011,3 +1017,69 @@ def test_server_exposes_national_workflow_panel(monkeypatch):
             + sop_props[0].get("procedure", "")).lower()
     for name in ("mei xin", "xiao le", "dato"):
         assert name not in blob, f"queued SOP leaked a name: {name!r}"
+
+
+def test_sop_approve_creates_skill(monkeypatch):
+    """Approving the deterministic 109B-SOP proposal must CREATE a skill even
+    though the workflow's composite route is RED (one self-blocked step). The
+    route quality gate exists to isolate FAILED single tasks; it must not apply
+    to an owner-approved, PII-free procedure abstraction. Regression for the
+    re-test finding: 'APPROVED but apply_reason task_quality_route_excluded:RED,
+    /api/skills count 0'."""
+    import shutil
+    import time
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("TEOW_AGL_PLANNER", "smart_mock")
+    from fastapi.testclient import TestClient
+    from server.app import app, _app_state, SKILLS_DIR
+
+    # Deterministic start: no prior SOP proposal (in-process) or skill (on disk),
+    # so the workflow re-proposes a fresh SOP we can approve.
+    with _app_state["lock"]:
+        _app_state["curator_proposals"].clear()
+    shutil.rmtree(SKILLS_DIR, ignore_errors=True)
+
+    c = TestClient(app)
+
+    def _poll(tid, *want, timeout=25):
+        dl = time.time() + timeout
+        st = None
+        while time.time() < dl:
+            st = c.get(f"/api/tasks/{tid}").json()
+            if st["status"] in want:
+                return st
+            time.sleep(0.1)
+        return st
+
+    tid = c.post("/api/tasks", json={"raw_goal": NAT_GOAL_CN}).json()["task_id"]
+    st = _poll(tid, "awaiting_approval", "done", "error")
+    if st["status"] == "awaiting_approval":
+        appr = st["pending_approvals"][0]
+        c.post(f"/api/tasks/{tid}/decide",
+               json={"approval_id": appr["approval_id"], "status": "rejected",
+                     "note": "demo"})
+        st = _poll(tid, "done", "error")
+    assert st is not None and st["status"] == "done", st
+
+    props = c.get("/api/curator/proposals").json().get("proposals", [])
+    sop = [p for p in props if p.get("source_module") == "109B-SOP"
+           and p.get("source_workflow") == "national_athletics_reporting"]
+    assert len(sop) == 1 and sop[0].get("source_route") == "RED", sop
+    assert len(c.get("/api/skills").json().get("skills", [])) == 0
+
+    # Approve → a skill is created and the proposal is APPLIED (not just approved).
+    r = c.post(f"/api/curator/proposals/{sop[0]['proposal_id']}/decide",
+               json={"status": "approved", "approved_by": "web_user"})
+    assert r.status_code == 200 and r.json().get("ok") is True, r.json()
+    assert r.json().get("status") == "applied", r.json()
+    skills = c.get("/api/skills").json().get("skills", [])
+    assert len(skills) == 1, skills
+    assert "self-governing SOP" in (skills[0].get("name") or ""), skills
+
+    # Clean up the shared in-process state we mutated, so a later test that
+    # re-runs this workflow still gets a FRESH pending SOP (the server dedupes
+    # on pending/approved/applied — an applied SOP left here would suppress it).
+    with _app_state["lock"]:
+        _app_state["curator_proposals"].clear()
+    shutil.rmtree(SKILLS_DIR, ignore_errors=True)

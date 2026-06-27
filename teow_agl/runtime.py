@@ -4380,17 +4380,26 @@ class Runtime:
                 # min_task_quality.
                 if self.skill_manager is None:
                     return False, "no_skill_manager"
+                # The deterministic workflow SOP (109B-SOP) is route-INDEPENDENT
+                # by design: it abstracts the governed PROCEDURE (including the
+                # self-block), so a composite RED source route is not a failure
+                # to isolate from — it is exactly what we want to remember. The
+                # OWNER's explicit approval is the authority here; the route
+                # quality gate (built to stop learning from FAILED single tasks)
+                # does not apply. PII (Layer 1+2), creation_limits and
+                # forbidden-pattern scans still run inside create_skill.
+                is_sop = prop.get("source_module") == "109B-SOP"
                 out = self.skill_manager.create_skill(
                     name=prop.get("name", ""),
                     description=prop.get("description", ""),
                     procedure=prop.get("procedure", ""),
                     task_id=prop.get("source_task_id", ""),
-                    task_quality={
+                    task_quality=(None if is_sop else {
                         "final_route":
                             (prop.get("source_route") or "BLUE"),
                         "verification_failed": False,
                         "execution_success_count": 1,
-                    },
+                    }),
                     tags=prop.get("tags") or [],
                     source_category=prop.get("source_category", ""),
                     source_shape=prop.get("source_shape", ""),

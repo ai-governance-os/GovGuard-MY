@@ -658,9 +658,11 @@ function renderAgentMessage(node, d) {
       // "1 self-blocked" inside a GOVERNED workflow, not a failed task. The
       // per-step routes (incl. the RED self-block) live in the workflow panel.
       const sm = wf.summary || {};
+      const needsVerify = (wf.steps || []).some(s =>
+        s.route === "GREEN" && s.output_scope === "official_record");
       const bits = [];
       if (sm.auto) bits.push(`${sm.auto} auto`);
-      if (sm.approval) bits.push(`${sm.approval} approval`);
+      if (sm.approval) bits.push(`${sm.approval} ${needsVerify ? "to verify" : "approval"}`);
       if (sm.self_blocked) bits.push(`${sm.self_blocked} self-blocked`);
       const chip = document.createElement("span");
       chip.className = "chip WORKFLOW";
@@ -923,9 +925,11 @@ function describeOutcome(d) {
   const wf = d.workflow;
   if (wf && wf.detected) {
     const sm = wf.summary || {};
+    const needsVerify = (wf.steps || []).some(s =>
+      s.route === "GREEN" && s.output_scope === "official_record");
     const bits = [];
     if (sm.auto) bits.push(`${sm.auto} done`);
-    if (sm.approval) bits.push(`${sm.approval} awaiting approval`);
+    if (sm.approval) bits.push(`${sm.approval} awaiting ${needsVerify ? "verification" : "approval"}`);
     if (sm.self_blocked) bits.push(`${sm.self_blocked} self-blocked`);
     let msg = `Governed workflow — ${bits.join(" · ")}.`;
     if (sm.self_blocked) {
