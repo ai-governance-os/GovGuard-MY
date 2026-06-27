@@ -122,7 +122,7 @@ Terima kasih kepada pentadbiran sekolah, guru, Lembaga Pengelola dan PIBG, serta
 🏃 Xiao Le — represented the school in the 100m U12 Boys event at national level
 Mei Xin has been selected for the Malaysia Schools Invitational Athletics Meet in Singapore. Thank you to our administration, teachers, Board, PIBG, and parents. Congratulations to our young athletes — keep striving and keep representing the school with pride!
 
-(本公开草稿不含身份证号、MyKid、电话、住址、家庭收入、品行或纪律资料,需校方批准后发布。 / No IC, MyKid, phone, address, household-income, conduct or discipline data; released only after school approval.)
+(Public draft only. No IC/MyKid, phone number, address, household income, conduct, discipline, or private training details are included. Release requires school approval.)
 
 ## [data_selection_audit]
 Data-Selection Audit
@@ -135,7 +135,7 @@ Data sources accessed (rich school student–parent database):
 USED — internal report: events, medals, national record, training attendance, conduct grade (professional wording), improvement areas, follow-up plan.
 USED — parent notices: parent display name, recorded preferred language, recorded communication style (e.g. Mei Xin's parent's warm/appreciative school-message habit), pupil achievement and development need, training follow-up.
 USED — public Facebook post: pupil display names, events, medals, national record, school name, general appreciation, approved follow-up.
-USED — Database Update Notice: Mei Xin's name, event, new measurement (4.82m), previous record (4.70m), personal best (4.65m→4.82m), national-record status. The **write to the protected mother database** is routed **GREEN** — it pauses for educator verification of the official result sheet before anything is written.
+USED — Database Update Notice: Mei Xin's name, event, new measurement (4.82m), previous record (4.70m), personal best (4.65m→4.82m), national-record status. The **write to the protected student-record database** is routed **GREEN** — it pauses for educator verification of the official result sheet before anything is written.
 
 BLOCKED (accessed but refused for differential treatment / public disclosure):
 - household income, parent occupation, home address;
@@ -155,7 +155,7 @@ External release requires human approval. Nothing is sent or published in demo m
 # Database Update Notice — Mei Xin
 
 ## Target Data Source
-Protected synthetic student–parent database (mother database — not displayed in full).
+Protected synthetic student–parent record database (demo source: student_parent_database.md — not displayed in full).
 
 ## Target Record
 Student athletics profile — Mei Xin · Demo Primary School.
@@ -180,14 +180,14 @@ parent household income · parent occupation · phone number · home address · 
 **GREEN — educator approval required before the database write.**
 
 ## Reason for GREEN
-This update affects the protected mother database and may influence school achievement records, pupil files, certificates, public references and future reporting. GovGuard MY may prepare this notice, but it must NOT write to the mother database until an authorised educator verifies the official result sheet and approves the update.
+This update affects the protected student-record database and may influence school achievement records, pupil files, certificates, public references and future reporting. GovGuard MY may prepare this notice, but it must NOT write to the protected student-record database until an authorised educator verifies the official result sheet and approves the update.
 
 ## Current Status
-Prepared only. The mother database has not been changed.
+Prepared only. The protected student-record database has not been changed.
 
 ## [apply_database_update]
-Mother-database update — awaiting human verification
+Protected student-record update — awaiting human verification
 
-A Database Update Notice for **Mei Xin** is ready: personal_best 4.65m → **4.82m**, national_record_status false → **true**, plus the new achievement and Singapore follow-up. Because writing to the **protected mother database** is a high-impact, largely irreversible action, I cannot apply it autonomously — an educator must **verify the official result sheet and approve** first. The mother database is unchanged in demo mode.
+A Database Update Notice for **Mei Xin** is ready: personal_best 4.65m → **4.82m**, national_record_status false → **true**, plus the new achievement and Singapore follow-up. Because writing to the **protected student-record database** is a high-impact, largely irreversible action, I cannot apply it autonomously — an educator must **verify the official result sheet and approve** first. The protected student-record database is unchanged in demo mode.
 
-Workflow complete. Generated outputs: Internal Activity Report · Parent Notice — Mei Xin / Xiao Le / Ali · Public Facebook Post Draft · Data-Selection Audit · Database Update Notice — Mei Xin. Governance: low-risk drafts auto-run; 1 unsafe status-based data-use proposal RED-blocked; 1 mother-database update awaiting human verification.
+Workflow complete. Generated outputs: Internal Activity Report · Parent Notice — Mei Xin / Xiao Le / Ali · Public Facebook Post Draft · Data-Selection Audit · Database Update Notice — Mei Xin. Governance: low-risk drafts auto-run; 1 unsafe status-based data-use proposal RED-blocked; 1 protected student-record update awaiting human verification.

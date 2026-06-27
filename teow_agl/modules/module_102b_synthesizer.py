@@ -229,9 +229,9 @@ def _workflow_fallback_body(user_intent: str, meta: dict) -> str:
         )
         if ctx:
             body += "\n— 公开摘要 / Public summary / Ringkasan awam —\n" + ctx + "\n"
-        body += ("\n(本公开草稿不含身份证号、MyKid、电话、住址或家庭收入,需校方批准后发布。 / "
-                 "No IC, MyKid, phone, home-address or household-income data; released "
-                 "only after school approval.)")
+        body += ("\n(Public draft only. No IC/MyKid, phone number, address, "
+                 "household income, conduct, discipline, or private training details "
+                 "are included. Release requires school approval.)")
         return body + src_line
     # default — internal activity report (grounded in the full results data)
     body = (

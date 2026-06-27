@@ -664,7 +664,7 @@ def test_national_routes_blue9_red1_green1(isolated_workspace: Path):
     assert counts["BLUE"] == 9 and counts["RED"] == 1 and counts["GREEN"] == 1, counts
     assert routes["consider_status_personalisation"] == "RED"
     assert routes["apply_database_update"] == "GREEN"
-    # the Database Update Notice is a BLUE draft (visible); only the mother-database WRITE is GREEN
+    # the Database Update Notice is a BLUE draft (visible); only the protected student-record WRITE is GREEN
     assert routes["database_update_notice_mei_xin"] == "BLUE"
 
 
@@ -977,7 +977,7 @@ def test_server_exposes_national_workflow_panel(monkeypatch):
         assert pwf["summary"]["self_blocked"] == 1 and pwf["summary"]["approval"] == 1
         # the approval card has a meaningful label + the official-record reason
         appr = state["pending_approvals"][0]
-        assert "mother-database" in (appr.get("summary") or "").lower()
+        assert "protected student-record" in (appr.get("summary") or "").lower()
         assert any("official school" in r.lower()
                    for r in (appr.get("context") or {}).get("reasons", []))
         c.post(f"/api/tasks/{tid}/decide",
@@ -995,6 +995,11 @@ def test_server_exposes_national_workflow_panel(monkeypatch):
     assert wf["summary"]["self_blocked"] == 1 and wf["summary"]["approval"] == 1
     assert any("differential treatment" in r
                for b in wf["blocked"] for r in b.get("reasons", []))
+    # F1 data contract: this run REJECTED the GREEN gate, so the high-impact step
+    # must NOT read as executed — the UI keys off step.status (success == approved,
+    # otherwise rejected) to stop showing "awaiting verification" after a decision.
+    green = [s for s in wf["steps"] if s["route"] == "GREEN"]
+    assert green and green[0]["status"] != "success", green
 
     # P3a — once the run settles, the learning panel surfaces the POSITIVE half:
     # a real, non-personal procedure proposal queued for owner approval. This is

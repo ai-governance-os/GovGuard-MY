@@ -61,12 +61,12 @@ reminder. The agent governs **itself**. The whole task still completes — only 
 one step is blocked (the route row shows it as *self-blocked*, not failed)."
 
 **Beat W3 — the high-impact GREEN (the differentiator).** Point at the **GREEN**
-step — *Apply mother-database update — Mei Xin (needs verification)*: "This is the
+step — *Apply protected student-record update — Mei Xin (needs verification)*: "This is the
 strong GREEN. The agent noticed Mei Xin's **4.82m** beats the previous **4.70m**
 national record, and prepared a **Database Update Notice** — a visible BLUE draft
 listing exactly which fields would change (personal best 4.65m → 4.82m,
 national-record status false → true) and which would NOT. But *writing* to the
-**protected mother database** is high-impact and largely irreversible — so the agent
+**protected student-record database** is high-impact and largely irreversible — so the agent
 **stops and asks a human to verify the official result sheet before the write**. Not
 a generic 'ask before publishing' that any agent does — it paused at the consequential
 step *inside its own autonomous workflow*. The approval card says exactly that, and

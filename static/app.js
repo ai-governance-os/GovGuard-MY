@@ -300,13 +300,18 @@ function renderGovPipeline(bubble, d) {
                                    "not required (within policy)";
   let execDet;
   const okCount = execs.filter(e => e.status === "success").length;
+  const gs = wfDetected ? greenGateState(d) : null;
   if (wfDetected) {
     // Composite workflow: low-risk steps ran; one step self-blocked; the
-    // high-impact step waits for verification. Not a single failed RED.
-    approvalDet = sm.approval ? "high-impact step awaiting human verification" : "—";
+    // high-impact step waits for verification — and, once you decide, reads as
+    // approved/simulated or rejected (not stuck on "awaiting").
+    approvalDet = !sm.approval ? "—"
+      : gs === "approved" ? "approved by a human — verification done"
+      : gs === "rejected" ? "rejected by a human"
+      : "high-impact step awaiting human verification";
     execDet = `${sm.auto || 0} steps done`
       + (sm.self_blocked ? ` · ${sm.self_blocked} self-blocked` : "")
-      + (sm.approval ? ` · ${sm.approval} awaiting verification` : "");
+      + (sm.approval ? ` · ${sm.approval} ${greenGateTag(gs)}` : "");
   } else if (route === "RED") { approvalDet = "—"; execDet = "blocked — nothing executed"; }
   else if (route === "INFEASIBLE") { approvalDet = "—"; execDet = "not run — honest limitation"; }
   else {
@@ -320,8 +325,12 @@ function renderGovPipeline(bubble, d) {
   const passLbl = `passed (${verChecks} check${verChecks === 1 ? "" : "s"})`;
   let verDet, verFail = false;
   if (wfDetected) {
-    if (sm.approval) {
+    if (gs === "pending") {
       verDet = "deferred — runs after you verify the high-impact step";
+    } else if (gs === "approved") {
+      verDet = "high-impact write verified &amp; simulated (demo)";
+    } else if (gs === "rejected") {
+      verDet = "n/a — high-impact write was rejected";
     } else if (verChecks) {
       verFail = !ver.pass;
       verDet = ver.pass ? passLbl : ("FAILED: " + (ver.summary || ""));
@@ -386,12 +395,16 @@ function renderWorkflowPanel(bubble, d) {
 
   let head;
   if (wf.detected) {
-    const dl = wf.deadline_hours ? `within ${esc(wf.deadline_hours)}h` : "—";
+    // Product copy: don't surface the internal 102W resolver score (reads as
+    // "uncertain") and frame the deadline as a soft review SLA — per-step SLAs
+    // differ, so a single hard workflow deadline invites timeline objections.
+    // (The raw confidence stays in the audit trace / 102W event for judges.)
+    const dl = wf.deadline_hours
+      ? `review recommended within ${esc(wf.deadline_hours)}h` : "";
     head = `<div class="wf-head">Workflow detected: `
       + `<b>${esc(wf.workflow_name || wf.workflow_id)}</b>`
-      + `<span class="wf-meta">priority: ${esc(wf.priority || "—")} · `
-      + `deadline: ${dl}`
-      + (wf.confidence != null ? ` · confidence: ${esc(wf.confidence)}` : "")
+      + `<span class="wf-meta">priority: ${esc(wf.priority || "—")}`
+      + (dl ? ` · ${dl}` : "")
       + `</span></div>`;
   } else {
     head = `<div class="wf-head">Agent self-governance — data-use check</div>`;
@@ -403,19 +416,32 @@ function renderWorkflowPanel(bubble, d) {
     if (s === "failed") return "not run";
     return s || "pending";
   };
+  const gs = greenGateState(d);
   const rows = steps.map((s, i) => {
     const route = s.route || "—";
-    const note = route === "RED" ? "unsafe data-use blocked"
-      : route === "GREEN" ? (s.output_scope === "official_record"
-          ? "mother-database write — needs human verification"
-          : "external action — needs human approval")
-      : (s.output_scope === "public_draft"
-          ? "public draft — sensitive fields blocked"
-          : (s.output_scope === "audit" ? "data-selection audit"
-          : (s.output_scope === "internal" ? "internal data allowed" : "")));
-    const st = route === "RED" ? "self-blocked"
-      : route === "GREEN" ? "waiting approval"
-      : statusLabel(s.status);
+    const official = s.output_scope === "official_record";
+    let note, st;
+    if (route === "RED") {
+      note = "unsafe data-use blocked"; st = "self-blocked";
+    } else if (route === "GREEN") {
+      const base = official ? "protected student-record write" : "external action";
+      if (gs === "approved") {
+        note = `${base} — verification approved; simulated in demo (no real write)`;
+        st = "approved (simulated)";
+      } else if (gs === "rejected") {
+        note = `${base} — rejected; database unchanged`;
+        st = "rejected";
+      } else {
+        note = official ? "protected student-record write — needs human verification"
+                        : "external action — needs human approval";
+        st = "awaiting verification";
+      }
+    } else {
+      note = s.output_scope === "public_draft" ? "public draft — sensitive fields blocked"
+        : s.output_scope === "audit" ? "data-selection audit"
+        : s.output_scope === "internal" ? "internal data allowed" : "";
+      st = statusLabel(s.status);
+    }
     return `<div class="wf-step">`
       + `<span class="wf-n">${i + 1}</span>`
       + `<span class="wf-name">${esc(s.step_name || s.step_id)}</span>`
@@ -445,13 +471,12 @@ function renderWorkflowPanel(bubble, d) {
   let statusLine = "";
   const sm = wf.summary || {};
   if (wf.detected && (sm.total || 0) > 0) {
-    // A high-impact official-record write is a VERIFICATION gate, not a generic
-    // approval — match the step note's wording so the summary reads consistently.
-    const needsVerify = steps.some(s =>
-      s.route === "GREEN" && s.output_scope === "official_record");
+    // Workflow-aware status line — and decision-aware: after Approve/Reject the
+    // high-impact step reads as verified(simulated)/rejected, not "awaiting".
+    // (gs is computed above for the step rows.)
     const bits = [];
     if (sm.auto) bits.push(`${sm.auto} auto-run`);
-    if (sm.approval) bits.push(`${sm.approval} awaiting ${needsVerify ? "verification" : "approval"}`);
+    if (sm.approval) bits.push(`${sm.approval} ${greenGateTag(gs)}`);
     if (sm.self_blocked) bits.push(`${sm.self_blocked} self-blocked`);
     statusLine = `<div class="wf-statusline">Governed workflow — `
       + `${esc(bits.join(" · "))}</div>`;
@@ -596,7 +621,11 @@ function renderAgentMessage(node, d) {
   // chat/text answer (conversational reply, rendered as the primary
   // content of the bubble when present)
   const answer = bubble.querySelector(".answer");
-  const chatText = extractChatAnswer(d);
+  // For a detected workflow the per-step bodies are summarised by the workflow
+  // panel + the outcome line, so we don't surface a raw step body as the chat
+  // answer — otherwise the GREEN step's "awaiting verification" notice would
+  // still show as the reply AFTER the human has already approved/rejected.
+  const chatText = (d.workflow && d.workflow.detected) ? "" : extractChatAnswer(d);
   if (chatText) {
     answer.innerHTML = linkifyCitations(escapeHtml(chatText), webHits);
     answer.style.display = "";
@@ -658,11 +687,10 @@ function renderAgentMessage(node, d) {
       // "1 self-blocked" inside a GOVERNED workflow, not a failed task. The
       // per-step routes (incl. the RED self-block) live in the workflow panel.
       const sm = wf.summary || {};
-      const needsVerify = (wf.steps || []).some(s =>
-        s.route === "GREEN" && s.output_scope === "official_record");
+      const gs = greenGateState(d);
       const bits = [];
       if (sm.auto) bits.push(`${sm.auto} auto`);
-      if (sm.approval) bits.push(`${sm.approval} ${needsVerify ? "to verify" : "approval"}`);
+      if (sm.approval) bits.push(`${sm.approval} ${gs === "approved" ? "verified" : gs === "rejected" ? "rejected" : "to verify"}`);
       if (sm.self_blocked) bits.push(`${sm.self_blocked} self-blocked`);
       const chip = document.createElement("span");
       chip.className = "chip WORKFLOW";
@@ -919,17 +947,37 @@ function escapeAttr(s) {
     ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]);
 }
 
+// Resolve the high-impact GREEN step's human-gate state from the task view, so
+// the UI stops reading "awaiting verification" AFTER a decision is submitted.
+//   pending  = gate open (task still awaiting, or a pending approval exists)
+//   approved = human approved; the step executed (simulated in demo mode)
+//   rejected = task settled but the GREEN step never ran (rejected / not executed)
+//   null     = no GREEN step in this workflow
+function greenGateState(d) {
+  const wf = d && d.workflow;
+  if (!wf || !wf.detected) return null;
+  const g = (wf.steps || []).find(s => s.route === "GREEN");
+  if (!g) return null;
+  if (d.status === "awaiting_approval" || (d.pending_approvals || []).length) return "pending";
+  return g.status === "success" ? "approved" : "rejected";
+}
+// Short counter tag for the workflow summary / status line.
+function greenGateTag(gs) {
+  return gs === "approved" ? "verified (simulated)"
+       : gs === "rejected" ? "rejected"
+       : "awaiting verification";
+}
+
 function describeOutcome(d) {
   // Workflow tasks: a self-blocked internal step must NOT read as a failed
   // task. Summarise the governed workflow (display only — the route stays RED).
   const wf = d.workflow;
   if (wf && wf.detected) {
     const sm = wf.summary || {};
-    const needsVerify = (wf.steps || []).some(s =>
-      s.route === "GREEN" && s.output_scope === "official_record");
+    const gs = greenGateState(d);
     const bits = [];
     if (sm.auto) bits.push(`${sm.auto} done`);
-    if (sm.approval) bits.push(`${sm.approval} awaiting ${needsVerify ? "verification" : "approval"}`);
+    if (sm.approval) bits.push(`${sm.approval} ${greenGateTag(gs)}`);
     if (sm.self_blocked) bits.push(`${sm.self_blocked} self-blocked`);
     let msg = `Governed workflow — ${bits.join(" · ")}.`;
     if (sm.self_blocked) {
@@ -938,7 +986,16 @@ function describeOutcome(d) {
         + " donation potential to change a parent message's tone, priority or"
         + " honest reminder).";
     }
-    msg += " Nothing is sent or published in demo mode.";
+    if (gs === "approved") {
+      msg += " The protected student-record write was approved and simulated in"
+        + " demo mode — no real database was changed.";
+    } else if (gs === "rejected") {
+      msg += " The protected student-record write was rejected — the database"
+        + " remains unchanged.";
+    } else if (gs === "pending") {
+      msg += " The protected student-record write is paused for your verification.";
+    }
+    msg += " Nothing else is sent or published in demo mode.";
     return msg;
   }
   const route = d.final_route;

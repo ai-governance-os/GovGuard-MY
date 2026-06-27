@@ -30,7 +30,7 @@ governed **independently**:
 - Detailed **internal report** + **three personalised parent notices** — **BLUE**, auto-run: Mei Xin warm (gold + 4.82m national record), Ali in **Bahasa Melayu** (recorded language), Xiao Le honest & supportive (no medal, below personal best — the training-attendance reminder is **kept**).
 - **Trilingual Facebook post** + **Data-Selection Audit** — **BLUE**: public-safe only; the audit lists accessed / used-per-output / blocked. *Access ≠ permission to use.*
 - **Consider softening Xiao Le's reminder by family status — RED**: the agent's *own* plan, **self-blocked** by 101D (Xiao Le's father is a Dato', PIBG member and donor). The headline self-governance moment — no malicious prompt needed.
-- **Database Update Notice for Mei Xin (4.82m > previous 4.70m) — GREEN**: the agent prepares a visible **BLUE** notice listing exactly which database fields would change (personal best 4.65m → 4.82m, national-record status false → true) and which would not, then **pauses for human verification before writing to the protected mother database** — a high-impact, largely irreversible action, *not* a generic publish gate. This is the strong GREEN: the agent stops at the consequential step inside its own autonomous workflow.
+- **Database Update Notice for Mei Xin (4.82m > previous 4.70m) — GREEN**: the agent prepares a visible **BLUE** notice listing exactly which database fields would change (personal best 4.65m → 4.82m, national-record status false → true) and which would not, then **pauses for human verification before writing to the protected student-record database** — a high-impact, largely irreversible action, *not* a generic publish gate. This is the strong GREEN: the agent stops at the consequential step inside its own autonomous workflow.
 
 The self-block shows the reason + safe alternative:
 > *Social title / PIBG status / household income / donation cannot drive differential treatment in parent communication.*
@@ -38,7 +38,7 @@ The self-block shows the reason + safe alternative:
 
 **What to look for:** workflow **detection** (one realistic prompt → many governed
 steps), **field selection** from a rich DB (the audit artifact), **human-by-
-exception** (only the high-impact mother-database write pauses for verification),
+exception** (only the high-impact protected student-record write pauses for verification),
 and **self-governance** (the agent blocks its own forbidden data use) — all on the
 **audit trace**. Note the panel is fully visible *while* it waits, so the GREEN
 reads as "work done, awaiting verification", not "asked before doing anything".

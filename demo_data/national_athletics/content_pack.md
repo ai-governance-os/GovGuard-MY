@@ -30,7 +30,7 @@
 | Pupil | Event | Achievement | Follow-up |
 |---|---|---|---|
 | Mei Xin | Long Jump U12 Girls | Champion; New National Primary Schools Record | Selected for Malaysia Schools Invitational Athletics Meet in Singapore |
-| Xiao Le | 100m U12 Boys | Silver Medal; personal best timing | Needs consistent follow-up training |
+| Xiao Le | 100m U12 Boys | Represented school in 100m final; no medal this time | Needs consistent follow-up training |
 | Ali | Shot Put U12 Boys | Silver Medal; strong technical improvement | Continue strength and technique training |
 
 ---
@@ -146,13 +146,13 @@ The school contingent consisted of selected pupils who had qualified through ear
 | No. | Pupil | Event | Achievement | Remarks |
 |---|---|---|---|---|
 | 1 | Mei Xin | Long Jump U12 Girls | Champion | New National Primary Schools Record |
-| 2 | Xiao Le | 100m U12 Boys | Silver Medal | Personal best timing in the final |
+| 2 | Xiao Le | 100m U12 Boys | No medal | Represented school in the final; time below personal best |
 | 3 | Ali | Shot Put U12 Boys | Silver Medal | Strong technical improvement from qualification round |
 
 Overall achievement:
 
 - **1 Gold Medal**
-- **2 Silver Medals**
+- **1 Silver Medal**
 - **1 New National Primary Schools Record**
 - **1 pupil selected for further invitational-level participation**
 
@@ -178,7 +178,7 @@ As a result of this achievement, Mei Xin has been selected for the **Malaysia Sc
 
 ### 6.2 Xiao Le — 100m U12 Boys
 
-Xiao Le performed strongly in the 100m U12 Boys event and achieved a silver medal. He recorded a personal best timing during the final, showing improvement in acceleration, running posture, and finishing effort.
+Xiao Le represented the school in the 100m U12 Boys event at national level. He did not win a medal this time, and his final time was below his personal best. Training attendance and consistency need to be strengthened; with more regular training his acceleration, running posture, and finishing effort can improve.
 
 His strengths included:
 
@@ -367,23 +367,21 @@ Demo Primary School
 # 4. Parent Message 2 — English
 ## Direct and Concise Message for Xiao Le’s Parent
 
-**Subject:** Congratulations on Xiao Le’s Silver Medal in the National 100m Event
+**Subject:** Xiao Le’s Participation in the National 100m and Follow-Up Training
 
 Dear Dato’ Tan,
 
 Good day.
 
-We are pleased to inform you that **Xiao Le** represented Demo Primary School at the **2026 National Primary Schools Athletics Championship** and achieved a **Silver Medal in the 100m U12 Boys event**.
+We would like to inform you that **Xiao Le** represented Demo Primary School in the **100m U12 Boys event** at the **2026 National Primary Schools Athletics Championship**. Although he did not win a medal this time, we are proud that he earned a place to represent the school at national level.
 
-Xiao Le performed well in a highly competitive national-level race and recorded a personal best timing during the final. This shows clear progress in sprinting performance, especially in acceleration, running posture, and finishing effort.
+Based on the training record and recent performance review, his final time was some distance below his personal best. He has clear potential to improve, but his training attendance and consistency need to be strengthened so that his acceleration, running posture, and finishing effort can develop further.
 
-The school would like to congratulate Xiao Le and your family on this achievement. We also appreciate your support in helping him prepare for the competition.
-
-For Xiao Le’s next stage of development, consistent training attendance will be important. We kindly ask for your support in helping him maintain his training schedule so that he can continue to improve in future competitions.
+For Xiao Le’s next stage of development, consistent training attendance will be important. We kindly ask for your support in helping him maintain his training schedule so that he can continue to improve in future competitions. If there are any transport, timing, health or other concerns affecting his attendance, please feel free to discuss them with the teacher-in-charge.
 
 The teacher-in-charge will share the updated training schedule once it is finalised. Kindly continue to support Xiao Le in balancing his training, rest, and schoolwork.
 
-Congratulations once again on this proud achievement.
+Thank you for your cooperation, and we look forward to seeing his continued progress.
 
 Regards,
 

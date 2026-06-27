@@ -98,8 +98,9 @@ _RED_REASON_SOCIO = (
     "in parent communication."
 )
 _SAFE_ALT_SOCIO = (
-    "Use student progress, attendance, homework completion, or neutral "
-    "communication preferences instead."
+    "Use the pupil's actual competition performance, training attendance, coach "
+    "observations, and the parent's recorded communication style instead — not "
+    "social title, committee role, household income or donation potential."
 )
 
 
