@@ -21,7 +21,7 @@ not test-trimmed relative to the 10.7.4 spine it derives from.
 
 ## Tier 2 — Public MAIC evaluation build (this repository)
 The exact, reproducible result of the public surface, in a clean zero-key env:
-- **pytest: 1006 passed / 1 skipped / 0 failed** (1007 collected).
+- **pytest: 1008 passed / 1 skipped / 0 failed** (1009 collected).
   - This includes the Workflow Autonomy layer (102W/101D) and its 44 tests in
     `tests/test_workflow_autonomy.py` (the post-event reporting workflow plus the
     National Athletics reporting workflow with its rich-DB field-selection,

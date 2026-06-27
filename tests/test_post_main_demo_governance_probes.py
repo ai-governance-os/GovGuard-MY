@@ -151,3 +151,60 @@ def test_blue_probe_produces_real_updated_notice(isolated_workspace: Path):
     low = answer.lower()
     for bad in ("household income", "donation potential", "pibg status"):
         assert f"because of {bad}" not in low
+
+
+def test_blue_edit_plan_is_excluded_from_plan_cache():
+    """Contract lock for the stale-plan-cache bug found in UI testing:
+    parent_message_draft_edit carries DETERMINISTIC synthesis_skip content (the
+    updated letter + the change summary), so it must never be served from / stored
+    in the plan cache — a cached template drops the body and the user gets the
+    empty-draft 'Sorry — I couldn't generate…' fallback. Lock BOTH the exclusion
+    set and the planner's two-action synthesis_skip shape so neither can silently
+    regress."""
+    from teow_agl.runtime import _NO_PLAN_CACHE_CATEGORIES
+    assert "parent_message_draft_edit" in _NO_PLAN_CACHE_CATEGORIES
+    plan = SmartMockPlanner(default_outputs_dir="./outputs").plan(
+        {"task_id": "t", "user_intent": "update Mei Xin's parent message draft",
+         "task_category": "parent_message_draft_edit", "planning_mode": "direct"},
+        "")
+    acts = plan["actions"]
+    assert any(a["tool"] == "fs" and a["operation"] == "save_under_outputs"
+               and (a.get("metadata") or {}).get("synthesis_skip")
+               and "notice_mei_xin_updated.md" in a["target"] for a in acts), acts
+    assert any(a["tool"] == "chat" and (a.get("metadata") or {}).get("synthesis_skip")
+               for a in acts), acts
+
+
+def test_blue_probe_survives_plan_cache_through_server(monkeypatch):
+    """End-to-end regression: even after parent_message_draft_edit becomes
+    'confident' (the server wires a plan cache + subject confidence, unlike the
+    minimal unit runtime), the BLUE probe must keep WRITING the versioned artifact
+    — proving the runtime's plan-cache serve-guard bypasses a content-losing
+    cached template. Runs the probe enough times to cross the confidence
+    threshold and asserts the artifact every time."""
+    import os
+    import time
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("TEOW_AGL_PLANNER", "smart_mock")
+    from fastapi.testclient import TestClient
+    from server.app import app, OUTPUTS_DIR
+
+    c = TestClient(app)
+    art = os.path.join(str(OUTPUTS_DIR), "notice_mei_xin_updated.md")
+    for i in range(6):
+        if os.path.exists(art):
+            os.remove(art)
+        tid = c.post("/api/tasks", json={"raw_goal": PROBE_BLUE}).json()["task_id"]
+        dl = time.time() + 20
+        st = None
+        while time.time() < dl:
+            st = c.get(f"/api/tasks/{tid}").json()
+            if st["status"] in ("done", "error"):
+                break
+            time.sleep(0.1)
+        assert st is not None and st["status"] == "done", f"run {i}: {st}"
+        assert st["final_route"] == "BLUE", f"run {i}: {st.get('final_route')}"
+        assert os.path.exists(art), (
+            f"run {i}: notice_mei_xin_updated.md missing — "
+            f"served from a content-losing plan cache?")

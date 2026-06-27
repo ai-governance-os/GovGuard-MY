@@ -445,9 +445,13 @@ function renderWorkflowPanel(bubble, d) {
   let statusLine = "";
   const sm = wf.summary || {};
   if (wf.detected && (sm.total || 0) > 0) {
+    // A high-impact official-record write is a VERIFICATION gate, not a generic
+    // approval — match the step note's wording so the summary reads consistently.
+    const needsVerify = steps.some(s =>
+      s.route === "GREEN" && s.output_scope === "official_record");
     const bits = [];
     if (sm.auto) bits.push(`${sm.auto} auto-run`);
-    if (sm.approval) bits.push(`${sm.approval} awaiting approval`);
+    if (sm.approval) bits.push(`${sm.approval} awaiting ${needsVerify ? "verification" : "approval"}`);
     if (sm.self_blocked) bits.push(`${sm.self_blocked} self-blocked`);
     statusLine = `<div class="wf-statusline">Governed workflow — `
       + `${esc(bits.join(" · "))}</div>`;
@@ -1648,15 +1652,31 @@ async function loadCurator() {
         </div>
         <div class="cur-actions"></div>
       `;
-      card.querySelector(".cur-type").textContent = p.type || "?";
-      card.querySelector(".cur-target").textContent = p.target_file || "";
+      // Two proposal shapes share this card: memory-patch (type/target_file/
+      // old_text/new_text) and create_skill (kind/name/description/procedure,
+      // e.g. the non-personal workflow SOP). Render whichever fields exist so a
+      // skill proposal never shows "?" + empty diff blocks.
+      const isSkill = p.kind === "create_skill" || (!p.type && (p.name || p.procedure));
+      card.querySelector(".cur-type").textContent = p.type || p.kind || "?";
+      card.querySelector(".cur-target").textContent = p.target_file || p.name || "";
       card.querySelector(".cur-status").textContent = (p.status || "pending").toUpperCase();
-      card.querySelector(".cur-reason").textContent = p.reasoning || "";
-      card.querySelector(".cur-old pre").textContent =
-        (p.old_text || "").slice(0, 600);
-      const newText = (p.new_text || "").slice(0, 600);
-      card.querySelector(".cur-new pre").textContent =
-        newText || (p.type === "archive_skill" ? "(skill will be archived)" : "(empty)");
+      card.querySelector(".cur-reason").textContent = p.reasoning || p.description || "";
+      if (isSkill) {
+        const oldLabel = card.querySelector(".cur-old .cur-label");
+        const newLabel = card.querySelector(".cur-new .cur-label");
+        if (oldLabel) oldLabel.textContent = "kind";
+        if (newLabel) newLabel.textContent = "procedure";
+        card.querySelector(".cur-old pre").textContent =
+          `${p.kind || "create_skill"} · non-personal (PII-free)`;
+        card.querySelector(".cur-new pre").textContent =
+          (p.procedure || p.description || "(empty)").slice(0, 800);
+      } else {
+        card.querySelector(".cur-old pre").textContent =
+          (p.old_text || "").slice(0, 600);
+        const newText = (p.new_text || "").slice(0, 600);
+        card.querySelector(".cur-new pre").textContent =
+          newText || (p.type === "archive_skill" ? "(skill will be archived)" : "(empty)");
+      }
       // Action buttons only on pending proposals
       const actions = card.querySelector(".cur-actions");
       if (p.status === "pending") {

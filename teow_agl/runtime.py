@@ -109,6 +109,13 @@ _CAPABILITY_CARD_PATH = (
 )
 _capability_card_default: dict | None = None
 
+# Categories whose planner emits DETERMINISTIC, content-bearing actions
+# (inline `synthesis_skip` bodies / fixed fs content) that the plan cache
+# cannot reproduce: the cache templatizes target+meta and drops the body, so a
+# cached replay yields an empty draft (the "Sorry — I couldn't generate…"
+# fallback). These must always run the planner, never be served from cache.
+_NO_PLAN_CACHE_CATEGORIES = frozenset({"parent_message_draft_edit"})
+
 
 def _demo_mode_active() -> bool:
     """MAIC demo lockout (Owner Rule 4). Default ON: external actions are
@@ -1054,7 +1061,12 @@ class Runtime:
                 task_id=envelope.task_id,
                 action_id="pre_block",
                 route="INFEASIBLE" if is_infeasible else "RED",
-                reasons=[f"pre_governance_{'infeasible' if is_infeasible else 'hard_block'}:{pre.hard_block_code}"],
+                reasons=(
+                    [f"pre_governance_{'infeasible' if is_infeasible else 'hard_block'}:{pre.hard_block_code}"]
+                    # carry any config-driven safe alternative 101A attached, so
+                    # the blocked answer shows what to do instead, not just "blocked".
+                    + [r for r in (pre.reasons or []) if str(r).startswith("safe_alternative:")]
+                ),
                 ticket_required=False, approval_required=False,
                 policy_version=self.cfg.policy_version(),
             )
@@ -1289,6 +1301,7 @@ class Runtime:
             and
             self.plan_cache is not None
             and self.subject_confidence is not None
+            and pre.task_category not in _NO_PLAN_CACHE_CATEGORIES
             and self.subject_confidence.is_confident(pre.task_category)
         ):
             cached = self.plan_cache.lookup(category=pre.task_category)
@@ -3318,6 +3331,13 @@ class Runtime:
         #   * success on a cached run → bump successes
         #   * failure on a cached run → invalidate the cached entry
         if self.plan_cache is None or not plan or not plan.actions:
+            return
+        # Don't cache deterministic content-bearing plans (their inline bodies
+        # would be dropped on cache replay). Excludes the named categories AND,
+        # generally, any plan carrying a synthesis_skip action.
+        if (category in _NO_PLAN_CACHE_CATEGORIES
+                or any((a.metadata or {}).get("synthesis_skip")
+                       for a in plan.actions)):
             return
         actions_dump = [a.model_dump() for a in plan.actions]
         if outcome == "success":

@@ -200,6 +200,7 @@
       "category": "status_based_differential_treatment",
       "block": "red",
       "_doc": "User asks to change a message's warmth/honesty/priority or to drop a relevant reminder BECAUSE OF a parent's social title / committee status / donor influence -> RED. Concept (status) x intent (differential treatment), so rewording cannot slip. Household-income wording is deliberately NOT here: it is governed by 101D so its 'differential treatment' reason is preserved.",
+      "safe_alternative": "Personalise by the parent's recorded communication style and the pupil's real development need, and keep the honest reminder. A parent's social title, committee role or donations must not change a message's warmth, honesty or priority.",
       "require_all": [
         ["dato", "datuk", "拿督", "tan sri", "datin", "pibg", "家协", "committee member", "pibg committee", "donor", "donation", "捐款", "donated", "influential parent", "vip parent", "well-connected", "social title", "社会地位"],
         ["warmer", "softer", "soften", "more positive", "go easy", "be nicer", "drop the reminder", "remove the reminder", "remove the training", "skip the reminder", "without the reminder", "special treatment", "special attention", "preferential", "prioriti", "favour", "favor", "lenient", "tone down", "温和", "婉转", "客气一点", "去掉提醒", "去掉训练", "别提训练", "删掉训练", "删掉提醒", "宽容", "优待", "偏袒", "特别照顾", "照顾一下"]

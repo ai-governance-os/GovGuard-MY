@@ -81,6 +81,11 @@ class PreGovernanceModule:
                 else:
                     hard_block_code = risk_rule.get("category", "policy_block")
                 reasons.append(f"risk_rule:{risk_rule.get('id')}")
+                # Carry a config-driven safe alternative so the blocked answer
+                # can show the user what to do instead (not just "blocked").
+                alt = (risk_rule.get("safe_alternative") or "").strip()
+                if alt:
+                    reasons.append(f"safe_alternative: {alt}")
 
         for blocking_category in self.classifier.get("hard_block_categories", []):
             if category == blocking_category:
