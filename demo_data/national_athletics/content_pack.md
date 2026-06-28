@@ -442,8 +442,8 @@ Demo Primary School
 **女子 12 岁以下跳远冠军**  
 并成功刷新 **全国小学纪录**！
 
-🥈 **Xiao Le**  
-**男子 12 岁以下 100 米银牌**
+🏃 **Xiao Le**  
+**代表学校晋级男子 12 岁以下 100 米全国赛**
 
 🥈 **Ali**  
 **男子 12 岁以下铅球银牌**
@@ -484,8 +484,8 @@ Pencapaian sekolah adalah seperti berikut:
 **Johan Lompat Jauh Perempuan Bawah 12 Tahun**  
 serta mencipta **Rekod Baharu Sekolah Rendah Peringkat Kebangsaan**!
 
-🥈 **Xiao Le**  
-**Pingat Perak 100 Meter Lelaki Bawah 12 Tahun**
+🏃 **Xiao Le**  
+**Mewakili sekolah dalam acara 100 Meter Lelaki Bawah 12 Tahun di peringkat kebangsaan**
 
 🥈 **Ali**  
 **Pingat Perak Lontar Peluru Lelaki Bawah 12 Tahun**
@@ -526,8 +526,8 @@ The school achieved the following results:
 **Champion — Long Jump U12 Girls**  
 and a **New National Primary Schools Record**
 
-🥈 **Xiao Le**  
-**Silver Medal — 100m U12 Boys**
+🏃 **Xiao Le**  
+**Represented the school in the 100m U12 Boys event at national level**
 
 🥈 **Ali**  
 **Silver Medal — Shot Put U12 Boys**

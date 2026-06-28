@@ -3,7 +3,7 @@
   "display_name": "National Athletics Reporting Workflow",
   "domain": "public_school",
   "version": "1.0.0",
-  "description": "After pupils represent the school at a national athletics championship, prepare an internal report, individually personalised parent notices, a public Facebook post, and a data-selection audit — selecting only appropriate fields from a rich student/parent database and self-blocking any status/income-based differential treatment.",
+  "description": "After pupils represent the school at a national athletics championship, prepare an internal report, individually personalised parent notices, a public Facebook post, and a data-selection audit — selecting only appropriate fields from a detailed student/parent database and self-blocking any status/income-based differential treatment.",
 
   "_trigger_rule": "Trigger on a national-athletics strong phrase, OR (a national/athletics anchor AND an action cue). Never on an action cue alone.",
   "strong_trigger_phrases": [

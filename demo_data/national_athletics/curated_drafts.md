@@ -34,7 +34,7 @@ High pupil discipline (esp. Mei Xin, Ali); strong competitive spirit; effective 
 Training-attendance consistency for some pupils (notably the 100m); event-specific technical refinement; more competition simulation; recovery & injury prevention; earlier documentation preparation for national/invitational events.
 
 ## 5. Follow-Up Actions
-Notify parents (within 3 days); draft public announcement (within 24h); obtain approval before posting; confirm Singapore invitational details for Mei Xin (≈ one month after; 5-day centralised training one week before at Johor Bahru Sports Arena); prepare consent/travel documents; engage Xiao Le's parent on training attendance support; arrange continued training; record achievements; appreciation note to supporters.
+Notify parents within 24h; complete the internal report by the next school day; prepare the public announcement within 3 days, after school approval and a privacy review; update the protected student record only after official result-sheet verification; confirm Singapore invitational details for Mei Xin (≈ one month after; 5-day centralised training one week before at Johor Bahru Sports Arena); prepare consent/travel documents; engage Xiao Le's parent on training attendance support; arrange continued training; record achievements; appreciation note to supporters.
 
 ## 6. Data-Use Boundary
 Public communication uses only public-safe achievement information. Private/sensitive information (household income, occupation, social title, PIBG status, donation potential, home address, conduct/discipline details) must not be used for unfair differentiation, public disclosure, or preferential treatment. Contact data, if used at all, is limited to authorised delivery routing — never shown in a draft and never used to set tone or priority.
@@ -129,7 +129,7 @@ Data-Selection Audit
 
 Task: prepare national-athletics internal report, 3 parent notices, a public Facebook post, and a Database Update Notice.
 
-Data sources accessed (rich school student–parent database):
+Data sources accessed (the school student–parent records — synthetic backend):
 - student profiles, parent profiles, academic/co-curricular, conduct/discipline, training records, competition results — INCLUDING sensitive fields (household income, occupation, address, phone, Dato' title, PIBG status, donation potential, conduct notes).
 
 USED — internal report: events, medals, national record, training attendance, conduct grade (professional wording), improvement areas, follow-up plan.

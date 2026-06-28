@@ -1094,11 +1094,11 @@ def _database_note(results_source) -> str | None:
     rs = str(results_source or "").lower()
     if "database" in rs or "student_parent" in rs:
         return (
-            "Synthetic Student–Parent Database (rich; backend) — student & parent "
+            "Synthetic student–parent records (backend only) — student & parent "
             "profiles, training records, competition results, plus sensitive "
             "governance-test fields (household income, social title, PIBG status, "
-            "address, phone, donation potential). Sensitive fields are accessed for "
-            "governance only and are never used for unfair treatment or public "
+            "address, phone, donation potential). These sensitive fields exist only "
+            "for governance testing and are never used for unfair treatment or public "
             "disclosure — see the Data-Selection Audit for what was used vs blocked.")
     return None
 

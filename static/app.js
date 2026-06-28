@@ -365,8 +365,13 @@ function renderGovPipeline(bubble, d) {
             + (sm.self_blocked
                 ? `<div class="gp-note">RED self-block: ${esc(redReason
                     || "status/income-based softening of a parent message")}. `
-                  + `The low-risk steps ran; the high-impact step awaits human verification — `
-                  + `this is a composite governed workflow, not a single failed decision.</div>`
+                  + `The low-risk steps ran; `
+                  + (gs === "approved"
+                       ? "the high-impact write was human-verified and simulated in demo mode"
+                       : gs === "rejected"
+                       ? "the high-impact write was rejected and the protected record remains unchanged"
+                       : "the high-impact write is paused for educator verification")
+                  + ` — this is a composite governed workflow, not a single failed decision.</div>`
                 : "")
           : `<b class="gp-route ${esc(route)}">${esc(route)}</b>${reason ? " — " + esc(reason) : ""}`,
         "gp-decision")
@@ -396,16 +401,13 @@ function renderWorkflowPanel(bubble, d) {
   let head;
   if (wf.detected) {
     // Product copy: don't surface the internal 102W resolver score (reads as
-    // "uncertain") and frame the deadline as a soft review SLA — per-step SLAs
-    // differ, so a single hard workflow deadline invites timeline objections.
-    // (The raw confidence stays in the audit trace / 102W event for judges.)
-    const dl = wf.deadline_hours
-      ? `review recommended within ${esc(wf.deadline_hours)}h` : "";
+    // "uncertain"), and don't show a single generic workflow deadline — per-step
+    // SLAs differ (parent notices same-day, public post after approval, protected
+    // write after verification), so timing lives in the step notes / follow-up
+    // actions, not a misleading global "deadline". (Confidence stays in the audit.)
     head = `<div class="wf-head">Workflow detected: `
       + `<b>${esc(wf.workflow_name || wf.workflow_id)}</b>`
-      + `<span class="wf-meta">priority: ${esc(wf.priority || "—")}`
-      + (dl ? ` · ${dl}` : "")
-      + `</span></div>`;
+      + `<span class="wf-meta">priority: ${esc(wf.priority || "—")}</span></div>`;
   } else {
     head = `<div class="wf-head">Agent self-governance — data-use check</div>`;
   }
@@ -1008,10 +1010,12 @@ function describeOutcome(d) {
     const sent = (d.executions || []).filter(e =>
       e.status === "success" && String(e.output_summary || "").startsWith("[demo]")).length;
     if (sent) return `Demo release simulated — ${sent} external action(s) recorded in `
-      + "the demo release log. No real message or post was delivered; the release "
-      + "decision is recorded in the audit trace.";
+      + "the audit log, but no real parent message was delivered and no Facebook post "
+      + "was published externally. External release requires prior human approval; demo "
+      + "mode records the decision without contacting real recipients.";
     return "Release package prepared. Approval is required before any external "
-      + "action — nothing has been sent or published.";
+      + "action — no real parent message has been sent and no Facebook post has been "
+      + "published.";
   }
   if (route === "INFEASIBLE") return "I can't answer this reliably — the available "
     + "data doesn't support a confident answer (no relevant policy, budget or "
@@ -1156,6 +1160,10 @@ function renderReflection(el, d) {
     let chip;
     if (sop) chip = `<span class="refl-chip refl-chip-pos">📘 1 procedure proposed · owner approval</span>`;
     else if (hasRealLearning) chip = `<span class="refl-chip refl-chip-pos">✅ memory updated</span>`;
+    else if (route === "INFEASIBLE" && /unsupported_amount_estimate|reward/.test(cat || ""))
+      chip = `<span class="refl-chip refl-chip-pos">📋 decision framework produced</span>`;
+    else if (route === "BLUE" && /parent_message_draft_edit/.test(cat || ""))
+      chip = `<span class="refl-chip refl-chip-pos">🗂 output version recorded</span>`;
     else chip = `<span class="refl-chip">🔒 no personal data learned</span>`;
     summaryEl.innerHTML = "Learning &amp; memory policy " + chip;
   }
@@ -1163,7 +1171,7 @@ function renderReflection(el, d) {
   // ---- headline + the "why" (boundary reasoning), per route ---------
   const header = document.createElement("div");
   header.className = "reflection-header";
-  header.innerHTML = reflectionHeadline(route, hasRealLearning, sop);
+  header.innerHTML = reflectionHeadline(route, cat, hasRealLearning, sop);
   body.appendChild(header);
 
   const why = document.createElement("div");
@@ -1218,11 +1226,22 @@ function renderReflection(el, d) {
 }
 
 // Honest one-line headline for the learning panel, by governance route.
-function reflectionHeadline(route, hasRealLearning, sop) {
+function reflectionHeadline(route, cat, hasRealLearning, sop) {
+  const c = cat || "";
   if (sop) return `<span class="reflection-disp reflection-disp-pos">`
     + `📘 Procedure learned (proposed)</span> · no personal data used`;
   if (hasRealLearning) return `<span class="reflection-disp reflection-disp-applied">`
     + `✅ Memory updated</span> · non-personal note`;
+  // Bounded, SELECTIVE learning — not just "refused to learn":
+  if (route === "INFEASIBLE" && /unsupported_amount_estimate|reward/.test(c))
+    return `<span class="reflection-disp reflection-disp-pos">`
+      + `📋 Decision framework produced</span> · no amount guessed or learned`;
+  if (route === "BLUE" && /parent_message_draft_edit/.test(c))
+    return `<span class="reflection-disp reflection-disp-pos">`
+      + `🗂 Output version recorded</span> · no long-term memory update`;
+  if (route === "RED" && /learning|sensitive_data_learning|student_data/.test(c))
+    return `<span class="reflection-disp reflection-disp-governed">`
+      + `🔒 Personal-data learning blocked</span>`;
   if (route === "RED") return `<span class="reflection-disp reflection-disp-governed">`
     + `🔒 Learning boundary enforced</span> · nothing personal learned`;
   if (route === "INFEASIBLE") return `<span class="reflection-disp reflection-disp-governed">`
@@ -1240,6 +1259,14 @@ function reflectionWhy(route, cat, hasRealLearning, sop) {
     + "No student or parent data was written to memory; the procedure is queued "
     + "for your approval before it can be reused.";
   const c = cat || "";
+  if (route === "INFEASIBLE" && /unsupported_amount_estimate|reward/.test(c))
+    return "The system did not estimate an unsupported reward amount. It produced a "
+      + "reusable approval framework for a human (Headmaster / Board / PIBG) to decide; "
+      + "no amount, personal data or unverified policy was stored as memory.";
+  if (route === "BLUE" && /parent_message_draft_edit/.test(c))
+    return "This was a one-off schedule update to an existing parent notice. The "
+      + "updated output version and audit trace were recorded, but the event-specific "
+      + "dates, times and venue were not stored as reusable memory.";
   if (/learning|sensitive_data_learning|student_data/.test(c))
     return "You asked the system to train on the student database. That is exactly "
       + "what the learning boundary forbids: personal student / parent data is never "
