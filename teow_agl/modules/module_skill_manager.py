@@ -856,6 +856,17 @@ class SkillManager:
         confidently call two shapeless skills "the same".
         """
         actives = self.list_skills(statuses=("active",))
+        # Deterministic tie-break for an EQUAL created_at: two same-shape skills
+        # created in the same coarse-clock tick (common on Windows, where
+        # datetime.now() can repeat a microsecond) would otherwise sort
+        # ambiguously, superseding the wrong skill — a real determinism bug and
+        # a flaky test. The skill that appears LATER in the append log is the
+        # newer one, so use first-append position as a stable secondary key.
+        creation_order: dict[str, int] = {}
+        for i, rec in enumerate(self._replay()):
+            sid = rec.get("skill_id")
+            if sid is not None:
+                creation_order.setdefault(sid, i)  # first append == creation
         by_shape: dict[tuple[str, str], list[dict]] = {}
         for s in actives:
             cat = (s.get("source_category") or "").strip()
@@ -867,9 +878,12 @@ class SkillManager:
         for group in by_shape.values():
             if len(group) < 2:
                 continue
-            # Newest by created_at wins; the rest are superseded by it.
-            ranked = sorted(group, key=lambda r: r.get("created_at", ""),
-                            reverse=True)
+            # Newest by (created_at, creation order) wins; rest superseded by it.
+            ranked = sorted(
+                group,
+                key=lambda r: (r.get("created_at", ""),
+                               creation_order.get(r["skill_id"], 0)),
+                reverse=True)
             winner = ranked[0]
             for loser in ranked[1:]:
                 out.append({"skill_id": loser["skill_id"],

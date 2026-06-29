@@ -289,6 +289,28 @@ def test_sweep_proposes_supersede_for_same_shape(sm: SkillManager):
     assert _status(sm, old) == "active"
 
 
+def test_supersede_winner_deterministic_on_created_at_tie(sm: SkillManager):
+    """Regression (flaky-test root cause): two same-shape skills created in the
+    SAME coarse-clock tick get an IDENTICAL created_at (common on Windows, where
+    datetime.now() can repeat a microsecond). The "newest wins" sort must then
+    break the tie deterministically by append/creation order (later == newer),
+    superseding the OLDER one — never flip by hash/iteration order."""
+    TIE = "2026-01-01T12:00:00+00:00"
+    old = {"skill_id": "OLD", "source_category": "office_doc",
+           "source_shape": "docx_v1", "created_at": TIE, "updated_at": TIE,
+           "status": "active"}
+    new = {"skill_id": "NEW", "source_category": "office_doc",
+           "source_shape": "docx_v1", "created_at": TIE, "updated_at": TIE,
+           "status": "active"}
+    # _replay() reflects append (creation) order: old first, new second.
+    sm._replay = lambda: [old, new]  # type: ignore[method-assign]
+    # The result must hold regardless of what order list_skills happens to yield.
+    for listed in ([old, new], [new, old]):
+        sm.list_skills = lambda _l=listed, **k: list(_l)  # type: ignore[method-assign]
+        cands = sm._detect_supersede_candidates()
+        assert cands == [{"skill_id": "OLD", "superseded_by": "NEW"}], (listed, cands)
+
+
 def test_sweep_no_supersede_without_shape(sm: SkillManager):
     _make(sm, "a", category="office_doc", shape="")
     _make(sm, "b", category="office_doc", shape="")
