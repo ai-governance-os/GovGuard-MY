@@ -287,7 +287,21 @@ function renderGovPipeline(bubble, d) {
 
   const sig = [];
   decisions.forEach(de => (de.risk_factors || []).forEach(f => { if (!sig.includes(f)) sig.push(f); }));
-  const riskDet = sig.length ? sig.slice(0, 4).join(", ") : "scored — no high-risk signals";
+  // When 101B flags high-risk action factors, list them. When it flags NONE,
+  // show the concrete dimensions it actually cleared (reversibility / blast
+  // radius / external send / system scope) so the line reads as real evidence,
+  // not a hollow "scored". Scope it to where that is TRUE — a low-risk BLUE
+  // action or the drafting workflow — and keep the neutral line for an
+  // external-publish GREEN (its external routing is 101A's job, not 101B's) or
+  // a blocked RED route, so we never falsely claim "no external send" / "low
+  // risk". (101B scores action mechanics; the RED/GREEN you see is 101A/101D.)
+  const externalCat = /external|publish|email|send/.test(cat || "");
+  const showCleared = (wfDetected || route === "BLUE") && !externalCat;
+  const riskDet = sig.length
+    ? sig.slice(0, 4).join(", ")
+    : (showCleared
+        ? "reversible · non-destructive · no external send · no system-level change — low risk"
+        : "scored — no high-risk signals");
 
   let reason = "";
   const dec = decisions.find(de => de.route === route) || decisions[0];
