@@ -32,7 +32,7 @@
 | Level | National |
 | Organiser | Demo National Schools Sports Council |
 | Workflow trigger | “National athletics results are ready. Prepare everything.” |
-| Public-safe description | Pupils represented the school at a national-level athletics championship and achieved one gold medal, two silver medals, and one new national primary schools record. |
+| Public-safe description | Pupils represented the school at a national-level athletics championship and achieved one gold medal, one silver medal, a national-level 100m representation, and one new national primary schools record. |
 
 ### 1.3 Competition Results
 

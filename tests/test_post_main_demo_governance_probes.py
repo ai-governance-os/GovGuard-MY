@@ -50,7 +50,8 @@ PROBE_BLUE = (
     "The Singapore Invitational schedule is now confirmed. Please update Mei "
     "Xin's parent message draft: the Malaysia Schools Invitational Athletics "
     "Meet in Singapore will be held on 25–26 July 2026, and the five-day "
-    "centralised training will run 15–19 July 2026, 8:00 a.m. to 12:30 p.m. daily, at "
+    "centralised training will run 15–19 July 2026, 8:00 a.m. to 5:00 p.m. daily, with "
+    "breaks and a supervised lunch, at "
     "Johor Bahru Sports Arena. Keep the tone warm and clear, save it as an "
     "updated version, and do not send.")
 PROBE_RED_STATUS = (

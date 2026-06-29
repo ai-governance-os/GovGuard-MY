@@ -93,7 +93,7 @@ This report is prepared to document the participation, achievements, observation
 
 The championship brought together outstanding primary school athletes from across the country. Participation at this level provided our pupils with meaningful exposure to national-level competition, stronger sporting discipline, and the value of resilience under pressure. It also allowed the school to evaluate the effectiveness of its athletics development programme and identify areas that require further support.
 
-The school is proud to report that our pupils achieved excellent results: **one gold medal, two silver medals, and one new national primary schools record**. These achievements reflect the dedication of the pupils, the guidance of teachers, the encouragement of parents, and the support of the school community.
+The school is proud to report that our pupils achieved excellent results: **one gold medal, one silver medal, a national-level 100m representation, and one new national primary schools record**. These achievements reflect the dedication of the pupils, the guidance of teachers, the encouragement of parents, and the support of the school community.
 
 This report also records the communication and data-use boundaries that should guide follow-up actions. While the school may use public-safe achievement information for approved announcements, private or sensitive information must not be used for unfair differentiation, public disclosure, or preferential treatment.
 
@@ -324,7 +324,7 @@ Based on this achievement, the following recommendations are proposed:
 
 ## 12. Conclusion
 
-The participation of Demo Primary School in the **2026 National Primary Schools Athletics Championship** was highly successful. The school achieved **one gold medal, two silver medals, and one new national primary schools record**. These results reflect the dedication of the pupils, the commitment of teachers, the encouragement of parents, and the support of the school community.
+The participation of Demo Primary School in the **2026 National Primary Schools Athletics Championship** was highly successful. The school achieved **one gold medal, one silver medal, a national-level 100m representation, and one new national primary schools record**. These results reflect the dedication of the pupils, the commitment of teachers, the encouragement of parents, and the support of the school community.
 
 The school should build upon this achievement by strengthening its athletics development programme, improving training consistency, and supporting pupils who show potential for higher-level competition.
 
