@@ -71,3 +71,25 @@ def test_web_search_disabled_override(monkeypatch):
     monkeypatch.setenv("WEB_SEARCH_PROVIDER", "disabled")
     # Even a freshness query does not search when disabled.
     assert _query_needs_web("latest AI news", "unknown") is False
+
+
+# --- Brief 1 #3 — local governed edits never silently call web search ------
+
+def test_local_governed_category_skips_web_search():
+    """A local parent-notice edit supplies its facts from the user / workflow
+    context. Freshness-looking tokens ("schedule", "2026", "confirmed") must
+    NOT trip a web lookup for `parent_message_draft_edit` — otherwise the BLUE
+    probe pays a network round-trip before planning. The SAME query under an
+    unknown category still searches, proving the allowlist is what suppresses
+    it (not the wording)."""
+    q = "Update the notice with the confirmed 2026 schedule"
+    assert _query_needs_web(q, "parent_message_draft_edit") is False
+    # control: without the allowlist category, the freshness cue does search.
+    assert _query_needs_web("the latest 2026 schedule news", "unknown") is True
+
+
+def test_web_search_always_overrides_no_web_category(monkeypatch):
+    """The operator force-override stays ABOVE the no-web allowlist: an explicit
+    WEB_SEARCH_ALWAYS=1 still searches even for a local governed category."""
+    monkeypatch.setenv("WEB_SEARCH_ALWAYS", "1")
+    assert _query_needs_web("update the notice", "parent_message_draft_edit") is True

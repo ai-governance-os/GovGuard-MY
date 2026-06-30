@@ -305,10 +305,10 @@ function renderGovPipeline(bubble, d) {
   let riskDet;
   if (sig.length) riskDet = sig.slice(0, 4).join(", ");
   else if (showCleared) riskDet = "reversible · non-destructive · no external send · no system-level change — low risk";
-  else if (route === "RED") riskDet = "blocked before execution — risk caught earlier (intent / data-use)";
-  else if (route === "INFEASIBLE") riskDet = "stopped before execution — required data not on file";
-  else if (route === "GREEN") riskDet = "action checked — approval required by release / official-write policy";
-  else riskDet = "scored — no high-risk signals";
+  else if (route === "RED") riskDet = "blocked before execution — risk came from pre-governance/data-use";
+  else if (route === "INFEASIBLE") riskDet = "stopped before execution — missing required policy data";
+  else if (route === "GREEN") riskDet = "action checked — approval required by release/official-write policy";
+  else riskDet = "scored — no high-risk action signals";
 
   let reason = "";
   const dec = decisions.find(de => de.route === route) || decisions[0];

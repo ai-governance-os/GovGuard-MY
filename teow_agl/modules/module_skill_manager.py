@@ -318,6 +318,22 @@ class SkillManager:
             s for s in self.list_skills(statuses=("active", "stale"))
             if self._retrieval_weight(s.get("status", "active")) > 0.0
         ]
+        # A skill can be approved more than once in demo/retest sessions before
+        # lifecycle cleanup marks older same-shape entries superseded. Keep the
+        # audit log intact, but retrieve only the newest equivalent skill so the
+        # planner does not see duplicate SOP hints.
+        deduped: dict[tuple[str, str, str], dict] = {}
+        for s in skills:
+            key = (
+                str(s.get("name") or "").strip().lower(),
+                str(s.get("source_shape") or "").strip().lower(),
+                str(s.get("abstraction_model") or "").strip().lower(),
+            )
+            if not any(key):
+                key = (str(s.get("skill_id") or ""), "", "")
+            if key not in deduped:
+                deduped[key] = s
+        skills = list(deduped.values())
         if not skills:
             return []
         status_by_id = {

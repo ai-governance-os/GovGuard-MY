@@ -93,6 +93,12 @@ _WEB_LOOKUP_PATTERNS = (
     "多少钱", "价格是多少", "价格多少", "股价多少", "现任", "汇率",
 )
 
+_LOCAL_GOVERNED_NO_WEB_CATEGORIES = frozenset({
+    # Local governed demo edits use source facts supplied by the user. Words
+    # like "schedule" or "2026" should not silently trigger a web lookup here.
+    "parent_message_draft_edit",
+})
+
 
 # ---------------------------------------------------------------------------
 # Capability card (configs/capability_card.json) — the single source of
@@ -195,6 +201,8 @@ def _query_needs_web(text: str, category: str | None,
     if _os.environ.get("WEB_SEARCH_ALWAYS", "").lower() in ("1", "true", "yes", "on"):
         return True
     if _os.environ.get("WEB_SEARCH_PROVIDER", "").lower() == "disabled":
+        return False
+    if category in _LOCAL_GOVERNED_NO_WEB_CATEGORIES:
         return False
     # B2 — research_report is by definition "search the web and write".
     # The classifier matched a keyword like "搜索...总结" / "research and

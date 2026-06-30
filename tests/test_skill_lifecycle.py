@@ -343,6 +343,37 @@ def test_find_active_for_shape_keys_on_shape_not_category(sm: SkillManager):
     assert sm.find_active_for_shape(source_shape=SHAPE, abstraction_model=AM) is None
 
 
+def test_find_relevant_dedupes_same_shape_skills(sm: SkillManager):
+    """Brief 1 #5 — a workflow SOP can be approved more than once across retest
+    sessions before lifecycle cleanup supersedes the older copies. The
+    retrieval pool de-duplicates by (name, source_shape, abstraction_model) so
+    the planner never sees two identical SOP hints. The audit log keeps both
+    records; only the retrieval VIEW is deduped."""
+    NAME = "National Athletics Reporting Workflow: self-governing SOP"
+    SHAPE = "workflow:national_athletics_reporting"
+    AM = "deterministic:workflow_sop"
+    PROC = ("1. Draft the routine notices.\n"
+            "2. Self-block any unfair differential treatment.\n"
+            "3. Pause the protected write for human verification before applying.")
+    a = sm.create_skill(name=NAME, description="reusable non-personal SOP",
+                        procedure=PROC, task_id="t1", task_quality=_good_quality(),
+                        source_category="", source_shape=SHAPE, abstraction_model=AM)
+    b = sm.create_skill(name=NAME, description="reusable non-personal SOP",
+                        procedure=PROC, task_id="t2", task_quality=_good_quality(),
+                        source_category="", source_shape=SHAPE, abstraction_model=AM)
+    assert a["ok"] and b["ok"]
+    # both copies remain on disk (audit history intact)
+    active = [s for s in sm.list_skills(statuses=("active",))
+              if s.get("source_shape") == SHAPE]
+    assert len(active) == 2, active
+    # but retrieval injects only ONE equivalent hint
+    hits = sm.find_relevant(
+        "national athletics reporting workflow self-governing SOP",
+        top_k=5, min_score=0.0)
+    sop_hits = [h for h in hits if h.get("name") == NAME]
+    assert len(sop_hits) == 1, sop_hits
+
+
 def test_sweep_no_supersede_without_shape(sm: SkillManager):
     _make(sm, "a", category="office_doc", shape="")
     _make(sm, "b", category="office_doc", shape="")
