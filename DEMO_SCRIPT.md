@@ -9,6 +9,12 @@ governance is identical; only the prose source differs, and a deterministic
 faithfulness check falls back to the curated draft on any drift). Start:
 `python -X utf8 -m server.app` → <http://127.0.0.1:8765>.
 
+> **Clean rehearsal (optional):** repeated test runs leave historical SOP /
+> curator records in `state/`. For a pristine first-run → approve → reuse
+> lifecycle, stop the server and run
+> `python -X utf8 scripts/reset_demo_state.py` (backs everything up to
+> `backups/` first, then clears runtime state), then restart.
+
 The landing page has two clearly-labelled sections, and after the first run a
 **demo dock** above the composer keeps every prompt one click away (no refresh):
 

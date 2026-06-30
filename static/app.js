@@ -990,6 +990,23 @@ function greenGateTag(gs) {
        : gs === "rejected" ? "rejected"
        : "awaiting verification";
 }
+// Approval state for ANY GREEN route — the national workflow OR a standalone
+// external-release probe (which is NOT a workflow, so greenGateState can't see
+// it). Lets the learning panel stop saying "paused for approval" once the human
+// gate is already resolved. Returns "pending" | "approved" | "rejected" | null.
+function greenLearningState(d) {
+  const wfState = greenGateState(d);          // precise for the workflow GREEN
+  if (wfState) return wfState;
+  if (d.status === "awaiting_approval" || (d.pending_approvals || []).length)
+    return "pending";
+  const greenDec = (d.decisions || []).find(
+    de => (de.route || "").toUpperCase() === "GREEN");
+  if (!greenDec) return null;
+  // approved ⇢ the GREEN-routed action actually executed (demo-simulated counts);
+  // rejected ⇢ the gate denied it, so no execution was recorded for it.
+  const exec = (d.executions || []).some(e => e.action_id === greenDec.action_id);
+  return exec ? "approved" : "rejected";
+}
 
 function describeOutcome(d) {
   // Workflow tasks: a self-blocked internal step must NOT read as a failed
@@ -1174,6 +1191,9 @@ function renderReflection(el, d) {
   ];
   const hasRealLearning =
     (disp === "applied" || disp === "pending_review") && updates.length > 0;
+  // GREEN approval lifecycle — so the panel stops saying "paused" once the
+  // human gate is already resolved (approved/rejected).
+  const greenState = route === "GREEN" ? greenLearningState(d) : null;
 
   // ---- collapsed summary chip (honest, never an empty box) ----------
   const summaryEl = el.querySelector("summary");
@@ -1189,6 +1209,8 @@ function renderReflection(el, d) {
         chip = `<span class="refl-chip refl-chip-pos">📘 1 procedure proposed · owner approval</span>`;
     }
     else if (hasRealLearning) chip = `<span class="refl-chip refl-chip-pos">✅ memory updated</span>`;
+    else if (route === "GREEN" && greenState === "approved")
+      chip = `<span class="refl-chip refl-chip-pos">🧾 governance outcome recorded</span>`;
     else if (route === "INFEASIBLE" && /unsupported_amount_estimate|reward/.test(cat || ""))
       chip = `<span class="refl-chip refl-chip-pos">📋 decision framework produced</span>`;
     else if (route === "BLUE" && /parent_message_draft_edit/.test(cat || ""))
@@ -1200,12 +1222,12 @@ function renderReflection(el, d) {
   // ---- headline + the "why" (boundary reasoning), per route ---------
   const header = document.createElement("div");
   header.className = "reflection-header";
-  header.innerHTML = reflectionHeadline(route, cat, hasRealLearning, sop);
+  header.innerHTML = reflectionHeadline(route, cat, hasRealLearning, sop, greenState);
   body.appendChild(header);
 
   const why = document.createElement("div");
   why.className = "reflection-why";
-  why.textContent = reflectionWhy(route, cat, hasRealLearning, sop);
+  why.textContent = reflectionWhy(route, cat, hasRealLearning, sop, greenState);
   body.appendChild(why);
 
   // ---- the POSITIVE half: a real, non-personal procedure proposal ---
@@ -1268,7 +1290,7 @@ function renderReflection(el, d) {
 }
 
 // Honest one-line headline for the learning panel, by governance route.
-function reflectionHeadline(route, cat, hasRealLearning, sop) {
+function reflectionHeadline(route, cat, hasRealLearning, sop, greenState) {
   const c = cat || "";
   if (sop) {
     const m = sop.mode || "proposed";
@@ -1295,14 +1317,20 @@ function reflectionHeadline(route, cat, hasRealLearning, sop) {
     + `🔒 Learning boundary enforced</span> · nothing personal learned`;
   if (route === "INFEASIBLE") return `<span class="reflection-disp reflection-disp-governed">`
     + `🔒 Nothing guessed, nothing learned</span>`;
-  if (route === "GREEN") return `<span class="reflection-disp reflection-disp-governed">`
-    + `🔒 Paused for your approval</span> · no memory change yet`;
+  if (route === "GREEN") {
+    if (greenState === "approved") return `<span class="reflection-disp reflection-disp-pos">`
+      + `🧾 Governance outcome recorded</span> · no personal data learned`;
+    if (greenState === "rejected") return `<span class="reflection-disp reflection-disp-governed">`
+      + `🔒 Release rejected</span> · no memory change`;
+    return `<span class="reflection-disp reflection-disp-governed">`
+      + `🔒 Paused for your approval</span> · no memory change yet`;
+  }
   return `<span class="reflection-disp reflection-disp-governed">`
     + `🔒 No personal data learned</span> · boundary held`;
 }
 
 // The honest "why" — explains what the boundary did, naming the exact probe.
-function reflectionWhy(route, cat, hasRealLearning, sop) {
+function reflectionWhy(route, cat, hasRealLearning, sop, greenState) {
   if (sop) {
     const m = sop.mode || "proposed";
     if (m === "reused") return "The system reused the approved non-personal SOP for "
@@ -1339,10 +1367,19 @@ function reflectionWhy(route, cat, hasRealLearning, sop) {
     return "The system did not guess and did not store a fabricated fact. What it "
       + "recorded is which policy data it WOULD need to answer — surfaced to you as a "
       + "proposal framework, not learned as truth.";
-  if (route === "GREEN")
+  if (route === "GREEN") {
+    if (greenState === "approved")
+      return "The human-approved demo release decision was recorded in the audit "
+        + "trail. No parent or student data, message contents, contact details, or "
+        + "external-post content was stored as reusable memory.";
+    if (greenState === "rejected")
+      return "You rejected the release, so nothing was executed and nothing was "
+        + "learned. The governance decision is kept in the audit trail; no personal "
+        + "data was stored.";
     return "The high-impact action is paused for your approval, so no memory was "
       + "changed. Only after you decide can the outcome (never the underlying "
       + "personal data) inform future routing.";
+  }
   if (hasRealLearning)
     return "A non-personal, general note was written to memory (shown below). "
       + "Sensitive student / parent data is never included.";

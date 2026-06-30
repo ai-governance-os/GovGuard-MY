@@ -25,6 +25,7 @@ state/
 state*/
 outputs/
 traces/
+backups/
 workspace/uploads/
 workspace/temp/
 workspace/results.md
