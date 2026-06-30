@@ -30,6 +30,7 @@ workspace/uploads/
 workspace/temp/
 workspace/results.md
 workspace/national_athletics_results.md
+workspace/ad_hoc_school_event_results.md
 *.db
 *.sqlite
 *.sqlite3
