@@ -297,11 +297,18 @@ function renderGovPipeline(bubble, d) {
   // risk". (101B scores action mechanics; the RED/GREEN you see is 101A/101D.)
   const externalCat = /external|publish|email|send/.test(cat || "");
   const showCleared = (wfDetected || route === "BLUE") && !externalCat;
-  const riskDet = sig.length
-    ? sig.slice(0, 4).join(", ")
-    : (showCleared
-        ? "reversible · non-destructive · no external send · no system-level change — low risk"
-        : "scored — no high-risk signals");
+  // showCleared (workflow + low-risk BLUE) wins FIRST, so the composite-RED
+  // workflow keeps its honest "cleared" line and is never mislabeled "blocked".
+  // For the blocked/gated probes, name the LAYER that actually decided, so the
+  // row reads as a coherent part of the layered story instead of an apparent
+  // "RED but no high-risk signals" contradiction.
+  let riskDet;
+  if (sig.length) riskDet = sig.slice(0, 4).join(", ");
+  else if (showCleared) riskDet = "reversible · non-destructive · no external send · no system-level change — low risk";
+  else if (route === "RED") riskDet = "blocked before execution — risk caught earlier (intent / data-use)";
+  else if (route === "INFEASIBLE") riskDet = "stopped before execution — required data not on file";
+  else if (route === "GREEN") riskDet = "action checked — approval required by release / official-write policy";
+  else riskDet = "scored — no high-risk signals";
 
   let reason = "";
   const dec = decisions.find(de => de.route === route) || decisions[0];
@@ -342,7 +349,7 @@ function renderGovPipeline(bubble, d) {
     if (gs === "pending") {
       verDet = "deferred — runs after you verify the high-impact step";
     } else if (gs === "approved") {
-      verDet = "high-impact write verified &amp; simulated (demo)";
+      verDet = "high-impact write verified & simulated (demo)";
     } else if (gs === "rejected") {
       verDet = "n/a — high-impact write was rejected";
     } else if (verChecks) {
