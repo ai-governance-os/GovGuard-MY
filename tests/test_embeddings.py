@@ -17,13 +17,34 @@ from teow_agl.util import embeddings as emb
 # ---------------------------------------------------------------------------
 
 def test_provider_default_is_openai(monkeypatch):
+    # Production default (no demo/smart-mock signal): openai.
     monkeypatch.delenv("SKILL_EMBEDDING_PROVIDER", raising=False)
+    monkeypatch.delenv("MAIC_DEMO_MODE", raising=False)
+    monkeypatch.delenv("TEOW_AGL_PLANNER", raising=False)
     assert emb._resolve_provider() == "openai"
 
 
 def test_provider_env_override(monkeypatch):
     monkeypatch.setenv("SKILL_EMBEDDING_PROVIDER", "NONE")
     assert emb._resolve_provider() == "none"
+
+
+def test_provider_demo_mode_defaults_to_local(monkeypatch):
+    """Brief 1 #4 — in demo / smart-mock mode the skill-embedding lane defaults
+    to local BM25 (`none`), so the competition demo stays deterministic and
+    never pays an embedding network round-trip just because OPENAI_API_KEY is
+    present. An explicit SKILL_EMBEDDING_PROVIDER still wins."""
+    monkeypatch.delenv("SKILL_EMBEDDING_PROVIDER", raising=False)
+    monkeypatch.delenv("TEOW_AGL_PLANNER", raising=False)
+    monkeypatch.setenv("MAIC_DEMO_MODE", "1")
+    assert emb._resolve_provider() == "none"
+    monkeypatch.delenv("MAIC_DEMO_MODE", raising=False)
+    monkeypatch.setenv("TEOW_AGL_PLANNER", "smart_mock")
+    assert emb._resolve_provider() == "none"
+    # explicit operator choice overrides demo mode
+    monkeypatch.setenv("MAIC_DEMO_MODE", "1")
+    monkeypatch.setenv("SKILL_EMBEDDING_PROVIDER", "openai")
+    assert emb._resolve_provider() == "openai"
 
 
 def test_provider_available_requires_api_key(monkeypatch):

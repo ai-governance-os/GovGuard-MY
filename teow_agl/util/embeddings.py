@@ -38,8 +38,27 @@ from typing import Sequence
 # Provider dispatch
 # ---------------------------------------------------------------------------
 def _resolve_provider() -> str:
-    """`SKILL_EMBEDDING_PROVIDER` env var, lowercase. Default `openai`."""
-    return (os.environ.get("SKILL_EMBEDDING_PROVIDER") or "openai").strip().lower()
+    """Resolve the skill-embedding provider.
+
+    Precedence:
+      1. `SKILL_EMBEDDING_PROVIDER` (explicit operator choice) — wins always,
+         so a demo operator who WANTS cosine retrieval sets it to `openai`.
+      2. Demo / smart-mock mode (`MAIC_DEMO_MODE` truthy, or
+         `TEOW_AGL_PLANNER=smart_mock`) → `none` (local BM25). Keeps the
+         competition demo deterministic and fast: it never silently pays an
+         embedding network round-trip just because an `OPENAI_API_KEY`
+         happens to be present in the shell (Brief 1 #4 — the key-present
+         BLUE-latency fix).
+      3. Otherwise → `openai` (unchanged production default).
+    """
+    explicit = os.environ.get("SKILL_EMBEDDING_PROVIDER")
+    if explicit is not None:
+        return explicit.strip().lower()
+    if (os.environ.get("TEOW_AGL_PLANNER", "").strip().lower() == "smart_mock"
+            or os.environ.get("MAIC_DEMO_MODE", "").strip().lower()
+            in {"1", "true", "yes", "on"}):
+        return "none"
+    return "openai"
 
 
 def embedding_provider_available() -> bool:
