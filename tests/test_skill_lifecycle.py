@@ -311,6 +311,38 @@ def test_supersede_winner_deterministic_on_created_at_tie(sm: SkillManager):
         assert cands == [{"skill_id": "OLD", "superseded_by": "NEW"}], (listed, cands)
 
 
+def test_find_active_for_shape_keys_on_shape_not_category(sm: SkillManager):
+    """Brief 2 — find_active_for_shape locates an active skill by its STABLE
+    identity (source_shape + abstraction_model), regardless of source_category.
+    This is the reuse key: the old find_active_for(category=...) missed an
+    empty-category workflow SOP, so a second run kept re-proposing it."""
+    SHAPE = "workflow:national_athletics_reporting"
+    AM = "deterministic:workflow_sop"
+    PROC = ("1. Draft the routine notices.\n"
+            "2. Self-block any unfair differential treatment.\n"
+            "3. Pause the protected write for human verification before applying.")
+    out = sm.create_skill(
+        name="National Athletics Reporting Workflow: self-governing SOP",
+        description="reusable non-personal SOP", procedure=PROC,
+        task_id="t", task_quality=_good_quality(),
+        source_category="", source_shape=SHAPE, abstraction_model=AM,
+    )
+    assert out["ok"], out
+    sid = out["skill_id"]
+    # found by shape+model even though source_category is empty
+    hit = sm.find_active_for_shape(source_shape=SHAPE, abstraction_model=AM)
+    assert hit is not None and hit["skill_id"] == sid
+    # abstraction_model filter excludes a different model
+    assert sm.find_active_for_shape(source_shape=SHAPE,
+                                    abstraction_model="other:model") is None
+    # unknown shape → None
+    assert sm.find_active_for_shape(source_shape="workflow:nope",
+                                    abstraction_model=AM) is None
+    # superseded skills drop out of the reuse pool
+    sm.mark_superseded(sid, superseded_by="")
+    assert sm.find_active_for_shape(source_shape=SHAPE, abstraction_model=AM) is None
+
+
 def test_sweep_no_supersede_without_shape(sm: SkillManager):
     _make(sm, "a", category="office_doc", shape="")
     _make(sm, "b", category="office_doc", shape="")

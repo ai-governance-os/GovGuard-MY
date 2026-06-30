@@ -249,6 +249,43 @@ class SkillManager:
             return rec
         return None
 
+    def find_active_for_shape(
+        self, *, source_shape: str, abstraction_model: str | None = None,
+    ) -> dict | None:
+        """Locate an ACTIVE / STALE skill by its STABLE identity —
+        `source_shape` (plus optional `abstraction_model`) — independent
+        of the `source_category` that happened to trigger it.
+
+        `find_active_for()` keys on (category, shape), but a workflow SOP's
+        category is whatever `task_category` the run carried (often empty),
+        so the same approved SOP can be missed on a later run. The SOP's
+        `source_shape` (`workflow:<id>`) + `abstraction_model`
+        (`deterministic:workflow_sop`) are deterministic, so they are the
+        reliable key for "has the owner already approved this procedure?".
+
+        Returns the NEWEST matching record (by `created_at`, append-order
+        tie-break) so a re-approved / superseding skill wins, or None.
+        """
+        if not source_shape:
+            return None
+        order: dict[str, int] = {}
+        for i, rec in enumerate(self._replay()):
+            sid = rec.get("skill_id")
+            if sid is not None:
+                order.setdefault(sid, i)
+        matches = [
+            r for r in self.list_skills(statuses=("active", "stale"))
+            if r.get("source_shape") == source_shape
+            and (abstraction_model is None
+                 or r.get("abstraction_model") == abstraction_model)
+        ]
+        if not matches:
+            return None
+        return max(
+            matches,
+            key=lambda r: (r.get("created_at", ""), order.get(r["skill_id"], 0)),
+        )
+
     def find_relevant(
         self, goal: str, *, top_k: int = 3,
         min_score: float | None = None,

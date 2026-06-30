@@ -3599,27 +3599,90 @@ class Runtime:
             steps = wf.get("steps") or []
             if not steps:
                 return
-            # Dedupe: at most one SOP proposal per workflow_id while one is
-            # still pending / approved / applied.
-            for p in self.curator_proposals:
-                if (p.get("source_workflow") == wf_id
-                        and p.get("status") in ("pending", "approved", "applied")):
-                    return
-            # Already distilled into an active skill in a previous session?
-            if self.skill_manager is not None:
-                try:
-                    if self.skill_manager.find_active_for(
-                            category="workflow", plan_shape=f"workflow:{wf_id}"
-                    ) is not None:
-                        return
-                except Exception:
-                    pass
 
             wf_name = wf.get("workflow_name") or wf_id
             procedure = self._workflow_sop_procedure(steps)
             if not procedure:
                 return
             name = f"{wf_name}: self-governing SOP"
+            source_shape = f"workflow:{wf_id}"
+            step_count = procedure.count("\n") + 1
+            # create_skill stores char_length = len(procedure), and the SOP
+            # procedure is already clean numbered markdown (so _normalize is a
+            # no-op) — making this an EXACT fingerprint for "did the workflow's
+            # step shape change since the approved SOP?".
+            new_len = len(procedure)
+
+            def _ensure_reflection() -> None:
+                if result.reflection is None:
+                    result.reflection = {"disposition": "skipped",
+                                         "skipped": "no_declarative_update"}
+
+            # --- Lifecycle: has the OWNER already approved this SOP? --------
+            # On approval the SOP becomes an ACTIVE skill on disk, so even the
+            # server's fresh-per-task runtime can see it. Key on the STABLE
+            # identity (source_shape + abstraction model), NOT the task category
+            # that triggered it — find_active_for(category=...) misses an
+            # empty-category SOP, which is why a second run kept re-proposing.
+            # This is what turns "proposed every run" into "proposed once,
+            # then reused".
+            existing = None
+            if self.skill_manager is not None:
+                try:
+                    existing = self.skill_manager.find_active_for_shape(
+                        source_shape=source_shape,
+                        abstraction_model="deterministic:workflow_sop",
+                    )
+                    if existing is None:  # legacy skills predate the shape key
+                        existing = self.skill_manager.find_active_for(
+                            category="workflow", plan_shape=source_shape)
+                except Exception:
+                    existing = None
+
+            if existing is not None:
+                prior_len = existing.get("char_length")
+                shape_changed = prior_len is not None and prior_len != new_len
+                if not shape_changed:
+                    # REUSE — no new proposal, no memory write. The owner's
+                    # prior approval stands; the agent simply reapplies it.
+                    _ensure_reflection()
+                    result.reflection["workflow_sop"] = {
+                        "mode": "reused",
+                        "name": existing.get("name") or name,
+                        "skill_id": existing.get("skill_id"),
+                        "status": existing.get("status", "active"),
+                        "pii_free": True,
+                        "personal_data_used": False,
+                        "steps": step_count,
+                        "workflow_id": wf_id,
+                    }
+                    self._emit("109B", "workflow_sop_reused",
+                               envelope.task_id, envelope.session_id,
+                               summary=("reused approved workflow SOP "
+                                        f"skill_id={existing.get('skill_id')}"),
+                               details={"workflow_id": wf_id,
+                                        "skill_id": existing.get("skill_id")})
+                    return
+                # else: the step shape materially changed → fall through and
+                # propose an UPDATE, remembering the prior skill below.
+
+            # --- Dedupe a still-PENDING proposal (same / seeded runtime) ----
+            # Only an UNDECIDED proposal blocks a re-propose; an applied /
+            # approved one is already handled by the skill check above.
+            for p in self.curator_proposals:
+                if (p.get("source_workflow") == wf_id
+                        and p.get("status") == "pending"):
+                    _ensure_reflection()
+                    result.reflection["workflow_sop"] = {
+                        "mode": "proposed",
+                        "name": p.get("name") or name,
+                        "proposal_id": p.get("proposal_id"),
+                        "status": "pending_owner_approval",
+                        "pii_free": True,
+                        "steps": step_count,
+                        "workflow_id": wf_id,
+                    }
+                    return
             description = (
                 "Reusable, non-personal procedure for this workflow: auto-run "
                 "low-risk drafts, self-block any status / income / title / "
@@ -3670,29 +3733,41 @@ class Runtime:
                 "source_module": "109B-SOP",
                 "source_route": (result.final_route or "").upper(),
             }
+            # When `existing` survived the reuse check, the step shape changed:
+            # this is an UPDATE to an already-approved SOP, not a first-time
+            # proposal. The prior skill stays active until the owner approves.
+            is_update = existing is not None
+            if is_update:
+                entry["supersedes_skill"] = existing.get("skill_id")
             self.curator_proposals.append(entry)
 
             # Surface the proposal in the per-task reflection payload so the
             # learning panel can show the POSITIVE half (a real, owner-gated
             # procedure proposed) next to "no personal data learned".
-            if result.reflection is None:
-                result.reflection = {"disposition": "skipped",
-                                     "skipped": "no_declarative_update"}
-            result.reflection["workflow_sop"] = {
+            _ensure_reflection()
+            refl = {
+                "mode": "update_proposed" if is_update else "proposed",
                 "name": name,
                 "proposal_id": entry["proposal_id"],
                 "status": "pending_owner_approval",
                 "pii_free": True,
-                "steps": procedure.count("\n") + 1,
+                "steps": step_count,
                 "workflow_id": wf_id,
             }
+            if is_update:
+                refl["previous_skill_id"] = existing.get("skill_id")
+            result.reflection["workflow_sop"] = refl
 
-            self._emit("109B", "workflow_sop_proposed",
+            self._emit("109B",
+                       "workflow_sop_update_proposed" if is_update
+                       else "workflow_sop_proposed",
                        envelope.task_id, envelope.session_id,
                        summary=(f"queued non-personal workflow SOP "
                                 f"name={name!r} (owner approval required)"),
                        details={"proposal_id": entry["proposal_id"],
                                 "workflow_id": wf_id,
+                                "mode": refl["mode"],
+                                "previous_skill_id": refl.get("previous_skill_id"),
                                 "source_route": entry["source_route"],
                                 "pii_audit": pii_audit})
         except Exception as exc:  # never block the run on a learning side-effect

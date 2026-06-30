@@ -797,3 +797,19 @@ body {
   font-size: 11px; color: var(--text-soft);
   font-family: ui-monospace, Menlo, monospace;
 }
+/* Brief 2 — decided proposals collapse into a compact, secondary group so a
+   re-tested demo doesn't pile up full APPLIED cards above the pending one. */
+.cur-applied-group { margin-top: 10px; }
+.cur-applied-group > summary {
+  cursor: pointer; font-size: 11px; font-weight: 600;
+  color: var(--text-mute); padding: 2px 0; list-style: none;
+}
+.cur-applied-group > summary::-webkit-details-marker { display: none; }
+.cur-applied-group > summary::before { content: "▸ "; }
+.cur-applied-group[open] > summary::before { content: "▾ "; }
+.curator-card.cur-compact {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 6px 8px; margin-top: 6px;
+}
+.curator-card.cur-compact .cur-head { margin: 0; }
+.curator-card.cur-compact .cur-apply-note { margin-left: 4px; }

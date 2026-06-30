@@ -1179,7 +1179,15 @@ function renderReflection(el, d) {
   const summaryEl = el.querySelector("summary");
   if (summaryEl) {
     let chip;
-    if (sop) chip = `<span class="refl-chip refl-chip-pos">📘 1 procedure proposed · owner approval</span>`;
+    if (sop) {
+      const m = sop.mode || "proposed";
+      if (m === "reused")
+        chip = `<span class="refl-chip refl-chip-pos">♻️ approved procedure reused</span>`;
+      else if (m === "update_proposed")
+        chip = `<span class="refl-chip refl-chip-pos">📘 procedure update proposed · owner approval</span>`;
+      else
+        chip = `<span class="refl-chip refl-chip-pos">📘 1 procedure proposed · owner approval</span>`;
+    }
     else if (hasRealLearning) chip = `<span class="refl-chip refl-chip-pos">✅ memory updated</span>`;
     else if (route === "INFEASIBLE" && /unsupported_amount_estimate|reward/.test(cat || ""))
       chip = `<span class="refl-chip refl-chip-pos">📋 decision framework produced</span>`;
@@ -1202,14 +1210,27 @@ function renderReflection(el, d) {
 
   // ---- the POSITIVE half: a real, non-personal procedure proposal ---
   if (sop) {
+    const m = sop.mode || "proposed";
+    let rsTitle, rsMetaTail;
+    if (m === "reused") {
+      rsTitle = "♻️ Approved procedure reused";
+      rsMetaTail = "non-personal (PII-free) · status: <b>active</b> · "
+        + "reused from procedural memory";
+    } else if (m === "update_proposed") {
+      rsTitle = "📘 Procedure update proposed for your approval";
+      rsMetaTail = "non-personal (PII-free) · status: <b>pending owner approval</b> · "
+        + "existing SOP remains active";
+    } else {
+      rsTitle = "📘 Procedure proposed for your approval";
+      rsMetaTail = "non-personal (PII-free) · status: <b>pending owner approval</b> · "
+        + "review it in the Curator panel";
+    }
     const card = document.createElement("div");
     card.className = "reflection-sop";
     card.innerHTML =
-      `<div class="rs-title">📘 Procedure proposed for your approval</div>`
+      `<div class="rs-title">${rsTitle}</div>`
       + `<div class="rs-name">${escapeHtml(sop.name || "workflow procedure")}</div>`
-      + `<div class="rs-meta">${escapeHtml(String(sop.steps || "?"))} steps · `
-      + `non-personal (PII-free) · status: <b>pending owner approval</b> · `
-      + `review it in the Curator panel</div>`;
+      + `<div class="rs-meta">${escapeHtml(String(sop.steps || "?"))} steps · ${rsMetaTail}</div>`;
     body.appendChild(card);
   }
 
@@ -1249,8 +1270,15 @@ function renderReflection(el, d) {
 // Honest one-line headline for the learning panel, by governance route.
 function reflectionHeadline(route, cat, hasRealLearning, sop) {
   const c = cat || "";
-  if (sop) return `<span class="reflection-disp reflection-disp-pos">`
-    + `📘 Procedure learned (proposed)</span> · no personal data used`;
+  if (sop) {
+    const m = sop.mode || "proposed";
+    if (m === "reused") return `<span class="reflection-disp reflection-disp-pos">`
+      + `♻️ Approved procedure reused</span> · no new proposal`;
+    if (m === "update_proposed") return `<span class="reflection-disp reflection-disp-pos">`
+      + `📘 Procedure update proposed</span> · no personal data used`;
+    return `<span class="reflection-disp reflection-disp-pos">`
+      + `📘 Procedure learned (proposed)</span> · no personal data used`;
+  }
   if (hasRealLearning) return `<span class="reflection-disp reflection-disp-applied">`
     + `✅ Memory updated</span> · non-personal note`;
   // Bounded, SELECTIVE learning — not just "refused to learn":
@@ -1275,10 +1303,20 @@ function reflectionHeadline(route, cat, hasRealLearning, sop) {
 
 // The honest "why" — explains what the boundary did, naming the exact probe.
 function reflectionWhy(route, cat, hasRealLearning, sop) {
-  if (sop) return "The system distilled the workflow's PROCEDURE — the governed "
-    + "step shape, including the self-block — into a reusable, non-personal SOP. "
-    + "No student or parent data was written to memory; the procedure is queued "
-    + "for your approval before it can be reused.";
+  if (sop) {
+    const m = sop.mode || "proposed";
+    if (m === "reused") return "The system reused the approved non-personal SOP for "
+      + "this workflow. No new memory proposal was created, and no student or parent "
+      + "data was learned — the owner's earlier approval still governs this procedure.";
+    if (m === "update_proposed") return "The workflow's step shape differed from the "
+      + "approved SOP, so the system proposed a non-personal procedure UPDATE for your "
+      + "review. The existing approved SOP stays active until you approve it; no student "
+      + "or parent data was written to memory.";
+    return "The system distilled the workflow's PROCEDURE — the governed step shape, "
+      + "including the self-block — into a reusable, non-personal SOP. No student or "
+      + "parent data was written to memory; the procedure is queued for your approval "
+      + "before it can be reused.";
+  }
   const c = cat || "";
   if (route === "INFEASIBLE" && /unsupported_amount_estimate|reward/.test(c))
     return "The system did not estimate an unsupported reward amount. It produced a "
@@ -1744,74 +1782,127 @@ async function loadCurator() {
         + 'click "Run curator" above to scan memory</div>';
       return;
     }
+    // Brief 2 — panel hierarchy: PENDING owner approvals get full
+    // approve/reject cards; already-decided memory is compact + collapsed so
+    // a re-tested demo doesn't pile up orphaned "APPLIED" cards (with the
+    // buttons gone) that read as broken to a judge.
+    const pending = items.filter(p => (p.status || "pending") === "pending");
+    const decided = items.filter(p => (p.status || "pending") !== "pending");
     el.innerHTML = "";
-    for (const p of items) {
-      const card = document.createElement("div");
-      card.className = "curator-card curator-status-" + escapeAttr(p.status || "pending");
-      card.innerHTML = `
-        <div class="cur-head">
-          <span class="cur-type"></span>
-          <span class="cur-target"></span>
-          <span class="cur-status"></span>
-        </div>
-        <div class="cur-reason"></div>
-        <div class="cur-diff">
-          <div class="cur-old"><span class="cur-label">old</span><pre></pre></div>
-          <div class="cur-new"><span class="cur-label">new</span><pre></pre></div>
-        </div>
-        <div class="cur-actions"></div>
-      `;
-      // Two proposal shapes share this card: memory-patch (type/target_file/
-      // old_text/new_text) and create_skill (kind/name/description/procedure,
-      // e.g. the non-personal workflow SOP). Render whichever fields exist so a
-      // skill proposal never shows "?" + empty diff blocks.
-      const isSkill = p.kind === "create_skill" || (!p.type && (p.name || p.procedure));
-      card.querySelector(".cur-type").textContent = p.type || p.kind || "?";
-      card.querySelector(".cur-target").textContent = p.target_file || p.name || "";
-      card.querySelector(".cur-status").textContent = (p.status || "pending").toUpperCase();
-      card.querySelector(".cur-reason").textContent = p.reasoning || p.description || "";
-      if (isSkill) {
-        const oldLabel = card.querySelector(".cur-old .cur-label");
-        const newLabel = card.querySelector(".cur-new .cur-label");
-        if (oldLabel) oldLabel.textContent = "kind";
-        if (newLabel) newLabel.textContent = "procedure";
-        card.querySelector(".cur-old pre").textContent =
-          `${p.kind || "create_skill"} · non-personal (PII-free)`;
-        card.querySelector(".cur-new pre").textContent =
-          (p.procedure || p.description || "(empty)").slice(0, 800);
-      } else {
-        card.querySelector(".cur-old pre").textContent =
-          (p.old_text || "").slice(0, 600);
-        const newText = (p.new_text || "").slice(0, 600);
-        card.querySelector(".cur-new pre").textContent =
-          newText || (p.type === "archive_skill" ? "(skill will be archived)" : "(empty)");
-      }
-      // Action buttons only on pending proposals
-      const actions = card.querySelector(".cur-actions");
-      if (p.status === "pending") {
-        const approveBtn = document.createElement("button");
-        approveBtn.className = "cur-approve";
-        approveBtn.textContent = "Approve";
-        const rejectBtn = document.createElement("button");
-        rejectBtn.className = "cur-reject";
-        rejectBtn.textContent = "Reject";
-        approveBtn.addEventListener("click", () =>
-          decideCuratorProposal(p.proposal_id, "approved",
-                                 approveBtn, rejectBtn, card));
-        rejectBtn.addEventListener("click", () =>
-          decideCuratorProposal(p.proposal_id, "rejected",
-                                 approveBtn, rejectBtn, card));
-        actions.appendChild(approveBtn);
-        actions.appendChild(rejectBtn);
-      } else if (p.apply_reason) {
-        const note = document.createElement("span");
-        note.className = "cur-apply-note";
-        note.textContent = p.apply_reason;
-        actions.appendChild(note);
-      }
-      el.appendChild(card);
+
+    if (pending.length) {
+      for (const p of pending) el.appendChild(buildCuratorCard(p, false));
+    } else {
+      const note = document.createElement("div");
+      note.className = "empty";
+      note.textContent = "No pending owner approvals. Approved procedures are "
+        + "available in Procedural Memory.";
+      el.appendChild(note);
+    }
+
+    if (decided.length) {
+      const det = document.createElement("details");
+      det.className = "cur-applied-group";
+      const sum = document.createElement("summary");
+      sum.textContent =
+        `Applied / decided procedural memory (${decided.length})`;
+      det.appendChild(sum);
+      for (const p of decided) det.appendChild(buildCuratorCard(p, true));
+      el.appendChild(det);
     }
   } catch (e) {}
+}
+
+// Build one Curator proposal card. `compact` collapses a DECIDED proposal to a
+// single status row (no diff, no buttons); the full card keeps the exact
+// approve/reject flow for PENDING proposals.
+function buildCuratorCard(p, compact) {
+  const isSkill = p.kind === "create_skill" || (!p.type && (p.name || p.procedure));
+  if (compact) {
+    const row = document.createElement("div");
+    row.className = "curator-card cur-compact curator-status-"
+      + escapeAttr(p.status || "pending");
+    const reason = document.createElement("span");
+    reason.className = "cur-apply-note";
+    reason.textContent = p.apply_reason || "";
+    const head = document.createElement("div");
+    head.className = "cur-head";
+    const t = document.createElement("span");
+    t.className = "cur-type"; t.textContent = p.type || p.kind || "?";
+    const tgt = document.createElement("span");
+    tgt.className = "cur-target"; tgt.textContent = p.target_file || p.name || "";
+    const st = document.createElement("span");
+    st.className = "cur-status";
+    st.textContent = (p.status || "pending").toUpperCase();
+    head.appendChild(t); head.appendChild(tgt); head.appendChild(st);
+    row.appendChild(head);
+    if (reason.textContent) row.appendChild(reason);
+    return row;
+  }
+
+  const card = document.createElement("div");
+  card.className = "curator-card curator-status-" + escapeAttr(p.status || "pending");
+  card.innerHTML = `
+    <div class="cur-head">
+      <span class="cur-type"></span>
+      <span class="cur-target"></span>
+      <span class="cur-status"></span>
+    </div>
+    <div class="cur-reason"></div>
+    <div class="cur-diff">
+      <div class="cur-old"><span class="cur-label">old</span><pre></pre></div>
+      <div class="cur-new"><span class="cur-label">new</span><pre></pre></div>
+    </div>
+    <div class="cur-actions"></div>
+  `;
+  // Two proposal shapes share this card: memory-patch (type/target_file/
+  // old_text/new_text) and create_skill (kind/name/description/procedure,
+  // e.g. the non-personal workflow SOP). Render whichever fields exist so a
+  // skill proposal never shows "?" + empty diff blocks.
+  card.querySelector(".cur-type").textContent = p.type || p.kind || "?";
+  card.querySelector(".cur-target").textContent = p.target_file || p.name || "";
+  card.querySelector(".cur-status").textContent = (p.status || "pending").toUpperCase();
+  card.querySelector(".cur-reason").textContent = p.reasoning || p.description || "";
+  if (isSkill) {
+    const oldLabel = card.querySelector(".cur-old .cur-label");
+    const newLabel = card.querySelector(".cur-new .cur-label");
+    if (oldLabel) oldLabel.textContent = "kind";
+    if (newLabel) newLabel.textContent = "procedure";
+    card.querySelector(".cur-old pre").textContent =
+      `${p.kind || "create_skill"} · non-personal (PII-free)`;
+    card.querySelector(".cur-new pre").textContent =
+      (p.procedure || p.description || "(empty)").slice(0, 800);
+  } else {
+    card.querySelector(".cur-old pre").textContent =
+      (p.old_text || "").slice(0, 600);
+    const newText = (p.new_text || "").slice(0, 600);
+    card.querySelector(".cur-new pre").textContent =
+      newText || (p.type === "archive_skill" ? "(skill will be archived)" : "(empty)");
+  }
+  // Action buttons only on pending proposals
+  const actions = card.querySelector(".cur-actions");
+  if (p.status === "pending") {
+    const approveBtn = document.createElement("button");
+    approveBtn.className = "cur-approve";
+    approveBtn.textContent = "Approve";
+    const rejectBtn = document.createElement("button");
+    rejectBtn.className = "cur-reject";
+    rejectBtn.textContent = "Reject";
+    approveBtn.addEventListener("click", () =>
+      decideCuratorProposal(p.proposal_id, "approved",
+                             approveBtn, rejectBtn, card));
+    rejectBtn.addEventListener("click", () =>
+      decideCuratorProposal(p.proposal_id, "rejected",
+                             approveBtn, rejectBtn, card));
+    actions.appendChild(approveBtn);
+    actions.appendChild(rejectBtn);
+  } else if (p.apply_reason) {
+    const note = document.createElement("span");
+    note.className = "cur-apply-note";
+    note.textContent = p.apply_reason;
+    actions.appendChild(note);
+  }
+  return card;
 }
 
 async function decideCuratorProposal(proposalId, decision,
