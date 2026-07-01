@@ -243,6 +243,15 @@ class DataUseGuard:
             _norm_list(md.get("data_categories")),
             _norm_list(md.get("allowed_data")),
         )))
+        # The DECLARED allowed fields alone (no goal prose) — used by the
+        # "unclear sensitive → GREEN" fail-safe so it fires on what a step
+        # actually USES, not a goal that merely NAMES a sensitive field to
+        # forbid it (e.g. "do NOT infer wealth from occupation"), and not the
+        # shared user_intent (a donor-outreach workflow's goal says "donor").
+        allowed_text = _normalize(" ".join((
+            _norm_list(md.get("data_categories")),
+            _norm_list(md.get("allowed_data")),
+        )))
         scope = str(md.get("output_scope", "")).lower()
         approval_boundary = str(md.get("approval_boundary", "")).lower()
         # C-tier concepts: closed-vocabulary tags the LLM understanding layer
@@ -344,7 +353,15 @@ class DataUseGuard:
                     "features": features}
 
         # ── GREEN: a sensitive mention we can't fully classify → ask a human ─
-        if (has_socio or has_pii or has_health) and scope != "internal":
+        # Key on the DECLARED allowed fields, not the user_intent-contaminated
+        # text: a step that only USES safe fields (a public event post, a
+        # respectful non-pressuring outreach) is not an "unclear sensitive use"
+        # just because the workflow goal elsewhere names donors or occupation.
+        has_socio_allowed = any(f in allowed_text for f in _SOCIO_FIELDS)
+        has_pii_allowed = any(f in allowed_text for f in _PUBLIC_PII)
+        has_health_allowed = any(f in allowed_text for f in _HEALTH_FIELDS)
+        if ((has_socio_allowed or has_pii_allowed or has_health_allowed)
+                and scope != "internal"):
             return {"decision": "GREEN",
                     "reasons": ["Unclear sensitive data use — human approval "
                                 "required (fail toward asking a human)."],

@@ -68,6 +68,7 @@ def _seed_demo_results() -> None:
         "sports_day_results.md": "results.md",
         "national_athletics_results.md": "national_athletics_results.md",
         "ad_hoc_school_event_results.md": "ad_hoc_school_event_results.md",
+        "charity_bazaar_case.md": "charity_bazaar_case.md",
     }
     for src_name, dst_name in seeds.items():
         try:
