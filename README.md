@@ -91,8 +91,9 @@ Real-case-derived, privacy-preserving: real school **event structure** may be
 used, but **all** person-level records (donors, parents, students, stakeholders)
 are **synthetic or redacted**. No real donor list, phone number, address,
 payment record, WhatsApp record, or student-sensitive record appears in the
-public demo. *(Route A references a real school name per the source brief; obtain
-the school's acknowledgement before any public use, or pseudonymise it.)*
+public demo. *(Route A's school name and event structure are real and used with
+the school's acknowledgement; all person-level stakeholder/donor records are
+synthetic.)*
 
 ## Repository notes
 

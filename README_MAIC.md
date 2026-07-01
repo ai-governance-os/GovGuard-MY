@@ -55,8 +55,8 @@ real-world-shaped scenarios**, not just one hard-coded demo.
 Real administrative workflows are used responsibly: the real **event structure**
 is allowed, but sensitive **person-level** records are synthetic or redacted.
 No real donor, parent, or student-sensitive record is exposed in the demo.
-Route A references a real school name per the source brief — obtain the school's
-acknowledgement before public use, or pseudonymise it.
+Route A's school name and event structure are real and used with the school's
+acknowledgement; all person-level records are synthetic.
 
 ## Originality claim
 

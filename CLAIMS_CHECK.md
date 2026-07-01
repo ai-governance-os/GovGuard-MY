@@ -71,9 +71,9 @@ Command: `python -X utf8 scripts/verify_no_secrets.py`
 
 ## Note on privacy
 
-Route A references a real school name and a real event structure, with **all**
-person-level records synthetic. Before any public use of the school name, obtain
-the school's acknowledgement (see the source brief) or pseudonymise it.
+Route A uses a real school name and a real event structure with the school's
+acknowledgement (see the evidence pack), while **all** person-level records
+(donors, parents, students, stakeholders) are synthetic.
 
 ## Note on the live LLM path
 
