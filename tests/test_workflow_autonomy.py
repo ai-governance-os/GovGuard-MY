@@ -843,7 +843,7 @@ def test_national_sop_update_proposed_on_shape_change(monkeypatch):
         # skill (built from the REAL procedure above).
         longer = "\n".join(f"{i}. governed step variant {i}." for i in range(1, 14))
         monkeypatch.setattr(Runtime, "_workflow_sop_procedure",
-                            staticmethod(lambda steps: longer))
+                            staticmethod(lambda steps, **kw: longer))
         st2 = run_main()
         panel = (st2.get("reflection") or {}).get("workflow_sop") or {}
         assert panel.get("mode") == "update_proposed", panel

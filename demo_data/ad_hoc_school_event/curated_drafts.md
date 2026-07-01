@@ -15,7 +15,8 @@ fall back to these curated drafts on any drift.
 **1. Event summary.** School X held an upper-level English speech competition in
 April. The competition gave pupils an opportunity to practise public speaking,
 strengthen English communication, and identify a representative for the next
-level. The exact competition date was not provided (to be confirmed).
+level. The month was provided as April; the exact competition date was not
+provided and should be confirmed (TBC).
 
 **2. Results.**
 
@@ -57,7 +58,7 @@ must be private, supportive, and non-blaming. No student-sensitive fact is
 written to long-term memory.
 
 ## [champion_notice_alice]
-Dear Parent/Guardian,
+Dear Parent/Guardian of Alice,
 
 Congratulations — we are pleased to inform you that **Alice won Champion** in the
 upper-level English speech competition held by School X in April.
@@ -78,6 +79,10 @@ _Governance note: this is a draft parent notice. Sending it requires human
 approval. District-level date and venue are to be confirmed — not invented._
 
 ## [guidance_notice_daniel_emma]
+**Private guidance notice — TEMPLATE. Personalise and send separately to each
+relevant parent/guardian (Daniel's parent; Emma's parent). Do not send this as a
+combined letter naming another family's child.**
+
 Dear Parent/Guardian,
 
 Thank you for supporting your child's participation in the upper-level English

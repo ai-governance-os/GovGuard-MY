@@ -1154,6 +1154,7 @@ def _partial_workflow_view_from_events(events: list) -> dict | None:
         "summary": summary,
         "source_file": None,
         "database_note": _database_note(res.get("results_source")),
+        "governance_copy": res.get("governance_copy"),
         "partial": True,
     }
 
@@ -1233,6 +1234,10 @@ def _workflow_view(result) -> dict | None:
         "summary": summary,
         "source_file": source_file,
         "database_note": database_note,
+        # Per-workflow governance-domain copy for the outcome summary (self-block
+        # sentence, GREEN-gate noun) so Route A/B are not described in
+        # national-athletics / protected-record terms. None for national.
+        "governance_copy": (wf or {}).get("governance_copy"),
     }
 
 

@@ -3609,7 +3609,13 @@ class Runtime:
                 return
 
             wf_name = wf.get("workflow_name") or wf_id
-            procedure = self._workflow_sop_procedure(steps)
+            # Per-workflow governance-domain copy (config `governance_copy`), so
+            # the SOP / procedural memory speaks in its own domain instead of the
+            # national-athletics default. Empty for national → defaults apply.
+            gc = wf.get("governance_copy") or {}
+            procedure = self._workflow_sop_procedure(
+                steps, red_line=gc.get("sop_red_line"),
+                green_line=gc.get("sop_green_line"))
             if not procedure:
                 return
             name = f"{wf_name}: self-governing SOP"
@@ -3691,7 +3697,7 @@ class Runtime:
                         "workflow_id": wf_id,
                     }
                     return
-            description = (
+            description = gc.get("sop_description") or (
                 "Reusable, non-personal procedure for this workflow: auto-run "
                 "low-risk drafts, self-block any status / income / title / "
                 "donation-based differential treatment, and route any protected-"
@@ -3719,7 +3725,7 @@ class Runtime:
                 "name": name,
                 "description": description,
                 "procedure": procedure,
-                "principle": (
+                "principle": gc.get("sop_principle") or (
                     "In an autonomous public-service workflow, separate routine "
                     "drafting (auto) from rights-affecting actions: self-block "
                     "unfair differential treatment and pause high-impact or "
@@ -3785,13 +3791,21 @@ class Runtime:
                        details={"error": str(exc)})
 
     @staticmethod
-    def _workflow_sop_procedure(steps: list[dict]) -> str:
+    def _workflow_sop_procedure(steps: list[dict], *,
+                                red_line: str | None = None,
+                                green_line: str | None = None) -> str:
         """Build a generic, PII-free numbered SOP from the workflow's steps.
 
         Subject-specific names are stripped (genericised to the step TYPE); RED
         steps render as the self-block, GREEN steps as the human-verification
         pause. Consecutive duplicate generic lines (e.g. the per-pupil notices)
         collapse into a single line.
+
+        `red_line` / `green_line` let a workflow supply its OWN governance-domain
+        wording for the self-block and the approval gate (via config
+        `governance_copy`), so a charity-bazaar SOP does not describe itself in
+        national-athletics / protected-student-record terms. When omitted, the
+        national defaults are used (backwards-compatible).
         """
         SUBJECTS = ("mei xin", "xiao le", "dato' tan", "dato tan", "ali")
 
@@ -3811,16 +3825,19 @@ class Runtime:
         for step in steps:
             route = (step.get("route_hint") or "BLUE").upper()
             if route == "RED":
-                lines.append(
+                lines.append(red_line or (
                     "Self-block any step that would use family status, income, "
                     "title or donation to change treatment; apply the safe "
-                    "alternative and keep the honest content (RED).")
+                    "alternative and keep the honest content (RED)."))
                 seen_prev = ""
             elif route == "GREEN":
-                head = generic_head(step.get("display_name", ""))
-                lines.append(
-                    f"{head}: pause for human verification before the "
-                    f"protected / official write (GREEN).")
+                if green_line:
+                    lines.append(green_line)
+                else:
+                    head = generic_head(step.get("display_name", ""))
+                    lines.append(
+                        f"{head}: pause for human verification before the "
+                        f"protected / official write (GREEN).")
                 seen_prev = ""
             else:
                 head = generic_head(step.get("display_name", ""))

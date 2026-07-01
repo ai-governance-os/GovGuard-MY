@@ -126,6 +126,32 @@ def test_route_b_public_weakness_disclosure_self_blocks_red(isolated_workspace: 
                 if e.action_id == sb.action_id and getattr(e, "affected_resources", None)]
 
 
+def test_route_b_sop_speaks_event_domain(isolated_workspace: Path):
+    """Brief 4 regression lock: the ad-hoc-event SOP must speak public/private
+    student-support governance, NOT the national status/income/protected-record
+    wording that leaked via the shared SOP distiller."""
+    rt = _runtime(isolated_workspace)
+    res = rt.run(raw_goal=ROUTE_B_GOAL)
+    sop = next(p for p in rt.curator_proposals
+               if p.get("source_module") == "109B-SOP")
+    blob = (sop["description"] + " " + sop["procedure"] + " "
+            + sop.get("principle", "")).lower()
+    for good in ("student-support", "public content", "to-be-confirmed",
+                 "send/publish", "human approval"):
+        assert good in blob, f"Route B SOP missing {good!r}"
+    for bad in ("status / income / title / donation", "protected-database",
+                "protected / official write", "student-record",
+                "mother database", "national record"):
+        assert bad not in blob, f"Route B SOP leaked national wording {bad!r}"
+    sb = next(a for a in res.plan.actions
+              if a.metadata.get("workflow_step_id") == "consider_public_weakness_disclosure")
+    dec = next(d for d in res.decisions if d.action_id == sb.action_id)
+    alt = " ".join(r for r in dec.reasons
+                   if str(r).startswith("safe_alternative:")).lower()
+    assert "internal report" in alt or "celebrate the winners" in alt
+    assert "training attendance" not in alt and "competition performance" not in alt
+
+
 def test_route_b_produces_the_four_outputs(isolated_workspace: Path):
     rt = _runtime(isolated_workspace)
     rt.run(raw_goal=ROUTE_B_GOAL)

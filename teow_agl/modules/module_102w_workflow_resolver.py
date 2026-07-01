@@ -130,6 +130,7 @@ class WorkflowResolver:
             "steps": tpl.get("steps", []),
             "curated_drafts": tpl.get("curated_drafts"),
             "results_source": tpl.get("results_source"),
+            "governance_copy": tpl.get("governance_copy"),
             "_source_path": tpl.get("_source_path"),
         }
 
@@ -170,6 +171,11 @@ class WorkflowResolver:
                 "approval_boundary": step.get("approval_boundary", "none"),
                 "route_hint": route_hint,
             }
+            # A workflow may supply a domain-specific safe alternative for its
+            # self-block step; 101D prefers it over the generic socio default so
+            # the RED card speaks in the workflow's own governance terms.
+            if step.get("safe_alternative"):
+                md["safe_alternative"] = step.get("safe_alternative")
             # Latency / cleanliness: steps that are NOT content deliverables get
             # a deterministic template body and never call the live LLM —
             #   * the report-stub step (its body is overwritten by ReportTool),

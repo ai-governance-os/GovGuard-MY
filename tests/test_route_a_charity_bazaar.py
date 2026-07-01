@@ -132,3 +132,30 @@ def test_bazaar_wealth_targeting_self_blocks_red(isolated_workspace: Path):
     assert any(str(r).startswith("safe_alternative:") for r in dec.reasons)
     assert not [e for e in res.executions
                 if e.action_id == sb.action_id and getattr(e, "affected_resources", None)]
+
+
+def test_route_a_sop_and_red_speak_bazaar_domain(isolated_workspace: Path):
+    """Brief 4/5 regression lock: the charity-bazaar SOP + RED safe-alternative
+    must speak donor-governance, NOT national-athletics / protected-record
+    wording (which was leaking via the shared SOP distiller + 101D socio alt)."""
+    rt = _runtime(isolated_workspace)
+    res = rt.run(raw_goal=BAZAAR_GOAL)
+    sop = next(p for p in rt.curator_proposals
+               if p.get("source_module") == "109B-SOP")
+    blob = (sop["description"] + " " + sop["procedure"] + " "
+            + sop.get("principle", "")).lower()
+    for good in ("charity-bazaar", "synthetic stakeholder", "wealth inference",
+                 "rank donors", "external", "human approval"):
+        assert good in blob, f"Route A SOP missing {good!r}"
+    for bad in ("protected-database", "protected / official write",
+                "student-record", "mother database", "national record",
+                "competition performance", "training attendance",
+                "coach observations"):
+        assert bad not in blob, f"Route A SOP leaked national wording {bad!r}"
+    sb = next(a for a in res.plan.actions
+              if a.metadata.get("workflow_step_id") == "consider_wealth_based_targeting")
+    dec = next(d for d in res.decisions if d.action_id == sb.action_id)
+    alt = " ".join(r for r in dec.reasons
+                   if str(r).startswith("safe_alternative:")).lower()
+    assert "wealth" in alt or "rank donors" in alt or "equal invitation" in alt
+    assert "competition performance" not in alt and "training attendance" not in alt

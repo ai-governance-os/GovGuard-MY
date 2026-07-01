@@ -292,11 +292,16 @@ class DataUseGuard:
             "workflow_id": md.get("workflow_id"),
         }
 
+        # A workflow may carry its own domain-specific safe alternative for the
+        # self-block (config `governance_copy` → step `safe_alternative`), so a
+        # charity-bazaar RED card is not described in athletics/student terms.
+        step_safe_alt = str(md.get("safe_alternative") or "").strip()
+
         # ── RED 1 (flagship §I): socioeconomic data → differential treatment ─
         if has_socio and has_diff:
             return {"decision": "RED",
                     "reasons": [_RED_REASON_SOCIO,
-                                f"safe_alternative: {_SAFE_ALT_SOCIO}"],
+                                f"safe_alternative: {step_safe_alt or _SAFE_ALT_SOCIO}"],
                     "features": features}
 
         # ── RED 2: publish personal identifiers to a public/external surface ─
@@ -326,7 +331,7 @@ class DataUseGuard:
         if has_student_sensitive and (is_public or scope == "public_draft"):
             return {"decision": "RED",
                     "reasons": [_RED_REASON_STUDENT_PUBLIC,
-                                f"safe_alternative: {_SAFE_ALT_STUDENT_PUBLIC}"],
+                                f"safe_alternative: {step_safe_alt or _SAFE_ALT_STUDENT_PUBLIC}"],
                     "features": features}
 
         # ── GREEN: writing/updating an OFFICIAL record is high-impact → verify ─

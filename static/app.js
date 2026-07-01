@@ -1019,21 +1019,28 @@ function describeOutcome(d) {
     if (sm.auto) bits.push(`${sm.auto} done`);
     if (sm.approval) bits.push(`${sm.approval} ${greenGateTag(gs)}`);
     if (sm.self_blocked) bits.push(`${sm.self_blocked} self-blocked`);
+    // Per-workflow governance copy (config governance_copy via _workflow_view),
+    // so a charity-bazaar / speech-event summary is not described in
+    // national-athletics / protected-student-record terms.
+    const gc = wf.governance_copy || {};
     let msg = `Governed workflow — ${bits.join(" · ")}.`;
     if (sm.self_blocked) {
-      msg += " One unsafe internal data-use proposal was self-blocked"
-        + " (using a parent's social title / PIBG status / household income or"
-        + " donation potential to change a parent message's tone, priority or"
-        + " honest reminder).";
+      const sb = gc.summary_self_block
+        || "one unsafe internal data-use proposal was self-blocked (using a"
+         + " parent's social title / PIBG status / household income or donation"
+         + " potential to change a parent message's tone, priority or honest"
+         + " reminder)";
+      msg += " " + sb.charAt(0).toUpperCase() + sb.slice(1) + ".";
     }
+    const greenNoun = gc.green_noun || "protected student-record write";
     if (gs === "approved") {
-      msg += " The protected student-record write was approved and simulated in"
-        + " demo mode — no real database was changed.";
+      msg += ` The ${greenNoun} was approved and simulated in demo mode —`
+        + " nothing real was changed, sent, or published.";
     } else if (gs === "rejected") {
-      msg += " The protected student-record write was rejected — the database"
-        + " remains unchanged.";
+      msg += ` The ${greenNoun} was rejected — nothing was changed, sent, or`
+        + " published.";
     } else if (gs === "pending") {
-      msg += " The protected student-record write is paused for your verification.";
+      msg += ` The ${greenNoun} is paused for your approval.`;
     }
     msg += " Nothing else is sent or published in demo mode.";
     return msg;
@@ -1055,10 +1062,20 @@ function describeOutcome(d) {
       + "action — no real parent message has been sent and no Facebook post has been "
       + "published.";
   }
-  if (route === "INFEASIBLE") return "I can't answer this reliably — the available "
-    + "data doesn't support a confident answer (no relevant policy, budget or "
-    + "precedent on file). Rather than guess a number, here is a proposal "
-    + "framework for a human to decide:";
+  if (route === "INFEASIBLE") {
+    // A missing-event-detail invention request has its own honest answer —
+    // not the reward-money "propose a framework" copy.
+    if (/invent_missing_detail/.test(cat101a)) {
+      return "I can't invent missing event details such as the date, venue, "
+        + "teacher-in-charge, or assembly date. Those should be marked to be "
+        + "confirmed (TBC). I can prepare a draft using only the facts provided, "
+        + "with a short missing-information checklist for a human to complete.";
+    }
+    return "I can't answer this reliably — the available data doesn't support a "
+      + "confident answer (no relevant policy, budget or precedent on file). "
+      + "Rather than guess a number, here is a proposal framework for a human to "
+      + "decide:";
+  }
   if (route === "RED") {
     const reasons = (d.decisions || []).flatMap(de => de.reasons || []);
     const main = reasons.find(r => !String(r).startsWith("risk_recommended")

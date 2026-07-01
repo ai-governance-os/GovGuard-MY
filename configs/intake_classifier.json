@@ -242,6 +242,7 @@
       "id": "invent_missing_detail",
       "category": "invent_missing_detail_request",
       "block": "infeasible",
+      "safe_alternative": "I cannot invent a missing date, venue, teacher-in-charge, or assembly date. Those should be marked 'to be confirmed (TBC)'. I can prepare a draft that uses only the facts provided and includes a short missing-information checklist for a human to complete.",
       "_doc": "User asks the agent to FABRICATE a missing fact (date / venue / teacher) not provided in the prompt -> INFEASIBLE. Concept (invent cue) x (a missing-detail noun). Safe behaviour is to mark the detail to-be-confirmed, not to invent it.",
       "require_all": [
         ["yourself", "make up", "just make up", "make one up", "invent", "fabricate", "just put", "fill in the", "fill in a", "put a date", "put in a date", "decide the date", "you decide", "assume a", "guess the date", "even though i did not provide", "even though i didn't provide", "did not provide them", "自己加", "自己填", "编一个", "编个", "随便填", "假设一个", "自己决定", "自己定"],
