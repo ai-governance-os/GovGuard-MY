@@ -26,6 +26,7 @@ state*/
 outputs/
 traces/
 backups/
+V3_TEST_EVIDENCE_*/
 workspace/uploads/
 workspace/temp/
 workspace/results.md

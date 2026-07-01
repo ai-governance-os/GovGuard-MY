@@ -1055,12 +1055,12 @@ function describeOutcome(d) {
     const sent = (d.executions || []).filter(e =>
       e.status === "success" && String(e.output_summary || "").startsWith("[demo]")).length;
     if (sent) return `Demo release simulated — ${sent} external action(s) recorded in `
-      + "the audit log, but no real parent message was delivered and no Facebook post "
-      + "was published externally. External release requires prior human approval; demo "
-      + "mode records the decision without contacting real recipients.";
+      + "the audit log, but no real message was delivered and no post was published "
+      + "externally. External release requires prior human approval; demo mode records "
+      + "the decision without contacting real recipients.";
     return "Release package prepared. Approval is required before any external "
-      + "action — no real parent message has been sent and no Facebook post has been "
-      + "published.";
+      + "action — no real message has been sent and no post has been published "
+      + "externally.";
   }
   if (route === "INFEASIBLE") {
     // A missing-event-detail invention request has its own honest answer —
