@@ -93,6 +93,21 @@ _DIFFERENTIAL_CUES = (
 )
 _PUBLIC_SCOPES = ("public", "public_release", "external")
 
+# Route B §7.1 — a pupil's learning difficulty / support need is student-
+# sensitive: legitimate INTERNALLY (report) and in a PRIVATE parent notice,
+# but it must never be named or disclosed in PUBLIC content (a Facebook post).
+_STUDENT_SENSITIVE = (
+    "memorisation difficulty", "memorization difficulty",
+    "could not finish memoris", "could not finish memoriz",
+    "cannot memoris", "cannot memoriz", "unable to memoris", "unable to memoriz",
+    "did not finish memoris", "did not finish memoriz",
+    "struggling pupil", "struggling student", "struggling speaker",
+    "student weakness", "pupil weakness", "weak speaker", "weak student",
+    "named struggling student", "memorisation problem", "memorization problem",
+    "student support observation", "student-support observation",
+    "背不出", "记不住讲稿", "背诵困难", "学生弱点",
+)
+
 _RED_REASON_SOCIO = (
     "Sensitive socioeconomic data cannot be used for differential treatment "
     "in parent communication."
@@ -101,6 +116,15 @@ _SAFE_ALT_SOCIO = (
     "Use the pupil's actual competition performance, training attendance, coach "
     "observations, and the parent's recorded communication style instead — not "
     "social title, committee role, household income or donation potential."
+)
+_RED_REASON_STUDENT_PUBLIC = (
+    "A pupil's learning difficulty or support plan is student-sensitive and "
+    "cannot be named or disclosed in public content."
+)
+_SAFE_ALT_STUDENT_PUBLIC = (
+    "Celebrate the winners and congratulate all participants; keep any named "
+    "pupil's difficulty and support plan to the internal report and the private "
+    "parent notice."
 )
 
 
@@ -206,6 +230,19 @@ class DataUseGuard:
             _norm_list(md.get("data_categories")),
             _norm_list(md.get("allowed_data")),
         )))
+        # The student-sensitive-in-public check keys on the STEP's OWN data use
+        # (its purpose, declared data-use, and allowed fields) — NOT the shared
+        # user_intent. For Route B the user's goal legitimately narrates the
+        # pupils' difficulty, which would otherwise contaminate every step and
+        # wrongly RED the safe public post. The socio/pii/health signals keep
+        # using the full text (they rely on user_intent for NL probes).
+        own_text = _normalize(" ".join((
+            str(getattr(action, "purpose", "")),
+            str(getattr(action, "expected_effect", "")),
+            str(md.get("data_use_purpose", "")),
+            _norm_list(md.get("data_categories")),
+            _norm_list(md.get("allowed_data")),
+        )))
         scope = str(md.get("output_scope", "")).lower()
         approval_boundary = str(md.get("approval_boundary", "")).lower()
         # C-tier concepts: closed-vocabulary tags the LLM understanding layer
@@ -224,6 +261,10 @@ class DataUseGuard:
         has_diff = any(c in text for c in _DIFFERENTIAL_CUES) or "differential_treatment" in concepts
         has_pii = any(f in text for f in _PUBLIC_PII) or "public_pii" in concepts
         has_health = any(f in text for f in _HEALTH_FIELDS) or "health_or_discipline" in concepts
+        has_student_sensitive = (
+            any(f in own_text for f in _STUDENT_SENSITIVE)
+            or "student_sensitive_public" in concepts
+        )
         is_public = (
             scope in _PUBLIC_SCOPES
             or "publish" in op or "send" in op or "submit" in op
@@ -238,6 +279,7 @@ class DataUseGuard:
             "differential_intent": has_diff,
             "public_pii": has_pii,
             "health_discipline_special": has_health,
+            "student_sensitive": has_student_sensitive,
             "workflow_id": md.get("workflow_id"),
         }
 
@@ -265,6 +307,17 @@ class DataUseGuard:
                                 "cannot be placed in public content.",
                                 "safe_alternative: Keep these records internal "
                                 "and access-controlled."],
+                    "features": features}
+
+        # ── RED 4 (Route B §7.1): a pupil's learning difficulty / support need
+        # exposed in PUBLIC content. Fine internally + in a private parent
+        # notice; never named or disclosed publicly. `public_draft` counts —
+        # the exposure is going INTO a public post — while a public-draft that
+        # carries only safe achievement fields never trips this. ──
+        if has_student_sensitive and (is_public or scope == "public_draft"):
+            return {"decision": "RED",
+                    "reasons": [_RED_REASON_STUDENT_PUBLIC,
+                                f"safe_alternative: {_SAFE_ALT_STUDENT_PUBLIC}"],
                     "features": features}
 
         # ── GREEN: writing/updating an OFFICIAL record is high-impact → verify ─

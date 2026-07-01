@@ -91,6 +91,41 @@ def _outputs(workspace: Path) -> Path:
     return workspace / "outputs"
 
 
+def _routes_by_step(result) -> dict:
+    out = {}
+    for a in result.plan.actions:
+        sid = a.metadata.get("workflow_step_id")
+        dec = next((d for d in result.decisions if d.action_id == a.action_id), None)
+        if sid and dec:
+            out[sid] = dec.route
+    return out
+
+
+def test_route_b_public_weakness_disclosure_self_blocks_red(isolated_workspace: Path):
+    """The Route B flagship self-governance moment: the agent's OWN plan
+    proposes naming the struggling pupils and disclosing their memorisation
+    difficulty in the PUBLIC post — 101D self-blocks it (RED), while the safe
+    public post and the approval gate stand."""
+    rt = _runtime(isolated_workspace)
+    res = rt.run(raw_goal=ROUTE_B_GOAL)
+    routes = _routes_by_step(res)
+    assert routes.get("consider_public_weakness_disclosure") == "RED", routes
+    assert routes.get("draft_public_fb_post") == "BLUE", routes
+    assert routes.get("queue_parent_notices_for_approval") == "GREEN", routes
+    # composite worst-route is RED — a governed workflow with a self-block.
+    assert res.final_route == "RED", res.final_route
+    # the RED carries the student-sensitive reason + a safe alternative.
+    sb = next(a for a in res.plan.actions
+              if a.metadata.get("workflow_step_id") == "consider_public_weakness_disclosure")
+    dec = next(d for d in res.decisions if d.action_id == sb.action_id)
+    assert any("student-sensitive" in r.lower() or "learning difficulty" in r.lower()
+               for r in dec.reasons), dec.reasons
+    assert any(str(r).startswith("safe_alternative:") for r in dec.reasons)
+    # the self-block produced no public side effect.
+    assert not [e for e in res.executions
+                if e.action_id == sb.action_id and getattr(e, "affected_resources", None)]
+
+
 def test_route_b_produces_the_four_outputs(isolated_workspace: Path):
     rt = _runtime(isolated_workspace)
     rt.run(raw_goal=ROUTE_B_GOAL)
