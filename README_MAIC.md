@@ -56,7 +56,9 @@ Real administrative workflows are used responsibly: the real **event structure**
 is allowed, but sensitive **person-level** records are synthetic or redacted.
 No real donor, parent, or student-sensitive record is exposed in the demo.
 Route A's school name and event structure are real and used with the school's
-acknowledgement; all person-level records are synthetic.
+acknowledgement, provided as a **separate** evidence pack (not in this
+repository). All person-level records in this repository are synthetic. See
+`EVIDENCE_PACK_NOTE.md`.
 
 ## Originality claim
 

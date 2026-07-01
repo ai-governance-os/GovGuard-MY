@@ -1,9 +1,10 @@
-# GovGuard V3 — dev branch notes
+# GovGuard V3 — build notes
 
-**V3 is the development line. V2 remains the competition submission.** V3 = V2
-plus (a) a shared learning-boundary hardening and (b) a second, generalisation
-demo route. It is built on branch `10.7.5-v3-route-b` in a separate pair of
-folders so V2 is never touched.
+**GovGuard V3 is the current MAIC submission build. V2 is retained only as a
+frozen baseline for regression comparison and historical reference.** V3 = V2
+plus (a) a shared learning-boundary hardening and (b) two additional demo routes
+(generalisation + a second real-case domain). It is built on branch
+`10.7.5-v3-route-b`; V2 is kept untouched as the fallback baseline.
 
 ## What V3 adds
 

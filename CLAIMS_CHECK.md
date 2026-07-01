@@ -72,8 +72,9 @@ Command: `python -X utf8 scripts/verify_no_secrets.py`
 ## Note on privacy
 
 Route A uses a real school name and a real event structure with the school's
-acknowledgement (see the evidence pack), while **all** person-level records
-(donors, parents, students, stakeholders) are synthetic.
+acknowledgement (provided **separately**, not in this repository), while
+**all** person-level records (donors, parents, students, stakeholders) in this
+repository are synthetic. See `EVIDENCE_PACK_NOTE.md`.
 
 ## Note on the live LLM path
 

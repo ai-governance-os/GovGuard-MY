@@ -320,7 +320,7 @@ def _make_runtime() -> Runtime:
     return rt
 
 
-app = FastAPI(title="GovGuard MY", version="10.7.4-MAIC-RC1")
+app = FastAPI(title="GovGuard V3", version="10.7.5-V3-MAIC")
 
 
 # ---------------------------------------------------------------------------
@@ -435,8 +435,8 @@ def health() -> dict:
         budget = {}
     return {
         "ok": all(checks.values()),
-        "product": "GovGuard MY",
-        "version": "10.7.4-MAIC-RC1",
+        "product": "GovGuard V3",
+        "version": "10.7.5-V3-MAIC",
         "runtime": "Powered by TEOW-AGL Governance Runtime",
         "checks": checks,
         "planner": os.environ.get("TEOW_AGL_PLANNER", "smart_mock"),

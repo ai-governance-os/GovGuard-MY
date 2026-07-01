@@ -1,7 +1,7 @@
 [project]
 name = "teow_agl"
-version = "10.7.4"
-description = "GovGuard MY 10.7.4-MAIC-RC1 — auditable AI for Malaysian public-service work (Powered by TEOW-AGL Governance Runtime)"
+version = "10.7.5"
+description = "GovGuard V3 MAIC Submission — Governed School-Administration Agent Runtime (Powered by TEOW-AGL)"
 requires-python = ">=3.11"
 dependencies = [
   "pydantic>=2.5",
