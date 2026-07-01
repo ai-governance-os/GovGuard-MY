@@ -44,11 +44,29 @@ a private parent notice, missing facts are marked TBC, and any send/publish is
 routed to human approval. Try the two ③ probes for the RED / INFEASIBLE
 governance.
 
+### Route A — school environmental charity bazaar (second real-case domain)
+A real-case-derived charity-bazaar workflow over a **synthetic** 24-record
+donor database: a trilingual (中/BM/EN) public Facebook post, an English parent
+notice, an internal preparation checklist, non-pressuring donor outreach, and a
+data-use audit. The self-governance moment is a RED self-block on **wealth
+inference / status pressure** (occupation / board position / prior amount →
+stronger asks).
+
+- `configs/workflows/public_school/school_charity_bazaar.json`,
+  `demo_data/charity_bazaar/synthetic_stakeholders.json` (24) + `curated_drafts.md`,
+  `demo/charity_bazaar_case.md`.
+- Governance: 101D RED 1 (socio + differential) for the self-block; intake
+  `wealth_inference_targeting` (RED) + extended `status_based_differential`
+  (board flattery, prior-donor guilt, small-supporter disrespect,
+  status-hierarchy learning). Tests: `tests/test_route_a_charity_bazaar.py`,
+  `tests/test_route_a_probes.py`. UI: welcome section ④.
+- **Privacy:** the brief names a real school; the synthetic data is fabricated,
+  but obtain the school's acknowledgement before any PUBLIC use of the name
+  (or pseudonymise it).
+
 ## Still pending (owner)
 
 - **Live validation requires a rotated API key.** Everything above is built and
   unit-tested keyless (stub / curated); the live-model faithfulness pass
   (Brief 3 §B–D contracts under `TEOW_AGL_PLANNER=openai`) is validated only
   after the leaked key is rotated.
-- Route A (charity bazaar) is scoped but not built — Route B (higher-value
-  generalisation) was prioritised.
