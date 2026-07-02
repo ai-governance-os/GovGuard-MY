@@ -19,7 +19,9 @@ from pydantic import BaseModel
 
 from teow_agl.adapters.chat_llm import ChatLLM
 from teow_agl.adapters.smart_mock_planner import SmartMockPlanner
+from teow_agl.models import TaskEnvelope
 from teow_agl.modules.module_102b_synthesizer import ContentSynthesizer
+from teow_agl.modules.module_102w_workflow_resolver import WorkflowResolver
 from teow_agl.modules.module_102t_task_tree import TaskTreeModule
 from teow_agl.modules.module_105_web_gate import WebHumanGate
 from teow_agl.modules.module_109_reflector import ReflectorModule
@@ -138,6 +140,10 @@ class TaskState:
     pending_approvals: list[dict] = field(default_factory=list)
     proposals: list[dict] = field(default_factory=list)
     final_route: str = ""
+    # V3 mixed mode — which planner tier built this task's runtime
+    # ("deterministic" | "live"). Honest per-task audit of the drafting tier;
+    # governance is identical in both.
+    planner_mode: str = "deterministic"
     # Module 109 reflection output for this task (None when reflector
     # was skipped / disabled). The UI reads this to render the
     # "What I learned" block and the REFLECT chip.
@@ -204,7 +210,10 @@ _app_state = {
 }
 
 
-def _make_runtime() -> Runtime:
+def _build_runtime() -> Runtime:
+    # Construction body. Call via _make_runtime() / _make_runtime_for_goal()
+    # so every build is serialised under _RUNTIME_BUILD_LOCK (mixed mode
+    # temporarily overrides planner env during a live build).
     workspace_roots = _workspace_roots()
     # Shared chat-LLM adapter for ChatTool's synth fallback AND Module 102B
     # content synthesis. Backend selection mirrors the planner env var so
@@ -318,6 +327,90 @@ def _make_runtime() -> Runtime:
         tools["session_search"] = SessionSearchTool(rt.session_index)
     rt.profile.profile["workspace_roots"] = workspace_roots
     return rt
+
+
+# ---------------------------------------------------------------------------
+# Mixed-mode planner selection (V3). ONE server can run the core demo
+# deterministically (smart_mock) while selected workflows run on the live API
+# — no restart between demo parts. Opt in at startup, e.g.:
+#     TEOW_AGL_LIVE_WORKFLOWS=ad_hoc_school_event_reporting
+# (comma-separated workflow_ids; add school_charity_bazaar to take Route A
+# live too). A task is built live ONLY when (a) its goal pre-resolves to a
+# listed workflow, (b) an OPENAI_API_KEY is present, and (c) the global
+# planner is not already live. The keyless default (env unset) is EXACTLY
+# the current single-mode behaviour. Governance, routing, validators and the
+# curated-fallback net are planner-independent — the live model only drafts
+# prose; it never becomes the safety authority.
+# ---------------------------------------------------------------------------
+_RUNTIME_BUILD_LOCK = threading.Lock()
+_WF_PRERESOLVER: WorkflowResolver | None = None
+
+
+def _live_workflow_ids() -> set[str]:
+    raw = os.environ.get("TEOW_AGL_LIVE_WORKFLOWS", "")
+    return {w.strip() for w in raw.split(",") if w.strip()}
+
+
+def _preresolve_workflow_id(raw_goal: str) -> str | None:
+    """Cheap, deterministic 102W text-match on the goal BEFORE the runtime is
+    built (the real resolution happens inside rt.run(); this mirrors it for
+    planner selection only). Never raises."""
+    global _WF_PRERESOLVER
+    try:
+        if _WF_PRERESOLVER is None:
+            _WF_PRERESOLVER = WorkflowResolver(
+                config_dir=CONFIG_DIR,
+                domain=os.environ.get("TEOW_AGL_DOMAIN_PACK", "public_school"))
+        env = TaskEnvelope(session_id="preresolve", user_id="preresolve",
+                           raw_goal=raw_goal, normalized_goal=raw_goal,
+                           metadata={})
+        res = _WF_PRERESOLVER.resolve(env, None)
+        return res.get("workflow_id") if res else None
+    except Exception:
+        return None
+
+
+def _goal_runs_live(raw_goal: str) -> bool:
+    live = _live_workflow_ids()
+    if not live:
+        return False
+    if not os.environ.get("OPENAI_API_KEY", "").strip():
+        return False  # never pretend: no key, no live tier
+    if os.environ.get("TEOW_AGL_PLANNER", "smart_mock").lower() == "openai":
+        return False  # whole server already live — no override needed
+    return _preresolve_workflow_id(raw_goal) in live
+
+
+def _make_runtime_for_goal(raw_goal: str) -> tuple[Runtime, str]:
+    """Build the per-task runtime, upgrading planner + chat LLM to the live
+    API when the goal resolves to a live-listed workflow. ALL construction is
+    serialised under one lock so the temporary env override can never leak
+    into a concurrently-built deterministic runtime; env is always restored."""
+    live = _goal_runs_live(raw_goal)
+    with _RUNTIME_BUILD_LOCK:
+        if not live:
+            return _build_runtime(), "deterministic"
+        old = {k: os.environ.get(k)
+               for k in ("TEOW_AGL_PLANNER", "TEOW_AGL_CHAT_LLM")}
+        os.environ["TEOW_AGL_PLANNER"] = "openai"
+        os.environ["TEOW_AGL_CHAT_LLM"] = "openai"
+        try:
+            rt = _build_runtime()
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+    return rt, "live"
+
+
+def _make_runtime() -> Runtime:
+    """Lock-serialised deterministic-default runtime construction. Existing
+    callers (curator endpoints, tests) keep this exact signature; the lock
+    guarantees a concurrent live build's env override can never leak in."""
+    with _RUNTIME_BUILD_LOCK:
+        return _build_runtime()
 
 
 app = FastAPI(title="GovGuard V3", version="10.7.5-V3-MAIC")
@@ -453,6 +546,14 @@ def config_summary() -> dict:
         "planner": os.environ.get("TEOW_AGL_PLANNER", "smart_mock"),
         "domain_pack": os.environ.get("TEOW_AGL_DOMAIN_PACK", "public_school"),
         "demo_mode": _demo_mode(),
+        # V3 mixed mode — which workflows are opted into the live tier, and
+        # whether that tier can actually run (a key is present). The UI mode
+        # badges read these so they NEVER claim "live" when it isn't.
+        "live_workflows": sorted(_live_workflow_ids()),
+        "live_ready": bool(
+            _live_workflow_ids()
+            and os.environ.get("OPENAI_API_KEY", "").strip()
+        ),
         "workspace_roots": _workspace_roots(),
         # Desktop path is hidden in demo mode (no local-machine path leak).
         "desktop": ("(disabled in demo mode)" if _demo_mode()
@@ -470,7 +571,9 @@ def start_task(req: StartTaskRequest) -> dict:
         _app_state["tasks"][task_id] = state
 
     def runner():
-        rt = _make_runtime()
+        rt, planner_mode = _make_runtime_for_goal(req.raw_goal)
+        with _app_state["lock"]:
+            state.planner_mode = planner_mode
         original_emit = rt.trace.emit
 
         def capture_emit(*args, **kwargs):
@@ -1253,6 +1356,7 @@ def _state_to_dict(state: TaskState) -> dict:
         "verification": state.verification,
         "task_tree": state.task_tree,
         "workflow": state.workflow,
+        "planner_mode": state.planner_mode,
     }
 
 
