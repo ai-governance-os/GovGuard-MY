@@ -65,6 +65,19 @@ stronger asks).
   but obtain the school's acknowledgement before any PUBLIC use of the name
   (or pseudonymise it).
 
+### Mixed-mode planner + three-tier console UI (final polish)
+- **Mixed mode:** `TEOW_AGL_LIVE_WORKFLOWS=<workflow_id,...>` at startup runs the
+  listed workflows on the live API while everything else stays deterministic —
+  one server, no restart between demo parts. A task goes live only when its goal
+  pre-resolves to a listed workflow AND a key is present; env override happens
+  under a construction lock and is always restored. `/api/config` exposes
+  `live_workflows` + `live_ready`; each task records `planner_mode`. See
+  `tests/test_mixed_mode.py`.
+- **UI:** the landing page is a three-tier governance console (core demo →
+  generalisation → collapsed real-case evidence) with a product top bar, honest
+  status pills (Mode badge never claims live without a key), navy primary
+  actions, and version-busted static assets (no more stale-cache hard refresh).
+
 ## Still pending (owner)
 
 - **Live validation requires a rotated API key.** Everything above is built and

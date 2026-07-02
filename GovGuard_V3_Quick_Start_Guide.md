@@ -13,14 +13,16 @@ python -X utf8 -m server.app
 
 <http://127.0.0.1:8765>
 
-## 3. Demo sections (four)
+## 3. Demo parts (four, in three tiers)
 
-1. **①** National athletics workflow autonomy
-2. **②** User-input governance probes
-3. **③** Route B — ad-hoc school speech competition (generalisation)
-4. **④** Route A — real-case-derived charity bazaar (synthetic donor data)
+- **Tier 1 · Core governance demo** — ① national athletics workflow autonomy +
+  ② user-input governance probes (deterministic · reproducible)
+- **Tier 2 · Generalisation** — ③ Route B: ad-hoc school speech competition
+- **Tier 3 · Real-case evidence** — ④ Route A: charity bazaar case study
+  (collapsed — click to open; synthetic donor data)
 
-Each section has a main workflow button and one or two governance probes.
+Each part has one main workflow button and one or two governance probes. The
+top-bar pills show the honest session state (Governance / External / Mode).
 
 ## 4. Optional — clean rehearsal state
 
@@ -37,7 +39,7 @@ first-run → approve → reuse lifecycle. Restart the server afterwards.
 python -X utf8 -m pytest -q
 ```
 
-Expected: **1059 passed / 1 skipped / 0 failed** (1060 collected).
+Expected: **1070 passed / 1 skipped / 0 failed** (1071 collected).
 
 ## 6. Run the evaluations
 

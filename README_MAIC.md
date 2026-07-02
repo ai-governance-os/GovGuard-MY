@@ -36,16 +36,19 @@ real-world-shaped scenarios**, not just one hard-coded demo.
 5. Missing facts are marked **TBC** instead of invented.
 6. Learning is **bounded**: a one-off styling instruction does not become persistent sensitive memory.
 
-## V3 demo — four sections
+## V3 demo — four parts, three tiers
 
-1. **① National athletics workflow autonomy** — deep workflow + internal self-governance (RED self-block; GREEN protected-record verification).
-2. **② User-input governance probes** — governance over the operator's later free-text requests.
-3. **③ Route B — ad-hoc school speech competition** — minimal-input generalisation.
-4. **④ Route A — real-case-derived charity bazaar** — realistic deployment over synthetic donor data.
+The landing console groups the four demo parts into a three-tier narrative
+(core demo dominant → generalisation → collapsed evidence):
+
+1. **① National athletics workflow autonomy** — deep workflow + internal self-governance (RED self-block; GREEN protected-record verification). *(Tier 1)*
+2. **② User-input governance probes** — governance over the operator's later free-text requests. *(Tier 1)*
+3. **③ Route B — ad-hoc school speech competition** — minimal-input generalisation; optionally runs on the live API in mixed mode. *(Tier 2)*
+4. **④ Route A — real-case-derived charity bazaar** — realistic deployment over synthetic donor data. *(Tier 3, case study)*
 
 ## Evidence
 
-- pytest: **1060** collected — **1059 passed / 1 skipped / 0 failed**.
+- pytest: **1071** collected — **1070 passed / 1 skipped / 0 failed**.
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**.
 - Secret scan: **PASS**.
 - All offline / keyless (`smart_mock`, `MAIC_DEMO_MODE=1`).

@@ -16,12 +16,21 @@ Optional clean slate before a walkthrough (backs up then clears local state):
 python -X utf8 scripts/reset_demo_state.py --yes
 ```
 
-## The landing page has FOUR sections
+## The landing page: four demo parts in THREE tiers
 
-1. **Section ① — National Athletics Workflow** — agent self-governance.
-2. **Section ② — User-Input Governance Probes** — governance over your requests.
-3. **Section ③ — Route B: Ad-Hoc Speech Competition** — minimal-input generalisation.
-4. **Section ④ — Route A: Charity Bazaar** — real-case-derived deployment (synthetic donor data).
+The four demo parts (① – ④) are grouped into a three-tier narrative:
+
+- **Tier 1 · Core governance demo** (deterministic · reproducible)
+  ① National Athletics Workflow — agent self-governance.
+  ② User-Input Governance Probes — governance over your requests.
+- **Tier 2 · Generalisation — unseen school case**
+  ③ Route B: Ad-Hoc Speech Competition — minimal-input generalisation.
+- **Tier 3 · Real-case-derived evidence** (collapsed case study — click to open)
+  ④ Route A: Charity Bazaar — real deployment structure, synthetic donor data.
+
+The top bar's status pills tell you what is true right now (Governance: active ·
+External: simulated · Mode). The core demo proves governance; Route B proves
+generalisation; Route A proves real-world relevance.
 
 ## Recommended 5-minute walkthrough
 
@@ -80,9 +89,23 @@ python -X utf8 scripts/verify_no_secrets.py   # secret scan
 
 ## Evidence
 
-- pytest: **1060** collected — **1059 passed / 1 skipped / 0 failed**.
+- pytest: **1071** collected — **1070 passed / 1 skipped / 0 failed**.
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**.
 - Secret scan: **PASS**.
+
+## Optional: mixed live mode (one server, two honest tiers)
+
+With a valid `OPENAI_API_KEY`, the operator can start ONE server where the core
+demo stays deterministic while Route B runs on the live API — no restart:
+
+```powershell
+$env:TEOW_AGL_LIVE_WORKFLOWS = "ad_hoc_school_event_reporting"   # add school_charity_bazaar for Route A
+python -X utf8 -m server.app
+```
+
+The UI badges then say `Mode: mixed — core deterministic · unseen case live`.
+Without a key the badges honestly stay `deterministic (live-ready)` — the demo
+never claims a live tier it cannot run. Governance is identical in both tiers.
 
 ## Troubleshooting
 

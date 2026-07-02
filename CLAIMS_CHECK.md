@@ -53,7 +53,7 @@ cannot reproduce.
 
 Command: `python -X utf8 -m pytest -q`
 
-- **1060** collected — **1059 passed**, **1 skipped**, **0 failed**.
+- **1071** collected — **1070 passed**, **1 skipped**, **0 failed**.
 - Reproduced green on a fresh venv on a clean (non-CJK) path.
 
 ## Claim 9 — Evaluation status

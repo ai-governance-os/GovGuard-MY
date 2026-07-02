@@ -75,7 +75,15 @@ coercion*; external release needs approval.
 
 ## For a live tier (optional)
 
-Set `TEOW_AGL_PLANNER=openai`, `OPENAI_MODEL=gpt-4o` with a valid, rotated key.
-Governance is identical; only the prose source differs, and a deterministic
-faithfulness check falls back to the curated draft on any drift. *(The live path
-is built and unit-tested but should be validated with a rotated key before use.)*
+**Mixed mode (recommended for a finals stage):** with a valid, rotated key, set
+`TEOW_AGL_LIVE_WORKFLOWS=ad_hoc_school_event_reporting` before starting — ONE
+server where Parts 1–2 stay deterministic (instant, reproducible) and Part 3
+drafts on the live API, with no restart between parts. The UI badges switch to
+"Mode: mixed — core deterministic · unseen case live" only when the live tier
+can actually run. Add `school_charity_bazaar` to take Part 4 live too.
+
+Alternatively `TEOW_AGL_PLANNER=openai`, `OPENAI_MODEL=gpt-4o` runs everything
+live. Either way governance is identical; only the prose source differs, and a
+deterministic faithfulness check falls back to the curated draft on any drift.
+*(The live path is built and unit-tested but should be validated with a rotated
+key before use.)*

@@ -20,9 +20,11 @@ external action needs human approval, whether a request must be refused, and
 whether a missing fact must be marked unknown instead of invented. None of these
 decisions is left to prompt-only guardrails.
 
-## V3 demo overview — four sections
+## V3 demo overview — four parts, three tiers
 
-The local demo home page has four clearly-labelled sections:
+The local demo home page groups four demo parts into a three-tier narrative —
+**core governance demo** (dominant) → **generalisation** → **real-case
+evidence** (collapsed case study):
 
 1. **① National athletics workflow autonomy** — the agent runs a multi-step
    school follow-up, self-blocks its own unsafe status/income proposal (RED),
@@ -79,9 +81,15 @@ Runs offline with **no API keys** (default planner `smart_mock`,
 `MAIC_DEMO_MODE=1`). Keep `-X utf8` on Windows (the demo mixes 中文 / Malay /
 English).
 
+**Optional mixed live mode** (with a valid key): set
+`TEOW_AGL_LIVE_WORKFLOWS=ad_hoc_school_event_reporting` before starting — the
+core demo stays deterministic while the unseen-case route drafts on the live
+API, in one server session. The UI mode badges always state which tier is
+actually running.
+
 ## Test evidence
 
-- **1060** tests collected — **1059 passed**, **1 skipped**, **0 failed**
+- **1071** tests collected — **1070 passed**, **1 skipped**, **0 failed**
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**
 - Secret scan: **PASS** (no secrets, no blocked files in the public surface)
 
