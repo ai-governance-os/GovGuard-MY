@@ -104,6 +104,32 @@ async function loadConfig() {
     // MAIC demo-mode lockout banner (Owner Rule 4).
     const banner = $("#demo-banner");
     if (banner) banner.hidden = !c.demo_mode;
+    // V3 mixed-mode status — the badges say only what is TRUE right now:
+    // deterministic by default; "mixed" only when a live tier can actually
+    // run (workflow listed AND a key present); "live" only when the whole
+    // server planner is live.
+    const liveList = c.live_workflows || [];
+    const liveOn = !!c.live_ready;
+    const modePill = $("#mode-pill");
+    if (modePill) {
+      if (c.planner === "openai") modePill.textContent = "Mode: live API · governed";
+      else if (liveOn) modePill.textContent = "Mode: mixed — core deterministic · unseen case live";
+      else modePill.textContent = "Mode: deterministic demo";
+    }
+    const extPill = $("#external-pill");
+    if (extPill && c.demo_mode === false) {
+      extPill.textContent = "External: LIVE";
+      extPill.classList.remove("pill-warn");
+      extPill.classList.add("pill-danger");
+    }
+    const genBadge = $("#gen-mode-badge");
+    if (genBadge) {
+      const genLive = c.planner === "openai"
+        || (liveOn && liveList.includes("ad_hoc_school_event_reporting"));
+      genBadge.textContent = genLive
+        ? "Live API · governed"
+        : "Deterministic demo (live-ready)";
+    }
   } catch (e) { $("#cfg-mini").textContent = ""; }
 }
 
