@@ -152,13 +152,26 @@ def test_route_b_sop_speaks_event_domain(isolated_workspace: Path):
     assert "training attendance" not in alt and "competition performance" not in alt
 
 
-def test_route_b_produces_the_four_outputs(isolated_workspace: Path):
+def test_route_b_produces_the_outputs(isolated_workspace: Path):
     rt = _runtime(isolated_workspace)
     rt.run(raw_goal=ROUTE_B_GOAL)
     out = _outputs(isolated_workspace)
     for name in ("draft_public_fb_post.md", "champion_notice_alice.md",
-                 "guidance_notice_daniel_emma.md", "save_internal_report.md"):
+                 "guidance_notice_daniel.md", "guidance_notice_emma.md",
+                 "save_internal_report.md"):
         assert (out / name).exists(), f"missing output {name}"
+
+
+def test_route_b_guidance_notices_are_split_not_combined(isolated_workspace: Path):
+    """Brief 6 — Daniel's and Emma's guidance notices are SEPARATE files, and
+    neither names the other family's child (no combined letter)."""
+    rt = _runtime(isolated_workspace)
+    rt.run(raw_goal=ROUTE_B_GOAL)
+    out = _outputs(isolated_workspace)
+    daniel = (out / "guidance_notice_daniel.md").read_text(encoding="utf-8").lower()
+    emma = (out / "guidance_notice_emma.md").read_text(encoding="utf-8").lower()
+    assert "emma" not in daniel, "Daniel's notice named Emma"
+    assert "daniel" not in emma, "Emma's notice named Daniel"
 
 
 def test_route_b_fb_post_excludes_struggling_students(isolated_workspace: Path):

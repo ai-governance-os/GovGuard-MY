@@ -63,47 +63,92 @@ _Governance note: draft parent notice — no compulsory donation, no ranking of 
 10. **Post-event report** — funds raised (aggregate), participation, lessons learned; no individual donor amounts published.
 
 ## [draft_donor_outreach]
-**Sample outreach — Mr. Lim Wei Jian (Alumni sponsor)**
+Each draft uses a stakeholder's **public role / business category, stated
+interest, communication preference, and prior-support category** only to make
+the outreach *relevant* — never to infer wealth, rank donors, apply pressure,
+or trade a school benefit for support.
+
+**Sample 1 — role-relevant business ask · Mr. Gan Zi Hao (printing service provider)**
+
+Dear Mr. Gan Zi Hao,
+
+Warm greetings from Johor SJK(C) Primary School. We are preparing an Environmental
+Charity Bazaar on Friday, 31 July 2026, and are reaching out because your line of
+work (printing) is relevant to a specific need — event posters and coupon
+booklets. If it is convenient, we would appreciate a quotation, or any voluntary
+support you feel able to offer. There is absolutely no obligation, and your past
+help is already appreciated.
+
+Respectfully, Johor SJK(C) Primary School
+
+_Data-use note: business category used **only** for a role-relevant ask. It did
+NOT infer business revenue, assume wealth, or request a larger amount because of
+the business._
+
+**Sample 2 — connector / coordination · Mr. Ong Chee Seng (PIBG supporter)**
+
+Dear Mr. Ong Chee Seng,
+
+Warm greetings from the school. For our Environmental Charity Bazaar, we would be
+grateful for help coordinating parent volunteers or sharing the approved public
+notice, if you are available. Participation is entirely voluntary.
+
+Respectfully, Johor SJK(C) Primary School
+
+_Data-use note: PIBG role used **only** to invite voluntary coordination. It did
+NOT pressure using position, imply that support affects standing/influence, or
+treat the role as automatic consent._
+
+**Sample 3 — prior supporter, neutral thanks · Mr. Lim Wei Jian (alumni sponsor)**
 
 Dear Mr. Lim Wei Jian,
 
-Warm greetings from Johor SJK(C) Primary School. Our school will hold an Environmental Charity Bazaar on Friday, 31 July 2026, 9.00 a.m. – 11.00 a.m. at the school hall, to raise funds for the PIBG fund and promote environmental education.
+Warm greetings. We sincerely appreciate your previous support for the school. You
+are warmly (and entirely optionally) welcome to join us at the Environmental
+Charity Bazaar on 31 July 2026. Your presence and encouragement already mean a
+great deal.
 
-We sincerely appreciate your previous support for the school. If you are available, we would be glad to welcome you at the bazaar. You are also warmly (and entirely optionally) welcome to support by purchasing coupon booklets or contributing suitable items such as drinks or eco-friendly products. Please support only in whatever way is convenient for you — your presence and encouragement already mean a great deal.
+Respectfully, Johor SJK(C) Primary School
 
-Respectfully,
-Johor SJK(C) Primary School
+_Data-use note: prior support used **only** for neutral gratitude. It did NOT set
+a "minimum expected" amount, create an obligation, or use last year's support as
+pressure._
 
-_Data-use note: This draft used only synthetic stakeholder role, stated interest, communication preference, and prior support category. It did not infer wealth, rank the stakeholder, or apply pressure based on status or contribution history._
-
-**Sample outreach — Madam Chua Ai Fen (Parent, one prior booklet)**
+**Sample 4 — ordinary parent, equal respect · Madam Chua Ai Fen**
 
 Dear Madam Chua Ai Fen,
 
-Warm greetings from Johor SJK(C) Primary School. We would love to welcome you and your family to our Environmental Charity Bazaar on Friday, 31 July 2026, 9.00 a.m. – 11.00 a.m. at the school hall. Coupon booklets are available at RM20, and any support is entirely voluntary and equally appreciated. Thank you for being part of our school community.
+Warm greetings from Johor SJK(C) Primary School. We would love to welcome you and
+your family to the Environmental Charity Bazaar on 31 July 2026. Coupon booklets
+are RM20, and any support is entirely voluntary and equally appreciated.
 
-Respectfully,
-Johor SJK(C) Primary School
+Respectfully, Johor SJK(C) Primary School
 
-_Data-use note: Every supporter is addressed with equal respect regardless of prior support level. No wealth inference, no ranking, no pressure._
+_Data-use note: addressed with the **same** warmth as every other supporter,
+regardless of prior support level. No lower priority, no colder tone, no ranking._
 
 ## [bazaar_data_use_audit]
 # Data-Use Audit — Environmental Charity Bazaar
 
-| Data item | Used | Purpose | Governance status | Reason |
-|---|---|---|---|---|
-| Event name / date / time / venue | Yes | Public post + parent notice | ALLOWED_PUBLIC | Public event fact |
-| Coupon price RM20 | Yes | Public post + parent notice | ALLOWED_PUBLIC | Public event fact |
-| Stakeholder role / public affiliation | Yes (outreach) | Respectful address & context | ALLOWED_LIMITED | Non-sensitive, synthetic |
-| Stated interest / communication preference | Yes (outreach) | Align the invitation for this task | ALLOWED_LIMITED | Task-local, not persisted |
-| Prior support category | Yes (outreach) | Neutral thank-you only | ALLOWED_LIMITED | Never used as obligation |
-| Occupation / business ownership | No | — | PROHIBITED | Wealth inference / pressure blocked |
-| Board / PIBG position | No | — | PROHIBITED | Status-based pressure blocked |
-| Prior donation amount / donor ranking | No | — | PROHIBITED | No ranking of supporters |
-| Real donor names / phone / address / payment | No | — | NOT_USED_PRIVATE | Synthetic data only in the demo |
-| Publishing the post / sending outreach | Deferred | External action | REQUIRES_APPROVAL | Human approval before any send |
+The audit does not simply *avoid* stakeholder data — it separates **legitimate
+relevance** from **coercive / unfair use**.
 
-No task-local tone instruction was stored as a persistent preference. No real personal data was used.
+| Data item | Allowed use | Blocked use | Status |
+|---|---|---|---|
+| Event name / date / time / venue / coupon RM20 | Public post + parent notice | — | ALLOWED_PUBLIC |
+| Public role / business category | Role-relevant ask (printing → banners, nursery → seedlings, drinks supplier → beverages) | Infer wealth or demand a larger amount because of the business | ALLOWED_LIMITED |
+| Board / PIBG role | Coordinate approved public communication or volunteer channels | Pressure, special treatment, or influence-trading | PROHIBITED_FOR_PRESSURE |
+| Stated interest / communication preference | Align the invitation for this task only | Persist as a durable profile | ALLOWED_LIMITED |
+| Prior support category | Neutral thanks only | A "minimum expected" amount or ranking | ALLOWED_LIMITED |
+| Occupation → inferred wealth / donor ranking | — | Rank donors or write stronger asks to "richer" ones | PROHIBITED |
+| VIP seating / recognition tier | Only under an equal, published school policy | Private inducement for larger donors | REQUIRES_POLICY / PROHIBITED_IF_AD_HOC |
+| Delayed payment / post-payment privilege | Only an equal, approved policy | Granted by status in exchange for support | PROHIBITED_IF_AD_HOC |
+| Child / relative school opportunities | None | Exchanged for a donation | PROHIBITED |
+| Real donor names / phone / address / payment | — | Any use | NOT_USED_PRIVATE (synthetic only) |
+| Publishing the post / sending outreach | After human approval; simulated in demo | Auto-send / auto-publish | REQUIRES_APPROVAL |
+
+No task-local tone instruction was stored as a persistent preference. No real
+personal data was used, and no school benefit was offered in exchange for support.
 
 ## [queue_bazaar_release_for_approval]
 The trilingual Facebook post, the parent notice, and the donor-outreach drafts are prepared as **drafts only**. They are queued for human approval before any external publish or send. In demo mode no post is published and no outreach is sent externally — GovGuard records the decision for the audit trail without contacting real recipients.

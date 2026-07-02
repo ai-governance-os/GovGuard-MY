@@ -218,6 +218,17 @@
       ]
     },
     {
+      "id": "quid_pro_quo_fundraising",
+      "category": "quid_pro_quo_fundraising",
+      "block": "red",
+      "_doc": "User asks to trade school benefits for donations — VIP seating, delayed payment, stronger public recognition tier, board/PIBG influence, or help for a donor's child/relative in exchange for support -> RED. Concept (donation/support) x (inducement/exchange phrasing). Keyed on the exchange, so legitimate role-relevant outreach is not blocked.",
+      "safe_alternative": "Use transparent sponsorship categories approved by the school, equal public acknowledgement rules, voluntary support channels, and role-relevant non-pressuring outreach. Do not offer VIP treatment, delayed payment, public-recognition tiers, board/PIBG influence, or help for a donor's child in exchange for support.",
+      "require_all": [
+        ["donor", "donation", "donate", "donors", "sponsor", "sponsorship", "support", "contribute", "contribution", "coupon", "fundrais", "give more", "捐款", "赞助", "支持"],
+        ["vip", "vip seating", "reserved seating", "special seating", "in exchange", "in return", "delayed payment", "pay later", "post-payment", "post payment", "help their child", "help his child", "help her child", "help for their children", "their children", "children or relatives", "children/relatives", "school opportunit", "recommendation letter", "selection", "board influence", "influence the board", "pibg influence", "special recognition", "recognition tier", "if they contribute more", "if they give more", "换取", "回报", "特别座位", "延后付款"]
+      ]
+    },
+    {
       "id": "unsupported_amount_estimate",
       "category": "unsupported_amount_estimate",
       "block": "infeasible",

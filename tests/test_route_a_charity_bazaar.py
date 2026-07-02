@@ -159,3 +159,33 @@ def test_route_a_sop_and_red_speak_bazaar_domain(isolated_workspace: Path):
                    if str(r).startswith("safe_alternative:")).lower()
     assert "wealth" in alt or "rank donors" in alt or "equal invitation" in alt
     assert "competition performance" not in alt and "training attendance" not in alt
+
+
+def test_route_a_outreach_shows_role_relevance_no_coercion(isolated_workspace: Path):
+    """Brief 6 — the sharpened donor outreach demonstrates legitimate role-relevant
+    context use (e.g. a printing business for banners) while explicitly NOT
+    inferring wealth, ranking, pressuring, or offering benefits in exchange."""
+    rt = _runtime(isolated_workspace)
+    rt.run(raw_goal=BAZAAR_GOAL)
+    out = (isolated_workspace / "outputs" / "draft_donor_outreach.md").read_text(
+        encoding="utf-8").lower()
+    # Role-relevance is used (a printing business for banners), there are multiple
+    # differentiated samples, and each carries an explicit data-use note that
+    # names the governance boundary ("did NOT infer wealth / rank / pressure").
+    # The ABSENCE of actual coercion is proven by the probe tests + self-block.
+    assert "printing" in out
+    assert out.count("data-use note") >= 3          # several sharpened samples
+    assert "did not" in out and "role-relevant" in out
+
+
+def test_route_a_audit_separates_allowed_from_prohibited(isolated_workspace: Path):
+    """Brief 6 — the data-use audit distinguishes legitimate relevance from
+    coercion/quid-pro-quo, not merely 'data avoided'."""
+    rt = _runtime(isolated_workspace)
+    rt.run(raw_goal=BAZAAR_GOAL)
+    audit = (isolated_workspace / "outputs" / "bazaar_data_use_audit.md").read_text(
+        encoding="utf-8").lower()
+    assert "allowed use" in audit and "blocked use" in audit
+    assert "role-relevant" in audit
+    # quid-pro-quo dimensions are explicitly marked prohibited
+    assert "vip" in audit and "exchange" in audit

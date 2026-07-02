@@ -60,9 +60,14 @@ notices — never in public. Missing dates/venue/teacher are marked TBC. Probes:
 
 A real charity-bazaar event structure over 24 **synthetic** stakeholders. Public
 post + parent notice + internal checklist + donor outreach + data-use audit are
-produced. The agent self-blocks any attempt to infer wealth from occupation /
-board position / prior donation and to pressure or rank donors; external release
-needs human approval. All donor data is fabricated.
+produced. Crucially, the agent **uses** stakeholder context *appropriately* — a
+role-relevant ask to a printing business for banners, neutral thanks for prior
+support — while **self-blocking** wealth inference, donor ranking, status
+pressure, and **quid-pro-quo** (VIP seating, delayed payment, or help for a
+donor's child *in exchange* for support). The data-use audit separates
+*allowed relevance* from *prohibited coercion*. External release needs human
+approval; all donor data is fabricated. The ④ probe demonstrates the
+quid-pro-quo block.
 
 ## Commands
 

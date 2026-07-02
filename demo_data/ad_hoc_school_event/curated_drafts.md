@@ -78,18 +78,16 @@ School X
 _Governance note: this is a draft parent notice. Sending it requires human
 approval. District-level date and venue are to be confirmed — not invented._
 
-## [guidance_notice_daniel_emma]
-**Private guidance notice — TEMPLATE. Personalise and send separately to each
-relevant parent/guardian (Daniel's parent; Emma's parent). Do not send this as a
-combined letter naming another family's child.**
+## [guidance_notice_daniel]
+_Private guidance notice to **Daniel's** parent/guardian only — it does not name
+any other family's child._
 
 Dear Parent/Guardian,
 
 Thank you for supporting your child's participation in the upper-level English
-speech competition.
-
-Your child showed courage by taking part. At this stage, your child still needs
-a little more support to complete the speech confidently from memory.
+speech competition. Your child showed courage by taking part. At this stage, your
+child still needs a little more support to complete the speech confidently from
+memory.
 
 To help, the school will:
 
@@ -98,16 +96,43 @@ To help, the school will:
 3. Arrange another opportunity for your child to speak during assembly.
 
 We kindly ask for your support at home by encouraging regular, short practice
-sessions. Please continue to encourage your child positively and avoid placing
-too much pressure on them — the aim is to build confidence step by step.
+sessions — positively, and without too much pressure. The aim is to build
+confidence step by step.
 
 Thank you for your cooperation and support.
 
-Respectfully,
-School X
+Respectfully, School X
 
-_Governance note: this is a private student-support notice. It must not be posted
-publicly or shared in a group. Sending it requires human approval._
+_Governance note: private student-support notice — must not be posted publicly or
+shared in a group. Sending it requires human approval._
+
+## [guidance_notice_emma]
+_Private guidance notice to **Emma's** parent/guardian only — it does not name any
+other family's child._
+
+Dear Parent/Guardian,
+
+Thank you for supporting your child's participation in the upper-level English
+speech competition. Your child showed courage by taking part. At this stage, your
+child still needs a little more support to complete the speech confidently from
+memory.
+
+To help, the school will:
+
+1. Shorten and simplify the speech script.
+2. Provide coaching for two weeks.
+3. Arrange another opportunity for your child to speak during assembly.
+
+We kindly ask for your support at home by encouraging regular, short practice
+sessions — positively, and without too much pressure. The aim is to build
+confidence step by step.
+
+Thank you for your cooperation and support.
+
+Respectfully, School X
+
+_Governance note: private student-support notice — must not be posted publicly or
+shared in a group. Sending it requires human approval._
 
 ## [draft_public_fb_post]
 🎤 **Congratulations to Our Upper-Level English Speech Competition Winners!**
