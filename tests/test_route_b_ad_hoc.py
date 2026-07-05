@@ -28,6 +28,17 @@ ROUTE_B_GOAL = (
     "internal report, champion parent notice, and private guidance notice for "
     "Daniel and Emma's parents. Do not send or publish anything."
 )
+# Brief 8 — the SHORT, natural prompt (the primary generalisation proof): the
+# user gives facts + intent; the workflow/SOP decides the output package —
+# without the user enumerating every artifact.
+ROUTE_B_SHORT_GOAL = (
+    "School X had an upper-level English speech competition. Alice won "
+    "champion, Ben second, Chloe third. Alice will go to district level. "
+    "Daniel and Emma need support because they could not finish memorising "
+    "their speeches. The school will simplify their scripts, coach them for "
+    "two weeks, and let them speak again at assembly. Prepare the school "
+    "follow-up."
+)
 NAT_GOAL = "全国赛成绩出来了，处理一下。"
 POST_EVENT_GOAL = "Sports day results are ready. Prepare everything."
 
@@ -65,6 +76,31 @@ def test_route_b_detected(isolated_workspace: Path):
     assert res is not None, "Route B speech-competition goal did not resolve"
     assert res["workflow_id"] == "ad_hoc_school_event_reporting", res["workflow_id"]
     assert res["confidence"] >= 0.7
+
+
+def test_route_b_short_prompt_detected(isolated_workspace: Path):
+    """Brief 8 — the SHORT prompt must route WITHOUT the user naming any output
+    artifact (no 'Facebook post' / 'internal report' / 'guidance notice' in it
+    beyond intent + facts)."""
+    res = _resolver(isolated_workspace).resolve(_envelope(ROUTE_B_SHORT_GOAL), None)
+    assert res is not None, "short Route B prompt did not resolve"
+    assert res["workflow_id"] == "ad_hoc_school_event_reporting", res["workflow_id"]
+    assert res["confidence"] >= 0.7
+
+
+def test_route_b_short_prompt_produces_same_output_class(isolated_workspace: Path):
+    """The short prompt yields the same governed follow-up package as the full
+    deterministic prompt — the agent infers the artifacts, the user doesn't
+    enumerate them."""
+    rt = _runtime(isolated_workspace)
+    rt.run(raw_goal=ROUTE_B_SHORT_GOAL)
+    out = isolated_workspace / "outputs"
+    for name in ("draft_public_fb_post.md", "champion_notice_alice.md",
+                 "guidance_notice_daniel.md", "guidance_notice_emma.md",
+                 "save_internal_report.md", "case_data_use_audit.md"):
+        assert (out / name).exists(), f"short prompt missed output {name}"
+    fb = (out / "draft_public_fb_post.md").read_text(encoding="utf-8").lower()
+    assert "daniel" not in fb and "emma" not in fb
 
 
 def test_route_b_does_not_steal_national(isolated_workspace: Path):
@@ -150,6 +186,30 @@ def test_route_b_sop_speaks_event_domain(isolated_workspace: Path):
                    if str(r).startswith("safe_alternative:")).lower()
     assert "internal report" in alt or "celebrate the winners" in alt
     assert "training attendance" not in alt and "competition performance" not in alt
+
+
+def test_route_b_sop_matches_ten_step_runtime(isolated_workspace: Path):
+    """Retest P1 / Brief 8 regression lock: the learned SOP must be as faithful
+    as the executed workflow — 10 steps, with the two individually-addressed
+    guidance notices kept as TWO separate steps (not collapsed into one
+    generic line) — while staying NON-PERSONAL: no pupil name ever enters
+    procedural memory ('transfers procedure, not private data')."""
+    rt = _runtime(isolated_workspace)
+    res = rt.run(raw_goal=ROUTE_B_GOAL)
+    # runtime executed 10 workflow steps
+    runtime_steps = [a for a in res.plan.actions
+                     if a.metadata.get("workflow_step_id")]
+    assert len(runtime_steps) == 10, len(runtime_steps)
+    sop = next(p for p in rt.curator_proposals
+               if p.get("source_module") == "109B-SOP")
+    proc_lines = [l for l in sop["procedure"].splitlines() if l.strip()]
+    assert len(proc_lines) == 10, sop["procedure"]
+    low = sop["procedure"].lower()
+    assert "first affected pupil's parent" in low
+    assert "second affected pupil's parent" in low
+    # anonymised: procedure carries NO pupil names into memory
+    for name in ("daniel", "emma", "alice", "ben", "chloe"):
+        assert name not in low, f"SOP leaked a pupil name: {name!r}"
 
 
 def test_route_b_produces_the_outputs(isolated_workspace: Path):

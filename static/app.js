@@ -100,7 +100,11 @@ async function loadConfig() {
     const c = await r.json();
     const parts = [`planner: ${c.planner}`];
     if (c.domain_pack) parts.push(`pack: ${c.domain_pack}`);
-    $("#cfg-mini").textContent = parts.join(" · ");
+    // Raw technical config lives in the Mode pill's tooltip (and the audit
+    // drawer), not as competing topbar text — the pills carry the judge-facing
+    // story (retest P2).
+    const cfgMini = $("#cfg-mini");
+    if (cfgMini) cfgMini.textContent = parts.join(" · ");
     // MAIC demo-mode lockout banner (Owner Rule 4).
     const banner = $("#demo-banner");
     if (banner) banner.hidden = !c.demo_mode;
@@ -115,6 +119,7 @@ async function loadConfig() {
       if (c.planner === "openai") modePill.textContent = "Mode: live API · governed";
       else if (liveOn) modePill.textContent = "Mode: mixed — core deterministic · unseen case live";
       else modePill.textContent = "Mode: deterministic demo";
+      modePill.title = parts.join(" · ");
     }
     const extPill = $("#external-pill");
     if (extPill && c.demo_mode === false) {
@@ -130,7 +135,7 @@ async function loadConfig() {
         ? "Live API · governed"
         : "Deterministic demo (live-ready)";
     }
-  } catch (e) { $("#cfg-mini").textContent = ""; }
+  } catch (e) { const cm = $("#cfg-mini"); if (cm) cm.textContent = ""; }
 }
 
 // ---------------- Composer / send ----------------

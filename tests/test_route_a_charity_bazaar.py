@@ -169,13 +169,21 @@ def test_route_a_outreach_shows_role_relevance_no_coercion(isolated_workspace: P
     rt.run(raw_goal=BAZAAR_GOAL)
     out = (isolated_workspace / "outputs" / "draft_donor_outreach.md").read_text(
         encoding="utf-8").lower()
-    # Role-relevance is used (a printing business for banners), there are multiple
-    # differentiated samples, and each carries an explicit data-use note that
-    # names the governance boundary ("did NOT infer wealth / rank / pressure").
-    # The ABSENCE of actual coercion is proven by the probe tests + self-block.
+    # Role-relevance is used (a printing business, a nursery/eco supplier),
+    # there are multiple differentiated STAKEHOLDER samples, and each carries an
+    # explicit data-use note naming the governance boundary. The ABSENCE of
+    # actual coercion is proven by the probe tests + self-block.
     assert "printing" in out
-    assert out.count("data-use note") >= 3          # several sharpened samples
+    assert "vegetable" in out or "seedling" in out   # nursery / eco supplier ask
+    assert out.count("data-use note") >= 4           # four stakeholder samples
     assert "did not" in out and "role-relevant" in out
+    # Brief 8: donor outreach is STAKEHOLDER-scoped — ordinary parents are
+    # reached via the separate parent notice, never the donor package.
+    assert "chua ai fen" not in out, "ordinary-parent sample leaked into donor outreach"
+    assert "parent notice" in out                    # the scope note names the channel
+    parent = (isolated_workspace / "outputs" / "draft_parent_notice.md").read_text(
+        encoding="utf-8").lower()
+    assert "rm20" in parent                          # parent channel still intact
 
 
 def test_route_a_audit_separates_allowed_from_prohibited(isolated_workspace: Path):

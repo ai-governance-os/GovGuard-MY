@@ -3824,6 +3824,16 @@ class Runtime:
         seen_prev = ""
         for step in steps:
             route = (step.get("route_hint") or "BLUE").upper()
+            # A step may supply its own PII-free SOP line (config `sop_line`).
+            # Used where the generic head would wrongly collapse two distinct
+            # steps into one (e.g. Route B's two individually-addressed
+            # guidance notices must stay TWO steps in the learned procedure —
+            # anonymised, never carrying a pupil's name into memory).
+            custom = (step.get("sop_line") or "").strip()
+            if custom:
+                lines.append(custom)
+                seen_prev = ""
+                continue
             if route == "RED":
                 lines.append(red_line or (
                     "Self-block any step that would use family status, income, "

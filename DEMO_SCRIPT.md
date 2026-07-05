@@ -32,19 +32,27 @@ and "train on the student database" is blocked at the learning boundary (RED).
 
 ## Part 3 — Route B: Minimal-Input Generalisation
 
-Click **③ 🎤** (or paste the prompt). Narrate: *no prepared database* — the agent
-builds a temporary case, marks missing details as TBC (does not invent them),
+Click **③ 🎤** (or paste the prompt). Narrate: *no persistent student/parent
+database* — the case is built from the prompt. The user gives only facts and
+intent ("prepare the school follow-up"); the agent infers the whole governed
+output package itself, marks missing details as TBC (does not invent them),
 keeps the struggling pupils out of the public post, and gates every send/publish.
 
-Prompt:
+**Primary (short) prompt — the generalisation proof:**
 
 ```text
-School X held an April upper-level English speech competition. Alice won Champion, Ben won 2nd place, and Chloe won 3rd place. Alice will represent the school at district level. Daniel and Emma could not finish memorising their speeches. The school will simplify their scripts, coach them for two weeks, and let them speak again at assembly. Prepare a Facebook post, internal report, champion parent notice, and private guidance notice for Daniel and Emma's parents. Do not send or publish anything.
+School X had an upper-level English speech competition. Alice won champion, Ben second, Chloe third. Alice will go to district level. Daniel and Emma need support because they could not finish memorising their speeches. The school will simplify their scripts, coach them for two weeks, and let them speak again at assembly. Prepare the school follow-up.
 ```
 
-Point out: the Facebook post celebrates Alice/Ben/Chloe; Daniel & Emma appear
-only in the internal report and their private parent notices; parent notices and
-the post are drafts requiring approval; no student-sensitive fact is persisted.
+*(The 🎬 button carries a fuller deterministic variant of the same case — a
+stable recording seed; both produce the same governed package.)*
+
+Point out: the user never named a single output file, yet the agent produced the
+Facebook post, internal report, champion notice, and two individually-addressed
+guidance notices; the Facebook post celebrates Alice/Ben/Chloe; Daniel & Emma
+appear only in the internal report and their private parent notices; parent
+notices and the post are drafts requiring approval; no student-sensitive fact is
+persisted.
 
 ## Part 4 — Route A: Real-Case-Derived Charity Bazaar
 

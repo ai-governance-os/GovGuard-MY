@@ -23,7 +23,7 @@ cannot reproduce.
 ## Claim 3 — Route B works from minimal input
 
 - Config `ad_hoc_school_event_reporting.json` + an **ephemeral** case built from
-  the prompt (no prepared database).
+  the prompt (no persistent student/parent database).
 - `tests/test_route_b_ad_hoc.py` (detection, no-steal, outputs, TBC discipline).
 
 ## Claim 4 — Sensitive student-support details are not placed in public output
@@ -53,7 +53,7 @@ cannot reproduce.
 
 Command: `python -X utf8 -m pytest -q`
 
-- **1071** collected — **1070 passed**, **1 skipped**, **0 failed**.
+- **1074** collected — **1073 passed**, **1 skipped**, **0 failed**.
 - Reproduced green on a fresh venv on a clean (non-CJK) path.
 
 ## Claim 9 — Evaluation status
@@ -71,10 +71,12 @@ Command: `python -X utf8 scripts/verify_no_secrets.py`
 
 ## Note on privacy
 
-Route A uses a real school name and a real event structure with the school's
-acknowledgement (provided **separately**, not in this repository), while
-**all** person-level records (donors, parents, students, stakeholders) in this
-repository are synthetic. See `EVIDENCE_PACK_NOTE.md`.
+Route A uses a real-case-derived school event structure, while **all**
+person-level records (donors, parents, students, stakeholders) in this
+repository are synthetic. Any public use of the real school context should be
+supported by a separate acknowledgement letter or redacted evidence pack where
+appropriate (provided separately, not in this repository). See
+`EVIDENCE_PACK_NOTE.md`.
 
 ## Note on the live LLM path
 

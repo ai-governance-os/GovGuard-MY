@@ -63,12 +63,15 @@ _Governance note: draft parent notice — no compulsory donation, no ranking of 
 10. **Post-event report** — funds raised (aggregate), participation, lessons learned; no individual donor amounts published.
 
 ## [draft_donor_outreach]
-Each draft uses a stakeholder's **public role / business category, stated
-interest, communication preference, and prior-support category** only to make
-the outreach *relevant* — never to infer wealth, rank donors, apply pressure,
-or trade a school benefit for support.
+# Donor / Stakeholder Outreach Drafts — Environmental Charity Bazaar
 
-**Sample 1 — role-relevant business ask · Mr. Gan Zi Hao (printing service provider)**
+These drafts use only a stakeholder's **public role, business category, stated
+interest, communication preference, and prior-support category** for
+role-relevant outreach. They do NOT infer wealth, rank donors, apply pressure,
+or offer school benefits in exchange for support. *(Ordinary parents are
+reached through the separate parent notice — never through donor outreach.)*
+
+## Sample 1 — Printing service provider · Mr. Gan Zi Hao
 
 Dear Mr. Gan Zi Hao,
 
@@ -85,7 +88,24 @@ _Data-use note: business category used **only** for a role-relevant ask. It did
 NOT infer business revenue, assume wealth, or request a larger amount because of
 the business._
 
-**Sample 2 — connector / coordination · Mr. Ong Chee Seng (PIBG supporter)**
+## Sample 2 — Nursery / eco supplier · Mr. Chen Boon Kiat (vegetable grower)
+
+Dear Mr. Chen Boon Kiat,
+
+Warm greetings from the school. Our Environmental Charity Bazaar (Friday,
+31 July 2026) will have a green-products booth, and we are reaching out because
+your work in local produce is directly relevant — would you be comfortable
+contributing vegetables, seedlings, or simply advice for the booth? Any amount,
+or none at all, is entirely your choice; flexible options are welcome and your
+past kindness is already appreciated.
+
+Respectfully, Johor SJK(C) Primary School
+
+_Data-use note: business category used **only** for a role-relevant green-booth
+ask. It did NOT demand a quantity, assume his produce is available, or use his
+previous donation as pressure._
+
+## Sample 3 — Board / PIBG community coordinator · Mr. Ong Chee Seng
 
 Dear Mr. Ong Chee Seng,
 
@@ -99,7 +119,7 @@ _Data-use note: PIBG role used **only** to invite voluntary coordination. It did
 NOT pressure using position, imply that support affects standing/influence, or
 treat the role as automatic consent._
 
-**Sample 3 — prior supporter, neutral thanks · Mr. Lim Wei Jian (alumni sponsor)**
+## Sample 4 — Alumni sponsor / prior supporter · Mr. Lim Wei Jian
 
 Dear Mr. Lim Wei Jian,
 
@@ -113,19 +133,6 @@ Respectfully, Johor SJK(C) Primary School
 _Data-use note: prior support used **only** for neutral gratitude. It did NOT set
 a "minimum expected" amount, create an obligation, or use last year's support as
 pressure._
-
-**Sample 4 — ordinary parent, equal respect · Madam Chua Ai Fen**
-
-Dear Madam Chua Ai Fen,
-
-Warm greetings from Johor SJK(C) Primary School. We would love to welcome you and
-your family to the Environmental Charity Bazaar on 31 July 2026. Coupon booklets
-are RM20, and any support is entirely voluntary and equally appreciated.
-
-Respectfully, Johor SJK(C) Primary School
-
-_Data-use note: addressed with the **same** warmth as every other supporter,
-regardless of prior support level. No lower priority, no colder tone, no ranking._
 
 ## [bazaar_data_use_audit]
 # Data-Use Audit — Environmental Charity Bazaar

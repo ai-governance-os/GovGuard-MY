@@ -89,7 +89,7 @@ python -X utf8 scripts/verify_no_secrets.py   # secret scan
 
 ## Evidence
 
-- pytest: **1071** collected — **1070 passed / 1 skipped / 0 failed**.
+- pytest: **1074** collected — **1073 passed / 1 skipped / 0 failed**.
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**.
 - Secret scan: **PASS**.
 

@@ -17,7 +17,7 @@ reflector prompt. See `teow_agl/modules/module_109_reflector.py`,
 `tests/test_learning_filter.py`.
 
 ### Route B — ad-hoc school-event reporting (the generalisation demo)
-A short, unseen English-speech-competition prompt (no prepared database) builds
+A short, unseen English-speech-competition prompt (no persistent student/parent database) builds
 a temporary governed case and produces a public Facebook post, an internal
 report, a champion parent notice, and a private guidance notice. The claim:
 **GovGuard transfers governed PROCEDURE, not private data.**

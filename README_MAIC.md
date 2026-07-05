@@ -48,7 +48,7 @@ The landing console groups the four demo parts into a three-tier narrative
 
 ## Evidence
 
-- pytest: **1071** collected — **1070 passed / 1 skipped / 0 failed**.
+- pytest: **1074** collected — **1073 passed / 1 skipped / 0 failed**.
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**.
 - Secret scan: **PASS**.
 - All offline / keyless (`smart_mock`, `MAIC_DEMO_MODE=1`).
@@ -58,8 +58,9 @@ The landing console groups the four demo parts into a three-tier narrative
 Real administrative workflows are used responsibly: the real **event structure**
 is allowed, but sensitive **person-level** records are synthetic or redacted.
 No real donor, parent, or student-sensitive record is exposed in the demo.
-Route A's school name and event structure are real and used with the school's
-acknowledgement, provided as a **separate** evidence pack (not in this
+Route A's event structure is real-case-derived; any public use of the real
+school context should be supported by a separate acknowledgement letter or
+redacted evidence pack where appropriate (provided separately, not in this
 repository). All person-level records in this repository are synthetic. See
 `EVIDENCE_PACK_NOTE.md`.
 

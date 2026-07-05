@@ -8,16 +8,16 @@ expect, and which V2 behaviours **must stay unchanged** (regression).
 
 ## 0. TL;DR
 
-- **V2 = the frozen competition submission** (branch `10.7.4-workflow-autonomy`,
-  commit `46b8569`). It is **unchanged** by V3. Do not "fix" V2 from here.
+- **V3 = the current MAIC submission build** (branch `10.7.5-v3-route-b`).
+- **V2 = frozen baseline / historical regression reference** (commit `46b8569`)
+  — do not modify it, and do not "fix" V2 from here.
 - **V3 = V2 + one shared learning-boundary hardening + TWO new demo routes.**
-  Branch `10.7.5-v3-route-b`. Folder: `GovGuard_Workflow_V3_测试版_本机`.
 - **Everything is keyless (smart_mock).** The live `gpt-4o` path is built and
   unit-tested but **NOT yet validated live** (needs a rotated API key). Test
   with keys **UNSET**.
 - **The point of V3:** prove GovGuard is not hard-coded to one case — it
   transfers governed **procedure** to new cases, never private data.
-- Full offline suite: **1070 passed / 1 skipped** (1071 collected), secrets clean, and a
+- Full offline suite: **1073 passed / 1 skipped** (1074 collected), secrets clean, and a
   fresh-venv reproduce on a clean path is green (no flaky tests).
 
 ---
@@ -25,10 +25,10 @@ expect, and which V2 behaviours **must stay unchanged** (regression).
 ## 1. How to run V3
 
 ```powershell
-# From the V3 folder (NOT the V2 folder). Stop any V2 server first (port 8765).
-cd "...\GovGuard_Workflow_V3_测试版_本机"
-.\.venv\Scripts\python.exe -X utf8 -m server.app
-#  → http://127.0.0.1:8765   (hard-refresh the browser)
+# From the V3 submission folder (NOT the V2 folder). Stop any stale server first (port 8765).
+cd <the V3 submission folder>
+python -X utf8 -m server.app
+#  → http://127.0.0.1:8765
 ```
 
 - If port 8765 is busy, a stale server is running — stop it first:
@@ -59,8 +59,8 @@ says "remember that I prefer …".
 
 ### 2.2 Route B — Ad-hoc school speech competition (UI section ③)
 
-The **generalisation** demo: a short, unseen prompt with **no prepared
-database**. GovGuard builds a temporary case and produces public + internal +
+The **generalisation** demo: a short, unseen prompt with **no persistent
+student/parent database**. GovGuard builds a temporary case and produces public + internal +
 parent outputs, keeping the struggling pupils **out of public view**, marking
 missing facts **to-be-confirmed** (never invented), and routing send/publish to
 approval. It also **reuses** the procedure it learned from the national case —
@@ -82,8 +82,12 @@ RED self-block on **wealth inference / status pressure**.
 
 ### 3.1 Section ③ — Route B (generalisation)
 
-**Button "🎤 An ad-hoc speech-competition report → run the workflow on a new case"**
-Prompt (paste if needed):
+**Button "🎤 A short school-event prompt → let the agent infer the follow-up
+package"** — the PRIMARY generalisation proof: the user gives only facts +
+"prepare the school follow-up"; the agent infers the whole output package. The
+secondary **🎬 "Full deterministic Route B demo prompt"** button carries the
+fuller enumerated variant below (a stable recording seed — both produce the
+same governed package):
 > School X held an April upper-level English speech competition. Alice won
 > Champion, Ben won 2nd place, and Chloe won 3rd place. Alice will represent the
 > school at district level. Daniel and Emma could not finish memorising their

@@ -1,22 +1,18 @@
 # Evidence Pack Note
 
-Route A is a **real-case-derived** workflow based on a school charity-bazaar
-administrative process. To protect privacy, this submission repository uses
-**synthetic** stakeholder and donor data throughout.
+Route A is a real-case-derived workflow based on a school charity bazaar
+administrative process. To protect privacy, this submission uses synthetic
+stakeholder and donor data throughout.
 
-Any real-world supporting evidence — a school acknowledgement letter, a public
-event poster, a public Facebook link, or a redacted meeting record — is provided
-**separately** (an evidence pack) and is **not** included in this repository.
+Any public use of the real school name and event structure should be supported
+by a separate school acknowledgement letter or redacted evidence pack where
+appropriate. Such supporting evidence (acknowledgement letter, public event
+poster, public Facebook link, redacted meeting record) is provided separately
+and is not included in this repository.
 
-This repository intentionally does **not** include:
+This repository intentionally does not include real donor lists, private
+WhatsApp screenshots, parent contact details, student-sensitive records, or
+real person-level contribution histories.
 
-- real donor lists,
-- private WhatsApp screenshots,
-- parent contact details,
-- student-sensitive records,
-- real person-level contribution histories,
-- payment records.
-
-The real school name and event structure are used with the school's
-acknowledgement. All person-level records in the code and demo data are
-fabricated and structurally representative only.
+The purpose of Route A is to demonstrate governed administrative procedure,
+not to expose private school-community records.

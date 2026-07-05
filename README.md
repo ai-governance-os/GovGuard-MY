@@ -33,7 +33,7 @@ evidence** (collapsed case study):
    later free-text requests (BLUE edit, RED status-pressure, GREEN release,
    INFEASIBLE reward guess, RED learning-boundary).
 3. **③ Route B — ad-hoc school speech competition (generalisation)** — a short,
-   unseen prompt with *no prepared database*; the agent builds a temporary case
+   unseen prompt with *no persistent student/parent database*; the agent builds a temporary case
    and governs it.
 4. **④ Route A — real-case-derived school charity bazaar** — a realistic
    administrative deployment over a *synthetic* stakeholder/donor database.
@@ -50,7 +50,7 @@ approval.
 
 ## Route B: minimal-input generalisation
 
-No prepared database. From a short, unseen speech-competition prompt the agent
+No persistent student/parent database — the case is built from the prompt. From a short, unseen speech-competition prompt the agent
 builds an **ephemeral case envelope**, splits public achievement from private
 student-support information (winners celebrated publicly; struggling pupils kept
 to the internal report and private parent notices), marks missing facts as
@@ -89,7 +89,7 @@ actually running.
 
 ## Test evidence
 
-- **1071** tests collected — **1070 passed**, **1 skipped**, **0 failed**
+- **1074** tests collected — **1073 passed**, **1 skipped**, **0 failed**
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**
 - Secret scan: **PASS** (no secrets, no blocked files in the public surface)
 
@@ -99,9 +99,10 @@ Real-case-derived, privacy-preserving: real school **event structure** may be
 used, but **all** person-level records (donors, parents, students, stakeholders)
 are **synthetic or redacted**. No real donor list, phone number, address,
 payment record, WhatsApp record, or student-sensitive record appears in the
-public demo. *(Route A's school name and event structure are real and used with
-the school's acknowledgement; all person-level stakeholder/donor records are
-synthetic.)*
+public demo. *(Route A's event structure is real-case-derived; all person-level
+stakeholder/donor records are synthetic. Any public use of the real school
+context should be supported by a separate acknowledgement letter or redacted
+evidence pack where appropriate — see `EVIDENCE_PACK_NOTE.md`.)*
 
 ## Repository notes
 
