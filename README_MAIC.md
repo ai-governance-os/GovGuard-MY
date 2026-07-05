@@ -48,7 +48,7 @@ The landing console groups the four demo parts into a three-tier narrative
 
 ## Evidence
 
-- pytest: **1074** collected — **1073 passed / 1 skipped / 0 failed**.
+- pytest: **1079** collected — **1078 passed / 1 skipped / 0 failed**.
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**.
 - Secret scan: **PASS**.
 - All offline / keyless (`smart_mock`, `MAIC_DEMO_MODE=1`).

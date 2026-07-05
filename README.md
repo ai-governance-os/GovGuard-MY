@@ -45,8 +45,9 @@ A real school event structure (Environmental Charity Bazaar) over a **synthetic*
 Bahasa Melayu / English) Facebook post, an English parent notice, an internal
 preparation checklist, non-pressuring donor-outreach drafts, and a data-use
 audit — while self-blocking wealth inference, donor ranking, and status/prior-
-support pressure, and routing every external post/notice/outreach to human
-approval.
+support pressure. A drafts-only request ends with a recorded external-release
+boundary: any actual send/publish is a separate request that routes GREEN and
+requires human approval.
 
 ## Route B: minimal-input generalisation
 
@@ -89,7 +90,7 @@ actually running.
 
 ## Test evidence
 
-- **1074** tests collected — **1073 passed**, **1 skipped**, **0 failed**
+- **1079** tests collected — **1078 passed**, **1 skipped**, **0 failed**
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**
 - Secret scan: **PASS** (no secrets, no blocked files in the public surface)
 

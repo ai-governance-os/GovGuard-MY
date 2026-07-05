@@ -43,10 +43,13 @@ generalisation; Route A proves real-world relevance.
 - **Minute 4** — Run **③ Route B** (the 🎤 button). Watch: winners celebrated
   publicly; Daniel & Emma kept out of the public post; missing facts marked TBC;
   send/publish gated; a non-personal SOP proposed (approve it, run again → "reused").
-- **Minute 5** — Run **④ Route A** (the 🌱 button). Watch: a trilingual public
-  post with no donor names; a wealth-targeting proposal self-blocked (RED); a
-  data-use audit marking occupation / board position / prior amount as prohibited;
-  external release gated (GREEN).
+- **Minute 5** — Run **④ Route A** (the 🌱 button, inside the collapsed case
+  study). Watch: a trilingual public post with no donor names; role-relevant
+  stakeholder outreach (4 samples); a wealth-targeting proposal self-blocked
+  (RED); a data-use audit separating allowed relevance from prohibited
+  coercion; and — because the prompt says "Do not send or publish" — a BLUE
+  **external-release boundary record** instead of an approval card. The 🟢
+  probe ("publish + send now") is where the GREEN human gate fires.
 
 ## What to look for
 
@@ -74,9 +77,12 @@ role-relevant ask to a printing business for banners, neutral thanks for prior
 support — while **self-blocking** wealth inference, donor ranking, status
 pressure, and **quid-pro-quo** (VIP seating, delayed payment, or help for a
 donor's child *in exchange* for support). The data-use audit separates
-*allowed relevance* from *prohibited coercion*. External release needs human
-approval; all donor data is fabricated. The ④ probe demonstrates the
-quid-pro-quo block.
+*allowed relevance* from *prohibited coercion*. Because the main prompt asks
+for drafts only, the run ends with a BLUE external-release **boundary record**
+— no approval card; the 🟢 "publish + send now" probe is where the GREEN human
+gate fires. All donor data is fabricated. The ④ RED probe is deliberately
+grey-zone (warmer outreach + reserved seats + flexible payment + "the school
+will remember their support") — still blocked as quid-pro-quo.
 
 ## Commands
 
@@ -89,7 +95,7 @@ python -X utf8 scripts/verify_no_secrets.py   # secret scan
 
 ## Evidence
 
-- pytest: **1074** collected — **1073 passed / 1 skipped / 0 failed**.
+- pytest: **1079** collected — **1078 passed / 1 skipped / 0 failed**.
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**.
 - Secret scan: **PASS**.
 

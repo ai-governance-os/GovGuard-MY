@@ -1436,6 +1436,28 @@ class ContentSynthesizer:
             # Honorific allowed only as a salutation, never as a stated reason.
             if any(t in low for t in _WF_STATUS_AS_REASON):
                 return False
+        # Completeness gate (first live run, 2026-07-05): a live model can
+        # COMPRESS a multi-part deliverable — e.g. four stakeholder outreach
+        # letters — into ONE letter. It fabricates nothing, so the leak checks
+        # pass, yet most of the deliverable is silently dropped. Scoped to
+        # MULTI-SAMPLE steps only (curated reference declares 2+ '## Sample'
+        # units) — a single-document step may legitimately restyle shorter
+        # (e.g. a bilingual reference rewritten in one language). Rules: the
+        # draft must carry at least as many units (markdown headings or
+        # per-letter salutations) AND not shrink below ~30% of the reference.
+        # A false reject simply ships the excellent curated draft.
+        curated = str((action.metadata or {}).get("curated_draft") or "").strip()
+        if curated:
+            required = len(re.findall(r"(?mi)^##\s+sample\b", curated))
+            if required >= 2:
+                units = max(
+                    len(re.findall(r"(?m)^#{1,6}\s", text)),
+                    low.count("dear "),
+                )
+                if units < required:
+                    return False
+                if len(text) < int(0.30 * len(curated)):
+                    return False
         return True
 
     @staticmethod

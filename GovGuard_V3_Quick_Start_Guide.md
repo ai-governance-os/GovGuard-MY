@@ -39,7 +39,7 @@ first-run → approve → reuse lifecycle. Restart the server afterwards.
 python -X utf8 -m pytest -q
 ```
 
-Expected: **1073 passed / 1 skipped / 0 failed** (1074 collected).
+Expected: **1078 passed / 1 skipped / 0 failed** (1079 collected).
 
 ## 6. Run the evaluations
 

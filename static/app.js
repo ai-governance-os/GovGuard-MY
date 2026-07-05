@@ -116,10 +116,16 @@ async function loadConfig() {
     const liveOn = !!c.live_ready;
     const modePill = $("#mode-pill");
     if (modePill) {
-      if (c.planner === "openai") modePill.textContent = "Mode: live API · governed";
-      else if (liveOn) modePill.textContent = "Mode: mixed — core deterministic · unseen case live";
+      // Short, judge-readable badge (Brief 8 Issue 2); the full explanation
+      // lives in the tooltip.
+      if (c.planner === "openai") modePill.textContent = "Mode: live API";
+      else if (liveOn) modePill.textContent = "Mode: mixed live";
       else modePill.textContent = "Mode: deterministic demo";
-      modePill.title = parts.join(" · ");
+      const detail = (liveOn && c.planner !== "openai")
+        ? "Core governance demo is deterministic; live workflows: "
+          + liveList.join(", ") + " · "
+        : "";
+      modePill.title = detail + parts.join(" · ");
     }
     const extPill = $("#external-pill");
     if (extPill && c.demo_mode === false) {
@@ -199,8 +205,26 @@ function buildDemoDock() {
   const body = $("#demo-dock-body");
   const src = $("#welcome");
   if (!body || !src || body.childElementCount) return;
-  src.querySelectorAll(".demo-section-label, .example-grid").forEach(
-    (n) => body.appendChild(n.cloneNode(true)));
+  // Mirror the landing hierarchy (Brief 8 Issue 3): core + generalisation
+  // prompts stay expanded; the case-study (evidence tier) prompts stay
+  // collapsed, so Route A never re-appears as a peer-level main demo.
+  let evidence = null;
+  src.querySelectorAll(".demo-section-label, .example-grid").forEach((n) => {
+    const clone = n.cloneNode(true);
+    if (n.closest(".tier-evidence")) {
+      if (!evidence) {
+        evidence = document.createElement("details");
+        evidence.className = "dock-evidence";
+        const sum = document.createElement("summary");
+        sum.textContent = "④ Case study — charity bazaar (click to open)";
+        evidence.appendChild(sum);
+        body.appendChild(evidence);
+      }
+      evidence.appendChild(clone);
+    } else {
+      body.appendChild(clone);
+    }
+  });
 }
 
 function appendUserMessage(text) {
@@ -1072,6 +1096,11 @@ function describeOutcome(d) {
         + " published.";
     } else if (gs === "pending") {
       msg += ` The ${greenNoun} is paused for your approval.`;
+    } else if (!sm.approval && gc.summary_green) {
+      // No GREEN gate in this workflow (e.g. a drafts-only request):
+      // state the external-release boundary instead of an approval line.
+      msg += " " + gc.summary_green.charAt(0).toUpperCase()
+        + gc.summary_green.slice(1) + ".";
     }
     msg += " Nothing else is sent or published in demo mode.";
     return msg;

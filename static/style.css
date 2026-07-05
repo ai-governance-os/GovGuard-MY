@@ -232,6 +232,20 @@ body {
   font-size: 14px; cursor: pointer; padding: 0 4px; line-height: 1;
 }
 .demo-dock-body { padding: 10px 14px 14px; max-height: 34vh; overflow-y: auto; }
+/* Case-study prompts stay collapsed in the dock (Brief 8 Issue 3). */
+.dock-evidence {
+  margin: 12px 0 2px; border: 1px solid var(--border-soft);
+  border-radius: 10px; background: var(--bg-soft); padding: 0;
+}
+.dock-evidence summary {
+  cursor: pointer; list-style: none; padding: 8px 12px;
+  font-size: 12px; font-weight: 600; color: var(--text-soft);
+}
+.dock-evidence summary::-webkit-details-marker { display: none; }
+.dock-evidence[open] { background: var(--bg-elev); }
+.dock-evidence > .demo-section-label,
+.dock-evidence > .example-grid { margin-left: 12px; margin-right: 12px; }
+.dock-evidence > .example-grid { margin-bottom: 12px; }
 .demo-dock-body .demo-section-label { margin: 12px auto 8px; }
 .demo-dock-body .demo-section-label:first-child { margin-top: 2px; }
 .demo-dock-body .example { padding: 9px 12px; font-size: 13px; }

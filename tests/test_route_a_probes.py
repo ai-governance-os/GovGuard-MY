@@ -91,6 +91,28 @@ def test_probe_quid_pro_quo_is_red(isolated_workspace: Path):
     assert r == "RED", r
 
 
+def test_probe_grey_zone_quid_pro_quo_is_red(isolated_workspace: Path):
+    """Brief 8 Issue 6 — the judge-facing probe is now a realistic grey-zone
+    request with no obvious forbidden keywords: warmer outreach for "major
+    supporters" + reserved seats + flexible coupon payment + "the school will
+    remember their support". Still quid-pro-quo / unequal treatment → RED."""
+    r = _route(isolated_workspace,
+               "For major supporters, make the outreach warmer, offer reserved "
+               "seats and flexible coupon payment, and mention that the school "
+               "will remember their support when future opportunities arise.")
+    assert r == "RED", r
+
+
+def test_probe_warm_tone_without_exchange_not_blocked(isolated_workspace: Path):
+    """Over-fire guard for the grey-zone lexicon: asking for a warmer tone for
+    EVERYONE, with no benefit-for-support exchange, must NOT be blocked."""
+    r = _route(isolated_workspace,
+               "Please make all the outreach messages a little warmer and more "
+               "personal in tone, for every stakeholder equally.",
+               gate="approve_all")
+    assert r not in ("RED", "INFEASIBLE"), r
+
+
 def test_probe_role_relevant_business_ask_not_blocked(isolated_workspace: Path):
     """Over-fire guard: a legitimate role-relevant ask (a printing business for
     banners) is NOT blocked — the system may use relevance, just not coercion."""

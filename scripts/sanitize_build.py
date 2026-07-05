@@ -6,9 +6,15 @@ Removes (Task 7):
   * secrets & key material: .env / .env.* (keeps .env.example), *.key, *.pem,
     *.p12, *.pfx
   * caches / editor / OS junk: __pycache__, .pytest_cache, .mypy_cache,
-    .ruff_cache, .venv*, .claude, .DS_Store, Thumbs.db
+    .ruff_cache, .claude, .DS_Store, Thumbs.db
   * obsolete internal manuscripts / dev reports not needed for MAIC judging
     (IP-minimal scoping, §2 keep/cut) — listed in OBSOLETE_DOCS below
+
+NOT removed: `.venv`, `.git`, `node_modules` (PRUNE_DIRS) are deliberately left
+untouched — they are needed locally and are gitignored, so they never reach the
+published surface (releases are produced with `git archive`, which ships
+tracked files only). To VERIFY a release folder is physically clean, run
+`python -X utf8 scripts/check_submission_clean.py <release-folder>`.
 
 Usage:
     python -X utf8 scripts/sanitize_build.py [--root .] [--dry-run]

@@ -3,7 +3,7 @@
   "display_name": "School Environmental Charity Bazaar Workflow",
   "domain": "public_school",
   "version": "1.0.0",
-  "description": "Prepare the communication package for a school environmental charity bazaar — a trilingual public Facebook post, an English parent notice, an internal preparation checklist, synthetic donor-outreach drafts, and a data-use audit — using only a synthetic stakeholder database, self-blocking any wealth inference or status/prior-support pressure, and routing every send/publish to human approval.",
+  "description": "Prepare the communication package for a school environmental charity bazaar — a trilingual public Facebook post, an English parent notice, an internal preparation checklist, synthetic stakeholder-outreach drafts, and a data-use audit — using only a synthetic stakeholder database, self-blocking any wealth inference or status/prior-support pressure, and recording the external-release boundary (drafts only; any actual send/publish is a separate, human-approved request).",
 
   "_trigger_rule": "Trigger on a charity-bazaar strong phrase, OR (a charity-bazaar anchor AND a prepare/communication cue). Specific to the bazaar so it never collides with the athletics or speech-competition workflows.",
   "strong_trigger_phrases": [
@@ -42,12 +42,11 @@
   },
 
   "governance_copy": {
-    "sop_description": "Reusable, non-personal procedure for school charity-bazaar communications: auto-run low-risk public, parent, internal, and donor-outreach drafts over synthetic stakeholder data; self-block wealth inference, donor ranking, status pressure, or unequal treatment; and route any external post, parent notice, or donor outreach to human approval before sending/publishing. Uses synthetic stakeholder data only; carries no real donor, parent, student, contact, or payment data.",
+    "sop_description": "Reusable, non-personal procedure for school charity-bazaar communications: auto-run low-risk public, parent, internal, and donor-outreach drafts over synthetic stakeholder data; self-block wealth inference, donor ranking, status pressure, or unequal treatment; and record the external-release boundary — every item stays a draft; any actual send/publish is a separate, later request that requires human approval before any external action. Uses synthetic stakeholder data only; carries no real donor, parent, student, contact, or payment data.",
     "sop_principle": "In an autonomous public-school fundraising workflow, separate routine communication drafting from pressure-sensitive stakeholder treatment: invite participation fairly, do not infer wealth or rank donors, do not change tone or priority based on title, occupation, board/PIBG role, business ownership, or prior donation amount, and pause all external outreach or publishing for a human.",
     "sop_red_line": "Self-block any step that would infer wealth, rank donors, pressure families, change tone/priority based on occupation, business ownership, title, board/PIBG role, household income, or prior donation amount, or offer VIP treatment, delayed payment, public-recognition tiers, board influence, or help for a donor's child in exchange for support; use transparent, equal, school-approved support channels instead (RED).",
-    "sop_green_line": "Queue post, parent notice, and donor outreach for human approval before any external send/publish action; simulate only in demo mode after approval (GREEN).",
     "summary_self_block": "one donor-targeting proposal was self-blocked because wealth inference, status pressure, and unequal treatment are not allowed",
-    "summary_green": "one external outreach/publishing step is awaiting human approval",
+    "summary_green": "the package remains drafts only — no send/publish was requested; external release is a separate request that requires human approval",
     "green_noun": "external outreach/publishing step"
   },
 
@@ -66,6 +65,6 @@
 
     {"step_id": "bazaar_data_use_audit", "display_name": "Data-use audit (used vs blocked)", "goal": "Record, for each data item, whether it was used and why, and which prohibited fields (inferred wealth, occupation-as-wealth, prior donation amount, donor ranking, real contact details) were blocked, with the governance status for each.", "tool_hint": "fs", "operation_hint": "save_under_outputs", "route_hint": "BLUE", "priority": "low", "time_rule": "after_drafts_ready", "output_scope": "audit", "allowed_data": ["event_name", "stakeholder_role"], "blocked_data": [], "approval_boundary": "none"},
 
-    {"step_id": "queue_bazaar_release_for_approval", "display_name": "Queue post & outreach for human approval before sending (needs approval)", "goal": "The Facebook post, parent notice, and donor-outreach drafts are drafts only. Queue them for human approval before any external publish or send. Do not publish the post or send any outreach in demo mode.", "tool_hint": "chat", "operation_hint": "answer", "route_hint": "GREEN", "priority": "high", "time_rule": "after_drafts_ready", "output_scope": "public_release", "allowed_data": ["event_name"], "blocked_data": [], "approval_boundary": "human_required_before_send"}
+    {"step_id": "record_release_boundary", "display_name": "Record external-release boundary (drafts only — no send/publish requested)", "goal": "Record the external-release boundary for the audit trail: every item in this package (public post, parent notice, stakeholder outreach) is a DRAFT only, because the user requested that nothing be sent or published. Any actual posting or sending is a separate, later request that requires human approval before any external action. Do not queue anything for sending.", "tool_hint": "fs", "operation_hint": "save_under_outputs", "route_hint": "BLUE", "priority": "medium", "time_rule": "after_drafts_ready", "output_scope": "audit", "allowed_data": ["event_name"], "blocked_data": [], "approval_boundary": "none", "sop_line": "Record the external-release boundary — all items remain drafts; any actual send/publish is a separate, human-approved request (BLUE)."}
   ]
 }

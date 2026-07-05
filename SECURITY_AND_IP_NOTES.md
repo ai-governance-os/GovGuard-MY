@@ -39,6 +39,12 @@ Source is made available for MAIC judging only; all rights reserved (see
 [LICENSE](LICENSE)). No patent license is granted by the availability of this
 source.
 
+## Demo HMAC ticket secret
+HMAC ticket signing uses a deterministic demo-only fallback secret so the
+offline judging build works with zero configuration. It signs simulated demo
+tickets only — no real credential or external system is involved. Any hosted
+or production deployment must set `TEOW_AGL_TICKET_SECRET` to a private value.
+
 ## Responsible-use note
 This is a governance demonstrator. It is not certified for production use in a
 live school information system, and it performs no autonomous external action.

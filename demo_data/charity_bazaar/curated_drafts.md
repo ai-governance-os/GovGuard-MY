@@ -50,17 +50,28 @@ _Governance note: draft parent notice — no compulsory donation, no ranking of 
 
 ## [draft_internal_checklist]
 # Internal Preparation Checklist — Environmental Charity Bazaar
+_Tick each item as it is completed. Print for the staff room / preparation meeting._
 
-1. **Publicity** — approved trilingual poster + Facebook post (pending approval); community sharing via approved public text only.
-2. **Coupon sales** — RM20 booklets via teachers; cash / Touch 'n Go; track counts (not linked to named families for ranking).
-3. **Parent notice** — distribute after approval; voluntary framing.
-4. **Booth arrangement** — food, children's games, eco-handicrafts, green products; assign coordinators.
-5. **Donation collection** — accept voluntary item donations; issue simple acknowledgements; no pressure follow-ups.
-6. **Volunteer coordination** — invite volunteers with clear, optional roles; confirm before assigning.
-7. **Environmental reminders** — reusable bags, waste sorting, minimal single-use plastic.
-8. **Finance & recordkeeping** — transparent fund handling for the PIBG fund; keep records access-controlled.
-9. **Event-day flow** — setup, opening, booths, games, closing, clean-up.
-10. **Post-event report** — funds raised (aggregate), participation, lessons learned; no individual donor amounts published.
+**Before the event**
+
+- [ ] **Publicity** — approved trilingual poster + Facebook post (drafts; release needs approval); community sharing via approved public text only
+- [ ] **Coupon sales** — RM20 booklets distributed via class teachers; cash / Touch 'n Go; track counts only (never linked to named families for ranking)
+- [ ] **Parent notice** — distribute after approval; voluntary framing throughout
+- [ ] **Booth arrangement** — food, children's games, eco-handicrafts, green products; coordinators assigned
+- [ ] **Donation collection** — voluntary item donations only; simple acknowledgements issued; no pressure follow-ups
+- [ ] **Volunteer coordination** — volunteers invited with clear, optional roles; confirmed before assigning
+- [ ] **Stakeholder outreach** — role-relevant, non-pressuring drafts reviewed (see donor outreach file)
+
+**Event day**
+
+- [ ] **Setup** — booths, signage, coupon counter ready before opening
+- [ ] **Environmental reminders** — reusable bags, waste sorting, minimal single-use plastic
+- [ ] **Event flow** — opening, booths, games, closing, clean-up assignments confirmed
+
+**After the event**
+
+- [ ] **Finance & recordkeeping** — transparent fund handling for the PIBG fund; records access-controlled
+- [ ] **Post-event report** — funds raised (aggregate only), participation, lessons learned; no individual donor amounts published
 
 ## [draft_donor_outreach]
 # Donor / Stakeholder Outreach Drafts — Environmental Charity Bazaar
@@ -143,7 +154,7 @@ relevance** from **coercive / unfair use**.
 | Data item | Allowed use | Blocked use | Status |
 |---|---|---|---|
 | Event name / date / time / venue / coupon RM20 | Public post + parent notice | — | ALLOWED_PUBLIC |
-| Public role / business category | Role-relevant ask (printing → banners, nursery → seedlings, drinks supplier → beverages) | Infer wealth or demand a larger amount because of the business | ALLOWED_LIMITED |
+| Public role / business category | Role-relevant ask, matching the outreach samples (printing → posters/booklets, produce grower → seedlings/vegetables, PIBG → volunteer coordination) | Infer wealth or demand a larger amount because of the business | ALLOWED_LIMITED |
 | Board / PIBG role | Coordinate approved public communication or volunteer channels | Pressure, special treatment, or influence-trading | PROHIBITED_FOR_PRESSURE |
 | Stated interest / communication preference | Align the invitation for this task only | Persist as a durable profile | ALLOWED_LIMITED |
 | Prior support category | Neutral thanks only | A "minimum expected" amount or ranking | ALLOWED_LIMITED |
@@ -157,5 +168,21 @@ relevance** from **coercive / unfair use**.
 No task-local tone instruction was stored as a persistent preference. No real
 personal data was used, and no school benefit was offered in exchange for support.
 
-## [queue_bazaar_release_for_approval]
-The trilingual Facebook post, the parent notice, and the donor-outreach drafts are prepared as **drafts only**. They are queued for human approval before any external publish or send. In demo mode no post is published and no outreach is sent externally — GovGuard records the decision for the audit trail without contacting real recipients.
+## [record_release_boundary]
+# External-Release Boundary — Recorded
+
+Communication package prepared. **No post or outreach was sent or published** —
+the request was drafts only, and GovGuard honoured it.
+
+| Item | Status |
+|---|---|
+| Trilingual Facebook post | Draft only — not published |
+| Parent group notice | Draft only — not sent |
+| Stakeholder / donor outreach (4 samples) | Drafts only — not sent |
+| Internal preparation checklist | Internal document |
+| Data-use audit | Internal record |
+
+External release is a **separate request**: if the school later asks to publish
+or send, that action routes GREEN and requires human approval before anything
+leaves the school. In demo mode any approved release is simulated — no real
+recipient is ever contacted.
