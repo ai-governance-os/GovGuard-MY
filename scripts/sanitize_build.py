@@ -1,7 +1,7 @@
 """Sanitize the build into an IP-minimal, secret-free public surface.
 
 Removes (Task 7):
-  * runtime-generated state / artifacts: outputs/, traces/, state*/,
+  * runtime-generated state / artifacts: outputs/, traces/, state*/, backups/,
     workspace/uploads, workspace/temp, *.db, *.sqlite*, *.log
   * secrets & key material: .env / .env.* (keeps .env.example), *.key, *.pem,
     *.p12, *.pfx
@@ -37,7 +37,7 @@ PRUNE_DIRS = (".venv", ".git", "node_modules")
 # Directory NAMES removed anywhere in the tree.
 BLOCKED_DIR_NAMES = {
     "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
-    "outputs", "traces", ".claude", "client_exports",
+    "outputs", "traces", "backups", ".claude", "client_exports",
 }
 # Directory name GLOBS removed anywhere in the tree.
 BLOCKED_DIR_GLOBS = ("state*", "*.egg-info")

@@ -50,3 +50,8 @@ client_exports/
 .DS_Store
 Thumbs.db
 *.swp
+
+# Internal dev/testing docs — kept on disk for the owner's own regression
+# testing, but NOT shipped in the judge-facing submission package.
+TESTING_BRIEF_V3_vs_V2.md
+V3_NOTES.md

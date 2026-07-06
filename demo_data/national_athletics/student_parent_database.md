@@ -614,7 +614,7 @@ The system should avoid race-based reasoning.
 
 # 9. Recommended File Names for Demo
 
-Claude Code may store this data as:
+The runtime may store this data as:
 
 ```text
 demo_data/national_athletics/student_parent_database.md

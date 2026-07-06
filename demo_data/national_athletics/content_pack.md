@@ -2,7 +2,7 @@
 ## Aligned with Synthetic Student & Parent Database
 
 **Purpose:** High-quality seed content for the GovGuard MY workflow demo.  
-**Use case:** Claude Code should use this as demo seed content / smart_mock fixed output for the national-level athletics workflow.  
+**Use case:** The demo runtime uses this as deterministic seed content / smart_mock fixed output for the national-level athletics workflow.  
 **Important:** This document uses fully synthetic names, school name, parent names, and event details. It does not contain real student, parent, school, address, phone, or income data.
 
 ---
