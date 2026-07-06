@@ -1,7 +1,6 @@
 # GovGuard V3 — MAIC Submission Brief
 
-<!-- Replace OWNER/REPO with the real GitHub path once the repo is created. -->
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+[![CI](https://github.com/ai-governance-os/GovGuard-V3/actions/workflows/ci.yml/badge.svg)](https://github.com/ai-governance-os/GovGuard-V3/actions/workflows/ci.yml)
 
 **GovGuard V3** · Powered by the TEOW-AGL Governance Runtime · MAIC Nexus Challenge 2026 · Track T5 (Public Services).
 
