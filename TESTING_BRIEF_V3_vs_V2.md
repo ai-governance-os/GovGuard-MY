@@ -17,7 +17,7 @@ expect, and which V2 behaviours **must stay unchanged** (regression).
   with keys **UNSET**.
 - **The point of V3:** prove GovGuard is not hard-coded to one case — it
   transfers governed **procedure** to new cases, never private data.
-- Full offline suite: **1078 passed / 1 skipped** (1079 collected), secrets clean, and a
+- Full offline suite: **1079 passed / 1 skipped** (1080 collected), secrets clean, and a
   fresh-venv reproduce on a clean path is green (no flaky tests).
 
 ---

@@ -90,7 +90,7 @@ actually running.
 
 ## Test evidence
 
-- **1079** tests collected — **1078 passed**, **1 skipped**, **0 failed**
+- **1080** tests collected — **1079 passed**, **1 skipped**, **0 failed**
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**
 - Secret scan: **PASS** (no secrets, no blocked files in the public surface)
 

@@ -2339,10 +2339,13 @@ class Runtime:
                                 "operation": action.operation,
                                 "action_id": action.action_id})
             execution = self.executor.execute(action=action, ticket=ticket)
-            event_type = ("execution_completed"
-                          if execution.status == "success"
-                          else "execution_failed")
-            if execution.status == "denied":
+            if execution.status == "success":
+                event_type = "execution_completed"
+            elif execution.status == "skipped":
+                # Approval-surface marker (the human gate IS the mechanism) —
+                # benign by design, never rendered as a failure in the trace.
+                event_type = "execution_skipped"
+            else:
                 event_type = "execution_failed"
             exec_dump = execution.model_dump()
             exec_dump["tool"] = action.tool

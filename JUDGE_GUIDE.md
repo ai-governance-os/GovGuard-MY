@@ -95,7 +95,7 @@ python -X utf8 scripts/verify_no_secrets.py   # secret scan
 
 ## Evidence
 
-- pytest: **1079** collected — **1078 passed / 1 skipped / 0 failed**.
+- pytest: **1080** collected — **1079 passed / 1 skipped / 0 failed**.
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**.
 - Secret scan: **PASS**.
 
@@ -109,9 +109,11 @@ $env:TEOW_AGL_LIVE_WORKFLOWS = "ad_hoc_school_event_reporting"   # add school_ch
 python -X utf8 -m server.app
 ```
 
-The UI badges then say `Mode: mixed — core deterministic · unseen case live`.
-Without a key the badges honestly stay `deterministic (live-ready)` — the demo
-never claims a live tier it cannot run. Governance is identical in both tiers.
+The top-bar badge then says `Mode: mixed live` — meaning the core demo stays
+deterministic while the configured unseen workflow(s) run through the live API;
+the badge tooltip lists the live workflows. Without a key the badges honestly
+stay `deterministic (live-ready)` — the demo never claims a live tier it cannot
+run. Governance is identical in both tiers.
 
 ## Troubleshooting
 

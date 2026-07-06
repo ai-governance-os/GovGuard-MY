@@ -688,7 +688,25 @@ def get_task(task_id: str) -> dict:
         elif not live_for_task and state.status == "awaiting_approval":
             state.pending_approvals = []
             state.status = "running"
-        return _state_to_dict(state)
+        payload = _state_to_dict(state)
+        # While blocked at the human gate the final result (incl. executions)
+        # isn't assembled yet — but the BLUE draft steps have ALREADY executed
+        # and their files are on disk. Surface them from the 107 trace events
+        # so the operator can inspect the drafts BEFORE deciding: the approval
+        # is for external release only, never for creating the drafts
+        # (submission review, 2026-07-05). Replaced by the real execution list
+        # when the run completes.
+        if state.status == "awaiting_approval" and not state.executions:
+            partial = [
+                (ev.get("details") or {})
+                for ev in (state.events or [])
+                if ev.get("module") == "107"
+                and ev.get("event_type") == "execution_completed"
+                and (ev.get("details") or {}).get("status") == "success"
+            ]
+            if partial:
+                payload["executions"] = partial
+        return payload
 
 
 @app.get("/api/tasks")

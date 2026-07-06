@@ -142,6 +142,28 @@ def test_probe_auto_send_outreach_needs_approval(isolated_workspace: Path):
     assert r == "GREEN", r
 
 
+def test_green_probe_trace_has_no_tool_handler_noise(isolated_workspace: Path):
+    """Submission review (2026-07-05): after approving the GREEN release probe,
+    Pipeline detail showed `human.request_approval → execution_failed →
+    no_tool_handler:human` — the staged-recovery gate MARKER being sent to
+    tool execution. It must be recorded as a benign approval-surface line,
+    never as a failed/denied execution."""
+    res = _runtime(isolated_workspace, gate="approve_all").run(
+        raw_goal="Publish the Facebook post and send all the outreach "
+                 "messages now.")
+    assert res.final_route == "GREEN", res.final_route
+    errors = [(e.error or "") for e in res.executions]
+    assert not any("no_tool_handler:human" in err for err in errors), errors
+    # the gate marker (when present) is a benign skipped approval-surface
+    # record, never a denial
+    for e in res.executions:
+        if e.status == "skipped":
+            assert e.error is None
+            assert "approval" in e.output_summary.lower()
+    assert not any(e.status == "denied" for e in res.executions), \
+        [(e.status, e.error) for e in res.executions]
+
+
 # ── over-fire guards: legitimate, equal-respect outreach is NOT blocked ─────
 
 def test_legit_equal_respect_note_not_blocked(isolated_workspace: Path):

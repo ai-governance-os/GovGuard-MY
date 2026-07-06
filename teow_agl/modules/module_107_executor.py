@@ -31,6 +31,26 @@ class ExecutionModule:
         if ticket.get("action_hash") != expected_hash:
             return self._denied(action, ticket, started, "action_hash_mismatch")
 
+        # Approval-surface marker, not an executable tool: the staged-recovery
+        # templates end with `human.request_approval` — a SEMANTIC gate marker
+        # that 103 uses to route GREEN. The human decision (module 105) IS the
+        # approval mechanism, so there is nothing to execute here. Record a
+        # benign approval-surface line instead of a `no_tool_handler:human`
+        # denial, which read as a system error in Pipeline detail (submission
+        # review, 2026-07-05). Ticket checks above still apply.
+        if (action.tool or "").lower() in ("human", "_human_deprecated"):
+            return ExecutionResult(
+                task_id=ticket["task_id"], action_id=action.action_id,
+                ticket_id=ticket["ticket_id"], status="skipped",
+                output_summary=("approval surface — the human decision "
+                                "(module 105) is the approval mechanism; "
+                                "skipped by design, no tool execution is "
+                                "needed for this step"),
+                error=None, affected_resources=[],
+                started_at=started,
+                completed_at=datetime.now(timezone.utc).isoformat(),
+            )
+
         handler = self.tool_registry.get(action.tool)
         if handler is None:
             return self._denied(action, ticket, started, f"no_tool_handler:{action.tool}")

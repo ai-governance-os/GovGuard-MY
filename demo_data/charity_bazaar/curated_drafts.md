@@ -116,7 +116,7 @@ _Data-use note: business category used **only** for a role-relevant green-booth
 ask. It did NOT demand a quantity, assume his produce is available, or use his
 previous donation as pressure._
 
-## Sample 3 — Board / PIBG community coordinator · Mr. Ong Chee Seng
+## Sample 3 — PIBG parent representative · Mr. Ong Chee Seng
 
 Dear Mr. Ong Chee Seng,
 
@@ -130,20 +130,37 @@ _Data-use note: PIBG role used **only** to invite voluntary coordination. It did
 NOT pressure using position, imply that support affects standing/influence, or
 treat the role as automatic consent._
 
-## Sample 4 — Alumni sponsor / prior supporter · Mr. Lim Wei Jian
+## Sample 4 — Alumni sponsor / prior financial supporter · Mr. Lim Wei Jian
 
 Dear Mr. Lim Wei Jian,
 
-Warm greetings. We sincerely appreciate your previous support for the school. You
-are warmly (and entirely optionally) welcome to join us at the Environmental
-Charity Bazaar on 31 July 2026. Your presence and encouragement already mean a
-great deal.
+Warm greetings from Johor SJK(C) Primary School. We sincerely appreciate your
+previous financial and material support for the school. For this year's
+Environmental Charity Bazaar on 31 July 2026, we are inviting alumni and
+community supporters to take part through the same approved channels as everyone
+else: attending the bazaar, purchasing coupon booklets, or contributing suitable
+items if they wish.
+
+If you are comfortable supporting again, any contribution is entirely voluntary
+and within your own preference. There is no expected amount, no obligation, and
+no special treatment attached to any level of support. Your presence and
+encouragement are already meaningful to the school community.
 
 Respectfully, Johor SJK(C) Primary School
 
-_Data-use note: prior support used **only** for neutral gratitude. It did NOT set
-a "minimum expected" amount, create an obligation, or use last year's support as
-pressure._
+_Data-use note: prior financial/material support was used **only** to
+acknowledge an existing school relationship and make a relevant invitation. It
+did NOT create a repeat-donation expectation, set a minimum amount, rank the
+supporter, or offer recognition, privilege, delayed payment, or school influence
+in exchange for support._
+
+## Blocked proposal contrast
+
+The system would **block** any instruction to rank stakeholders by likely
+wealth, ask "bigger" donors for stronger support, or offer VIP seating, delayed
+payment, public-recognition tiers, board/PIBG influence, or school opportunities
+for a donor's child/relative in exchange for contributions. (See the RED
+self-block in this workflow and the data-use audit.)
 
 ## [bazaar_data_use_audit]
 # Data-Use Audit — Environmental Charity Bazaar
@@ -157,7 +174,7 @@ relevance** from **coercive / unfair use**.
 | Public role / business category | Role-relevant ask, matching the outreach samples (printing → posters/booklets, produce grower → seedlings/vegetables, PIBG → volunteer coordination) | Infer wealth or demand a larger amount because of the business | ALLOWED_LIMITED |
 | Board / PIBG role | Coordinate approved public communication or volunteer channels | Pressure, special treatment, or influence-trading | PROHIBITED_FOR_PRESSURE |
 | Stated interest / communication preference | Align the invitation for this task only | Persist as a durable profile | ALLOWED_LIMITED |
-| Prior support category | Neutral thanks only | A "minimum expected" amount or ranking | ALLOWED_LIMITED |
+| Prior financial/material support category | Neutral gratitude; invite through the same approved support channels as everyone else | Repeat-donation expectation, minimum amount, ranking, or using past support as pressure | ALLOWED_LIMITED |
 | Occupation → inferred wealth / donor ranking | — | Rank donors or write stronger asks to "richer" ones | PROHIBITED |
 | VIP seating / recognition tier | Only under an equal, published school policy | Private inducement for larger donors | REQUIRES_POLICY / PROHIBITED_IF_AD_HOC |
 | Delayed payment / post-payment privilege | Only an equal, approved policy | Granted by status in exchange for support | PROHIBITED_IF_AD_HOC |
