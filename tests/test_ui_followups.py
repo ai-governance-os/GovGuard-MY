@@ -1,4 +1,4 @@
-"""Regression tests for the Codex UI-test follow-ups.
+"""Regression tests for UI follow-up behaviours.
 
 These lock the fixes made after an independent agent ran the Skill
 Learning UI flow end-to-end (see SKILL_LEARNING_UI_TEST_REPORT.md):

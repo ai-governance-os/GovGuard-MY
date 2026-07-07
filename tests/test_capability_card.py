@@ -67,7 +67,7 @@ def test_boundary_answer_text_comes_from_card(isolated_workspace):
 
 
 def test_identity_answer_text_comes_from_card(isolated_workspace):
-    marker = "CARD_MARKER_i3 我是 TEOW-AGL 测试版"
+    marker = "CARD_MARKER_i3 我是 TEOW-AGL 能力卡"
 
     def mutate(card):
         card["answers"]["identity"]["cjk"] = marker

@@ -26,10 +26,8 @@ state*/
 outputs/
 traces/
 backups/
-V3_TEST_EVIDENCE_*/
-V3_RETEST_EVIDENCE_*/
-V3_*EVIDENCE_*/
-V3_*RETEST_*/
+*_EVIDENCE_*/
+*_RETEST_*/
 workspace/uploads/
 workspace/temp/
 workspace/results.md
@@ -53,5 +51,5 @@ Thumbs.db
 
 # Internal dev/testing docs — kept on disk for the owner's own regression
 # testing, but NOT shipped in the judge-facing submission package.
-TESTING_BRIEF_V3_vs_V2.md
-V3_NOTES.md
+TESTING_BRIEF.md
+DEV_NOTES.md
