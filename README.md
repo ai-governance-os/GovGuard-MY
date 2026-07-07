@@ -1,4 +1,4 @@
-# GovGuard MY — Governed School-Administration Agent Runtime
+# GovGuard MY — Governance Runtime for High-Risk Public-Service AI Workflows
 
 ### The planner proposes. Governance decides (BLUE / GREEN / RED / INFEASIBLE). A human approves. Everything is traced.
 
@@ -6,10 +6,15 @@
 
 ## What this is
 
-GovGuard MY is a governed, auditable AI-agent runtime for school administration.
-It produces genuinely useful administrative outputs — reports, parent notices,
-public posts, donor outreach — while enforcing data-use limits, privacy
-boundaries, human approval for consequential actions, and a full audit trail.
+GovGuard MY is a governed, auditable runtime for high-risk public-service AI
+workflows. This submission demonstrates it through a Malaysian public-school
+administration domain pack, where the stakes are concrete: children, parents,
+records, public messages, approvals, and community trust. It produces genuinely
+useful administrative outputs — reports, parent notices, public posts, donor
+outreach — while enforcing data-use limits, privacy boundaries, human approval
+for consequential actions, and a full audit trail. The governance runtime is
+domain-agnostic (swap the domain pack by config alone, `TEOW_AGL_DOMAIN_PACK`);
+school administration is the first shipped pack, not the product limit.
 
 ## Why it matters
 

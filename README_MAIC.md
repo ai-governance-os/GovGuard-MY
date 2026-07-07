@@ -6,10 +6,11 @@
 
 ## One-line summary
 
-GovGuard MY is a governed school-administration AI runtime that produces useful
-administrative outputs while enforcing privacy, human-approval routing, and
-data-use limits — and it now demonstrates this across **two additional
-real-world-shaped scenarios**, not just one hard-coded demo.
+GovGuard MY is a governance runtime for high-risk public-service AI workflows,
+demonstrated through a school-administration domain pack. It produces useful
+administrative outputs while enforcing privacy, human-approval routing,
+data-use limits, auditability, and bounded memory — across deterministic,
+generalised, and real-case-derived scenarios, not limited to one curated case.
 
 ## Demo narrative (Route A and Route B front and centre)
 

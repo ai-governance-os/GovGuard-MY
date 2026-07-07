@@ -1,5 +1,9 @@
 # GovGuard MY — Demo Script (four-part narration)
 
+**GovGuard MY is a governance runtime for public-service AI agents, demonstrated
+first in school administration. The model proposes; governance decides; a human
+approves; everything is traced.**
+
 **GovGuard MY** · Powered by the TEOW-AGL Governance Runtime. Domain pack
 `public_school`, `MAIC_DEMO_MODE=1`. The zero-key `smart_mock` default runs every
 route and emits the deterministic curated deliverables — the **recommended** mode
