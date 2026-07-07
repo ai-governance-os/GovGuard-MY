@@ -1,12 +1,12 @@
-# GovGuard V3 — MAIC Submission Brief
+# GovGuard MY — MAIC Submission Brief
 
-[![CI](https://github.com/ai-governance-os/GovGuard-V3/actions/workflows/ci.yml/badge.svg)](https://github.com/ai-governance-os/GovGuard-V3/actions/workflows/ci.yml)
+[![CI](https://github.com/ai-governance-os/GovGuard-MY/actions/workflows/ci.yml/badge.svg)](https://github.com/ai-governance-os/GovGuard-MY/actions/workflows/ci.yml)
 
-**GovGuard V3** · Powered by the TEOW-AGL Governance Runtime · MAIC Nexus Challenge 2026 · Track T5 (Public Services).
+**GovGuard MY** · Powered by the TEOW-AGL Governance Runtime · MAIC Nexus Challenge 2026 · Track T5 (Public Services).
 
 ## One-line summary
 
-GovGuard V3 is a governed school-administration AI runtime that produces useful
+GovGuard MY is a governed school-administration AI runtime that produces useful
 administrative outputs while enforcing privacy, human-approval routing, and
 data-use limits — and it now demonstrates this across **two additional
 real-world-shaped scenarios**, not just one hard-coded demo.
@@ -35,7 +35,7 @@ real-world-shaped scenarios**, not just one hard-coded demo.
 5. Missing facts are marked **TBC** instead of invented.
 6. Learning is **bounded**: a one-off styling instruction does not become persistent sensitive memory.
 
-## V3 demo — four parts, three tiers
+## Demo — four parts, three tiers
 
 The landing console groups the four demo parts into a three-tier narrative
 (core demo dominant → generalisation → collapsed evidence):

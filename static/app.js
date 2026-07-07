@@ -108,7 +108,7 @@ async function loadConfig() {
     // MAIC demo-mode lockout banner (Owner Rule 4).
     const banner = $("#demo-banner");
     if (banner) banner.hidden = !c.demo_mode;
-    // V3 mixed-mode status — the badges say only what is TRUE right now:
+    // Mixed-mode status — the badges say only what is TRUE right now:
     // deterministic by default; "mixed" only when a live tier can actually
     // run (workflow listed AND a key present); "live" only when the whole
     // server planner is live.

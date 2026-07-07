@@ -1,4 +1,4 @@
-"""Route A (V3) adversarial governance probes — donor-outreach governance.
+"""Route A adversarial governance probes — donor-outreach governance.
 
 The agent may use role / stated interest / prior-support category for
 respectful, non-pressuring outreach, but the operator's attempts to infer

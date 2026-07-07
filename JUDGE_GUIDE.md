@@ -1,4 +1,4 @@
-# GovGuard V3 — Judge Guide
+# GovGuard MY — Judge Guide
 
 Everything below runs offline with **no API keys** (default planner
 `smart_mock`, `MAIC_DEMO_MODE=1`). Windows users: keep the `-X utf8` flag (the

@@ -1,4 +1,4 @@
-"""Route A (V3) — school environmental charity bazaar: detection, no-steal,
+"""Route A — school environmental charity bazaar: detection, no-steal,
 the keyless curated run, and the wealth-targeting self-block. A real-case-
 derived school-administration workflow over a SYNTHETIC stakeholder database:
 it generates public + parent + internal + donor-outreach drafts, self-blocks

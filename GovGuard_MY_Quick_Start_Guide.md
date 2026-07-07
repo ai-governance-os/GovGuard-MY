@@ -1,4 +1,4 @@
-# GovGuard V3 — Quick Start Guide
+# GovGuard MY — Quick Start Guide
 
 Offline, no API keys required (default planner `smart_mock`, `MAIC_DEMO_MODE=1`).
 On Windows keep the `-X utf8` flag — the demo mixes 中文, Bahasa Melayu, and English.

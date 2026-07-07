@@ -1,4 +1,4 @@
-"""Brief 3 #E — task-local tone/style learning boundary (V3 shared foundation).
+"""Brief 3 #E — task-local tone/style learning boundary (shared foundation).
 
 A one-off styling instruction ("keep this notice warm", "make it concise")
 governs the current output only. The reflector must NOT distil it into a

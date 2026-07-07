@@ -1,4 +1,4 @@
-"""Route B (V3) — ad-hoc school-event reporting: detection, no-steal, and the
+"""Route B — ad-hoc school-event reporting: detection, no-steal, and the
 keyless curated run. The generalisation demo: a short unseen speech-competition
 prompt builds a temporary governed case and produces a public post, internal
 report, and parent notices — keeping student-sensitive struggle out of public

@@ -1,6 +1,6 @@
-# GovGuard V3 — Claims Check
+# GovGuard MY — Claims Check
 
-**GovGuard V3** · Powered by the TEOW-AGL Governance Runtime. Every claim below is
+**GovGuard MY** · Powered by the TEOW-AGL Governance Runtime. Every claim below is
 backed by a path or a reproducible command. No number is carried that the build
 cannot reproduce.
 

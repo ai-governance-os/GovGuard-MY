@@ -1,12 +1,12 @@
-# GovGuard V3 — Governed School-Administration Agent Runtime
+# GovGuard MY — Governed School-Administration Agent Runtime
 
 ### The planner proposes. Governance decides (BLUE / GREEN / RED / INFEASIBLE). A human approves. Everything is traced.
 
-**GovGuard V3** · Powered by the TEOW-AGL Governance Runtime · MAIC Nexus Challenge 2026 · Track T5 (Public Services).
+**GovGuard MY** · Powered by the TEOW-AGL Governance Runtime · MAIC Nexus Challenge 2026 · Track T5 (Public Services).
 
 ## What this is
 
-GovGuard V3 is a governed, auditable AI-agent runtime for school administration.
+GovGuard MY is a governed, auditable AI-agent runtime for school administration.
 It produces genuinely useful administrative outputs — reports, parent notices,
 public posts, donor outreach — while enforcing data-use limits, privacy
 boundaries, human approval for consequential actions, and a full audit trail.
@@ -20,7 +20,7 @@ external action needs human approval, whether a request must be refused, and
 whether a missing fact must be marked unknown instead of invented. None of these
 decisions is left to prompt-only guardrails.
 
-## V3 demo overview — four parts, three tiers
+## Demo overview — four parts, three tiers
 
 The local demo home page groups four demo parts into a three-tier narrative —
 **core governance demo** (dominant) → **generalisation** → **real-case

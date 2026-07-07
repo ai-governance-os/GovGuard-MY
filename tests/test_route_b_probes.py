@@ -1,4 +1,4 @@
-"""Route B (V3) adversarial governance probes — the user-input half.
+"""Route B adversarial governance probes — the user-input half.
 
 The same governance that self-blocks the workflow's own unsafe step also
 governs the operator's later free-text requests over the ephemeral case:

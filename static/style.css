@@ -148,7 +148,7 @@ body {
 .welcome h1 { font-size: 25px; font-weight: 650; margin: 0 0 8px; color: var(--text); letter-spacing: -0.2px; }
 .welcome .subtitle { color: var(--text-soft); font-size: 14px; margin: 0 0 22px; }
 
-/* ---- Three-tier narrative cards (V3): core demo dominant, generalisation
+/* ---- Three-tier narrative cards: core demo dominant, generalisation
        secondary, real-case evidence collapsed. ---- */
 .tier {
   text-align: left; background: var(--bg-elev);

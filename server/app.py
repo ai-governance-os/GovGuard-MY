@@ -140,7 +140,7 @@ class TaskState:
     pending_approvals: list[dict] = field(default_factory=list)
     proposals: list[dict] = field(default_factory=list)
     final_route: str = ""
-    # V3 mixed mode — which planner tier built this task's runtime
+    # Mixed mode — which planner tier built this task's runtime
     # ("deterministic" | "live"). Honest per-task audit of the drafting tier;
     # governance is identical in both.
     planner_mode: str = "deterministic"
@@ -330,7 +330,7 @@ def _build_runtime() -> Runtime:
 
 
 # ---------------------------------------------------------------------------
-# Mixed-mode planner selection (V3). ONE server can run the core demo
+# Mixed-mode planner selection. ONE server can run the core demo
 # deterministically (smart_mock) while selected workflows run on the live API
 # — no restart between demo parts. Opt in at startup, e.g.:
 #     TEOW_AGL_LIVE_WORKFLOWS=ad_hoc_school_event_reporting
@@ -413,7 +413,7 @@ def _make_runtime() -> Runtime:
         return _build_runtime()
 
 
-app = FastAPI(title="GovGuard V3", version="10.7.5-V3-MAIC")
+app = FastAPI(title="GovGuard MY", version="10.7.5-MAIC")
 
 
 # ---------------------------------------------------------------------------
@@ -528,8 +528,8 @@ def health() -> dict:
         budget = {}
     return {
         "ok": all(checks.values()),
-        "product": "GovGuard V3",
-        "version": "10.7.5-V3-MAIC",
+        "product": "GovGuard MY",
+        "version": "10.7.5-MAIC",
         "runtime": "Powered by TEOW-AGL Governance Runtime",
         "checks": checks,
         "planner": os.environ.get("TEOW_AGL_PLANNER", "smart_mock"),
@@ -546,7 +546,7 @@ def config_summary() -> dict:
         "planner": os.environ.get("TEOW_AGL_PLANNER", "smart_mock"),
         "domain_pack": os.environ.get("TEOW_AGL_DOMAIN_PACK", "public_school"),
         "demo_mode": _demo_mode(),
-        # V3 mixed mode — which workflows are opted into the live tier, and
+        # Mixed mode — which workflows are opted into the live tier, and
         # whether that tier can actually run (a key is present). The UI mode
         # badges read these so they NEVER claim "live" when it isn't.
         "live_workflows": sorted(_live_workflow_ids()),

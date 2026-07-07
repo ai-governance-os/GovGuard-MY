@@ -1,4 +1,4 @@
-"""V3 mixed-mode planner selection — one server, two honest tiers.
+"""Mixed-mode planner selection — one server, two honest tiers.
 
 The operator may start ONE server where the core demo stays deterministic
 (smart_mock) while selected workflows run on the live API — no restart between

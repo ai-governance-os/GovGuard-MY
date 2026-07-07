@@ -18,8 +18,8 @@ def test_health():
     # Phase C upgraded /api/health from a static stub to real
     # liveness/readiness checks — assert the contract, not the literal.
     assert body["ok"] is True
-    assert body["version"] == "10.7.5-V3-MAIC"
-    assert body["product"] == "GovGuard V3"
+    assert body["version"] == "10.7.5-MAIC"
+    assert body["product"] == "GovGuard MY"
     assert body["checks"]["state_writable"] is True
     assert body["checks"]["traces_writable"] is True
     assert "budget" in body

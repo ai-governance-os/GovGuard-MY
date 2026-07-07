@@ -1,6 +1,6 @@
-# GovGuard V3 — Demo Script (four-part narration)
+# GovGuard MY — Demo Script (four-part narration)
 
-**GovGuard V3** · Powered by the TEOW-AGL Governance Runtime. Domain pack
+**GovGuard MY** · Powered by the TEOW-AGL Governance Runtime. Domain pack
 `public_school`, `MAIC_DEMO_MODE=1`. The zero-key `smart_mock` default runs every
 route and emits the deterministic curated deliverables — the **recommended** mode
 for a clean, instant, hallucination-free recording. Start:
