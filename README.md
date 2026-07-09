@@ -105,10 +105,10 @@ Real-case-derived, privacy-preserving: real school **event structure** may be
 used, but **all** person-level records (donors, parents, students, stakeholders)
 are **synthetic or redacted**. No real donor list, phone number, address,
 payment record, WhatsApp record, or student-sensitive record appears in the
-public demo. *(Route A's event structure is real-case-derived; all person-level
-stakeholder/donor records are synthetic. Any public use of the real school
-context should be supported by a separate acknowledgement letter or redacted
-evidence pack where appropriate — see `EVIDENCE_PACK_NOTE.md`.)*
+public demo. *(Route A's event structure is real-case-derived and used **with
+the school's signed acknowledgement** (provided as a separate evidence pack);
+all person-level stakeholder/donor records are synthetic — see
+`EVIDENCE_PACK_NOTE.md`.)*
 
 ## Repository notes
 

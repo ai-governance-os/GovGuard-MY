@@ -4,11 +4,11 @@ Route A is a real-case-derived workflow based on a school charity bazaar
 administrative process. To protect privacy, this submission uses synthetic
 stakeholder and donor data throughout.
 
-Any public use of the real school name and event structure should be supported
-by a separate school acknowledgement letter or redacted evidence pack where
-appropriate. Such supporting evidence (acknowledgement letter, public event
-poster, public Facebook link, redacted meeting record) is provided separately
-and is not included in this repository.
+The real school name and event structure are used **with the school's signed
+acknowledgement**. The supporting evidence (signed acknowledgement letter,
+signed redacted meeting record, public event poster, and public Facebook post)
+is provided as a **separate evidence pack** and is not included in this
+repository.
 
 This repository intentionally does not include real donor lists, private
 WhatsApp screenshots, parent contact details, student-sensitive records, or
