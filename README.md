@@ -4,6 +4,22 @@
 
 **GovGuard MY** · Powered by the TEOW-AGL Governance Runtime · MAIC Nexus Challenge 2026 · Track T5 (Public Services).
 
+## Quick start — no API key
+
+```powershell
+# Install once in a clean Python environment
+python -m pip install -e ".[dev]"
+
+# Start the deterministic competition demo
+python -X utf8 -m server.app
+# Open http://127.0.0.1:8765
+```
+
+The default is offline `smart_mock` with `MAIC_DEMO_MODE=1`; all external
+actions are simulated. Live API mode is optional and intended for later-stage
+live judging or technical evaluation. The same deterministic governance layer
+controls both modes.
+
 ## What this is
 
 GovGuard MY is a governed, auditable runtime for high-risk public-service AI

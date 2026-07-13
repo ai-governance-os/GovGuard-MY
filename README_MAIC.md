@@ -1,8 +1,11 @@
 # GovGuard MY — MAIC Submission Brief
 
-[![CI](https://github.com/ai-governance-os/GovGuard-MY/actions/workflows/ci.yml/badge.svg)](https://github.com/ai-governance-os/GovGuard-MY/actions/workflows/ci.yml)
+[CI workflow](.github/workflows/ci.yml) — the public repository URL has not been assigned yet, so this submission build does not hard-code an owner or repository name.
 
 **GovGuard MY** · Powered by the TEOW-AGL Governance Runtime · MAIC Nexus Challenge 2026 · Track T5 (Public Services).
+
+`V3` appears in some historical commit messages as an internal build label; the
+product and competition entry are consistently named **GovGuard MY**.
 
 ## One-line summary
 
