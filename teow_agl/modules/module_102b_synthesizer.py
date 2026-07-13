@@ -44,6 +44,10 @@ from typing import Any
 
 from ..adapters.chat_llm import ChatLLM
 from ..models import CandidateAction
+from .module_school_artifact_guard import (
+    artifact_similarity,
+    validate_school_markdown,
+)
 
 
 # Tools whose metadata is content-bearing. (tool, operation_prefix) match.
@@ -143,6 +147,493 @@ def _fallback_body(user_intent: str, kind: str) -> str:
         f"with a little more detail.\n\n"
         f"Your original request:\n{user_intent[:300]}"
     )
+
+
+def _school_response_pack_safe_fallback(
+    action: CandidateAction,
+    source_goal: str = "",
+) -> str:
+    """Build one complete, fact-conservative response-pack Markdown file.
+
+    This is a reliability fallback, not a second planner.  Module 102S still
+    gets the first opportunity to write a richer role-scoped artifact.  If a
+    live provider returns malformed, truncated, cross-contaminated or
+    unsupported content, this function fulfils the *already governed* artifact
+    contract without inventing case facts or authorising an external action.
+    """
+    meta = action.metadata or {}
+    role = str(meta.get("artifact_role") or "school_document").strip().lower()
+    # Headings are canonical, never copied from a user-supplied custom label.
+    # This prevents names, contact details or prompt injection from entering a
+    # public title or a non-parent artifact's H1.
+    label = role.replace("_", " ").title()
+    audience = str(meta.get("audience") or "internal")
+    public = audience == "public" or role == "public_communication_draft"
+
+    def clean(value: Any, limit: int = 500) -> str:
+        text = re.sub(r"[\r\n]+", " ", str(value or "")).strip()
+        text = text.replace("[", "(").replace("]", ")")
+        text = text.replace("`", "").replace("#", "")
+        text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+        text = re.sub(r"\s+", " ", text)
+        return text[:limit]
+
+    source = clean(source_goal, 3000)
+    source_tokens = set(re.findall(r"[a-z0-9]+", source.casefold()))
+    neutral_tokens = {
+        "a", "an", "the", "and", "or", "of", "to", "in", "on", "at",
+        "by", "for", "from", "with", "is", "was", "were", "has", "have",
+        "had", "been", "be", "being", "student", "students", "school",
+        "reported", "reportedly", "case", "matter", "event", "who", "which",
+        "that", "it", "they", "their", "he", "she", "his", "her",
+    }
+
+    def grounded(value: Any) -> str:
+        candidate = clean(value, 500)
+        if not candidate or not source:
+            return ""
+        if candidate.casefold() in source.casefold():
+            return candidate
+        meaningful = {
+            token for token in re.findall(r"[a-z0-9]+", candidate.casefold())
+            if token not in neutral_tokens
+        }
+        # For non-Latin text require literal source support; do not pretend an
+        # English-token test validates a translated or invented statement.
+        if not meaningful:
+            return ""
+        return candidate if meaningful.issubset(source_tokens) else ""
+
+    summary = grounded(meta.get("school_case_summary"))
+    facts: list[str] = []
+    for item in (meta.get("school_known_facts") or [])[:10]:
+        if isinstance(item, dict):
+            status = str(item.get("status") or "reported").strip().lower()
+            value = grounded(item.get("value"))
+            if status in {"reported", "confirmed"} and value:
+                facts.append(
+                    f"- User-supplied fact: {value} — not independently "
+                    "verified by this system"
+                )
+        elif str(item).strip():
+            value = grounded(item)
+            if value:
+                facts.append(
+                    f"- User-supplied fact: {value} — not independently "
+                    "verified by this system"
+                )
+    unknowns: list[str] = []
+    for item in (meta.get("school_unknowns") or [])[:10]:
+        if isinstance(item, dict):
+            fact_id = clean(item.get("fact_id") or "case_detail", 100)
+            impact = clean(item.get("impact") or "content", 80)
+            unknowns.append(f"- {fact_id}: TBC — impact: {impact}")
+        elif str(item).strip():
+            unknowns.append(f"- {clean(item, 180)}: TBC")
+    if not facts:
+        facts = ["- Confirmed case facts available to this draft: TBC"]
+    if not unknowns:
+        unknowns = ["- Date, time, exact location and current status: TBC"]
+
+    source_note = ""
+    if "verification_required" in str(meta.get("source_policy") or ""):
+        source_note = (
+            "\n\n> Official-source check: REQUIRED - not yet completed. "
+            "This draft does not claim that its procedural prompts are a "
+            "verified school SOP, medical direction or regulator instruction."
+        )
+
+    if public:
+        label = "Public Holding Statement"
+    common = (
+        f"# {clean(label, 140)}\n\n"
+        "> **Status:** DRAFT - NOT SENT\n\n"
+        f"> **Audience boundary:** {clean(audience, 80)}\n\n"
+    )
+    facts_block = "\n".join(facts)
+    unknowns_block = "\n".join(unknowns)
+    safe_summary = summary or "The user reported a school matter; the precise event summary is TBC."
+
+    bodies: dict[str, str] = {
+        "internal_incident_report": (
+            "## Incident snapshot\n\n"
+            f"User-reported case: {safe_summary}\n\n"
+            "- Date of incident: TBC\n- Time of incident: TBC\n"
+            "- Location: TBC\n- Person or people affected: TBC\n\n"
+            "## Known-fact register\n\n" + facts_block + "\n\n"
+            "## Information still required\n\n" + unknowns_block + "\n\n"
+            "## Action and decision record\n\n"
+            "- Immediate action already completed: TBC\n"
+            "- Person who made each decision: TBC\n"
+            "- External contact actually made, with time and reference: TBC\n\n"
+            "## Fact-verification next steps\n\n"
+            "Proposed: an authorised staff member records first-hand accounts "
+            "separately, preserves original records, confirms the chronology, "
+            "and labels disputed information without assigning blame."
+        ),
+        "private_parent_notice": (
+            "Dear Parent or Guardian,\n\n"
+            "This private draft concerns a school matter involving your child. "
+            f"The information supplied to the drafting system states: {safe_summary} "
+            "This is a reported account and has not been independently verified "
+            "by this system.\n\n"
+            "## Information for the family\n\n"
+            "- Child's present condition: TBC\n- Care or assistance provided: TBC\n"
+            "- Exact date, time and location: TBC\n"
+            "- School contact person and return number: TBC\n\n"
+            "Please use the confirmed school contact channel for urgent questions. "
+            "This text is a preparation draft only; it does not claim that a "
+            "message, call or update has already been made.\n\n"
+            "Yours sincerely,\n\nTBC - authorised school representative"
+        ),
+        "medical_handover_script": (
+            "## Purpose\n\n"
+            "Use this as a spoken handover prompt for authorised staff; it is not "
+            "a diagnosis, treatment instruction or substitute for clinicians.\n\n"
+            f"## Reported event\n\n{safe_summary}\n\n"
+            "## Handover fields\n\n"
+            "- Student identity confirmed by authorised staff: TBC\n"
+            "- Date, time and exact location: TBC\n"
+            "- Symptoms, injury site and observed changes: TBC\n"
+            "- First aid or other action actually given: TBC\n"
+            "- Allergies, medication and known conditions: TBC\n"
+            "- Guardian-contact status: TBC\n\n"
+            "## Read-back close\n\n"
+            "Ask the receiving professional to confirm what information was "
+            "heard, record the receiver's role and time as TBC until supplied, "
+            "and keep clinical decisions with qualified personnel. No handover "
+            "or external transmission is claimed by this draft."
+        ),
+        "site_safety_checklist": (
+            "## Immediate human-safety prompts\n\n"
+            "☐ Proposed: keep people away from the reported hazard without asking "
+            "staff or students to approach, capture or handle it.\n"
+            "☐ Proposed: place an adult at a safe boundary if this can be done "
+            "without exposure.\n"
+            "☐ Proposed: account for affected and potentially exposed people.\n"
+            "☐ Proposed: use the school's current emergency procedure and call "
+            "Malaysia emergency services on 999 when immediate danger or serious "
+            "injury requires urgent help.\n\n"
+            "## Situation fields\n\n"
+            f"- Reported hazard or event: {safe_summary}\n"
+            "- Exact location and safe approach route: TBC\n"
+            "- Danger still present: TBC\n- Responsible on-scene human: TBC\n\n"
+            "## Control boundary\n\n"
+            "The agent prepares this checklist but cannot inspect the site, direct "
+            "an emergency scene, certify safety or replace trained responders. "
+            "An authorised person must choose and record any real action."
+        ),
+        "student_accountability_checklist": (
+            "## Accountability scope\n\n"
+            "☐ Identify the class, activity group, visitors and staff that may be "
+            "within the affected scope; the actual scope is TBC.\n"
+            "☐ Use an authorised current register rather than memory or a copied "
+            "personal-data list.\n☐ Compare names at a safe assembly point.\n"
+            "☐ Record present, absent, released and unaccounted-for states as TBC "
+            "until a responsible human confirms them.\n"
+            "☐ Escalate an unaccounted-for person through the school's current "
+            "human-led emergency process; do not publish names.\n\n"
+            "## Reconciliation record\n\n"
+            "- Register owner: TBC\n- Time checked: TBC\n"
+            "- Groups accounted for: TBC\n- Exceptions and resolution: TBC\n\n"
+            "This draft stores no student database and makes no claim that an "
+            "accountability check has already occurred."
+        ),
+        "emergency_contact_script": (
+            "## Call opening\n\n"
+            "This is a draft prompt for an authorised caller. For an urgent "
+            "emergency in Malaysia, call 999; do not wait for this document or "
+            "for online research.\n\n"
+            "## Information to state and confirm\n\n"
+            f"- Nature of reported event: {safe_summary}\n"
+            "- School name, full address and safe access point: TBC\n"
+            "- Exact location of danger or injured person: TBC\n"
+            "- Number of people affected and current condition: TBC\n"
+            "- Danger still present and hazards to responders: TBC\n"
+            "- Action already taken: TBC\n- Caller name and callback number: TBC\n\n"
+            "Read back the dispatcher's instructions and reference number. This "
+            "draft does not claim that 999 was called, answered or dispatched."
+        ),
+        "fire_rescue_contact_script": (
+            "## Contact purpose\n\n"
+            "Draft a factual briefing for Fire and Rescue only when an authorised "
+            "human decides that the reported hazard requires that agency. Urgent "
+            "danger must use the appropriate live emergency channel.\n\n"
+            "## Briefing fields\n\n"
+            f"- Reported hazard: {safe_summary}\n"
+            "- School and exact access location: TBC\n- Hazard still visible: TBC\n"
+            "- People injured, trapped or unaccounted for: TBC\n"
+            "- Utilities, chemicals, animals or structural hazards: TBC\n"
+            "- Safe meeting point and authorised caller: TBC\n\n"
+            "## Close and record\n\n"
+            "Confirm the receiving officer's instructions, record the time and "
+            "reference as TBC until provided, and do not direct staff to handle "
+            "a hazard beyond their training. No call is claimed by this script."
+        ),
+        "regulatory_notification_assessment": (
+            "## Assessment question\n\n"
+            f"Reported matter: {safe_summary}\n\n"
+            "Determine whether current law, ministry direction, regulator rules, "
+            "insurance conditions or the school's own approved procedure creates "
+            "a notification duty. The answer is TBC until an authorised person "
+            "checks the current official source and the verified case facts.\n\n"
+            "## Decision fields\n\n"
+            "- Possible authority or regulator: TBC\n- Trigger and legal basis: TBC\n"
+            "- Reporting deadline and prescribed channel: TBC\n"
+            "- Required attachments and redactions: TBC\n"
+            "- Decision owner and approval: TBC\n\n"
+            "## Governance boundary\n\n"
+            "Research may identify candidate official sources, but it cannot fill "
+            "missing case facts or authorise submission. Any outward report must "
+            "be separately reviewed and approved."
+        ),
+        "education_authority_report": (
+            "## Submission status\n\n"
+            "This is a draft for a possible education-authority channel. It has "
+            "not been submitted, and the applicable form, recipient and deadline "
+            "are TBC pending an official-source check.\n\n"
+            f"## Reported case summary\n\n{safe_summary}\n\n"
+            "## Factual fields\n\n" + facts_block + "\n\n"
+            "## Missing or unverified fields\n\n" + unknowns_block + "\n\n"
+            "## Authorisation record\n\n"
+            "- Responsible school officer: TBC\n- Disclosure minimisation check: TBC\n"
+            "- Authority recipient and secure channel: TBC\n"
+            "- Human approval before submission: REQUIRED\n\n"
+            "Include only verified facts and necessary personal data in any final "
+            "version; preserve the internal evidence trail separately."
+        ),
+        "staff_internal_notice": (
+            "## Internal operational message\n\n"
+            f"A school matter has been reported: {safe_summary}\n\n"
+            "Staff should use the current authorised school channel for confirmed "
+            "instructions. Operational location, timing, duty allocation and any "
+            "temporary access change are TBC until a responsible human supplies "
+            "them. Do not forward names, health information, discipline details "
+            "or speculation to unauthorised groups.\n\n"
+            "## Staff acknowledgement fields\n\n"
+            "- Notice owner: TBC\n- Intended staff group: TBC\n"
+            "- Confirmed action requested from staff: TBC\n"
+            "- Questions routed to: TBC\n\n"
+            "This is an internal draft, not evidence that the notice has been "
+            "issued or that any operational step has occurred."
+        ),
+        "public_communication_draft": (
+            "## Privacy-safe holding text\n\n"
+            "The school is aware of a reported matter. Further public detail is "
+            "TBC and must be limited to authorised, verified, necessary and "
+            "non-identifying operational information. Person-level and restricted "
+            "case details are excluded from this draft. It does not assign blame, "
+            "reveal operational security detail or state an unverified cause.\n\n"
+            "## Release checks\n\n"
+            "☐ Confirm the factual basis and public purpose.\n"
+            "☐ Remove direct and indirect identifiers.\n"
+            "☐ Confirm the authorised spokesperson and channel.\n"
+            "☐ Obtain separate human approval before publication.\n"
+            "☐ Preserve the approved final text and release record.\n\n"
+            "This holding draft has not been published. Questions, publication "
+            "timing and any later statement remain TBC; no promise of an update "
+            "is made by the drafting system."
+        ),
+        "discipline_investigation_report": (
+            "## Allegation boundary\n\n"
+            f"Reported matter: {safe_summary}\n\n"
+            "An allegation is not a finding. Person, conduct, rule, date, time, "
+            "location and immediate risk are TBC unless listed below as supplied "
+            "facts. Do not assign blame or circulate the allegation publicly.\n\n"
+            "## Supplied facts\n\n" + facts_block + "\n\n"
+            "## Evidence plan\n\n"
+            "Proposed: preserve original records, obtain separate first-hand "
+            "accounts, document provenance, offer the affected person a fair "
+            "opportunity to respond, and distinguish observation from hearsay.\n\n"
+            "## Decision record\n\n"
+            "- Applicable approved school rule: TBC\n- Safeguarding overlap: TBC\n"
+            "- Finding, reasons and authorised decision-maker: TBC\n"
+            "- Family-contact requirement and status: TBC"
+        ),
+        "safeguarding_action_plan": (
+            "## Immediate welfare boundary\n\n"
+            f"Reported concern: {safe_summary}\n\n"
+            "A trained authorised human must assess immediate safety. The agent "
+            "does not interview a child, decide credibility, promise secrecy or "
+            "choose a statutory referral. Immediate danger must use the live "
+            "human emergency process.\n\n"
+            "## Proposed controlled actions\n\n"
+            "☐ Record the child's words accurately without leading questions.\n"
+            "☐ Limit access to people with an authorised safeguarding role.\n"
+            "☐ Preserve relevant evidence and record each disclosure.\n"
+            "☐ Check the current official reporting route and required timing.\n\n"
+            "## Ownership and status\n\n"
+            "- Safeguarding lead: TBC\n- Immediate risk status: TBC\n"
+            "- Referral decision and basis: TBC\n- Guardian-contact decision: TBC"
+        ),
+        "evidence_preservation_log": (
+            "## Evidence register\n\n"
+            f"Case context: {safe_summary}\n\n"
+            "For each item record a unique reference, description, original "
+            "source, collector, collection time, storage location, access events, "
+            "copy or export method, and integrity note. All item-level entries "
+            "are TBC until supplied; this document does not assert that evidence "
+            "has already been collected.\n\n"
+            "## Candidate evidence categories\n\n"
+            "- Original incident notes: TBC\n- Relevant authorised system records: TBC\n"
+            "- Photographs or video with lawful access: TBC\n"
+            "- Separate witness accounts: TBC\n- External reference numbers: TBC\n\n"
+            "## Controls\n\n"
+            "Proposed: preserve originals, avoid unnecessary duplication, restrict "
+            "access, document every transfer, and obtain approval before disclosure."
+        ),
+        "cyber_incident_response": (
+            "## Technical incident boundary\n\n"
+            f"Reported cyber or data matter: {safe_summary}\n\n"
+            "Do not delete logs, reset affected evidence indiscriminately, expose "
+            "credentials in this document or contact an alleged attacker. Scope, "
+            "systems, accounts, data classes and continuing access are TBC.\n\n"
+            "## Proposed containment and evidence prompts\n\n"
+            "☐ Assign an authorised incident owner.\n☐ Preserve timestamps and logs.\n"
+            "☐ Isolate affected access where the authorised technical owner deems safe.\n"
+            "☐ Rotate secrets through approved tooling, not through chat.\n"
+            "☐ Assess affected people and notification duties from official sources.\n\n"
+            "## Decision record\n\n"
+            "- Confirmed impact: TBC\n- Containment actually performed: TBC\n"
+            "- Recovery test and notification decision: TBC"
+        ),
+        "finance_procurement_memo": (
+            "## Decision requested\n\n"
+            f"School finance or procurement matter: {safe_summary}\n\n"
+            "## Required evidence\n\n"
+            "- Need and educational purpose: TBC\n- Amount and available allocation: TBC\n"
+            "- Quotations or approved exception: TBC\n- Supplier due diligence: TBC\n"
+            "- Conflict-of-interest declaration: TBC\n- Delivery and acceptance owner: TBC\n\n"
+            "## Options and controls\n\n"
+            "Proposed: compare compliant options on total cost, suitability, timing "
+            "and risk; separate requester, approver and receiver where required; "
+            "record the basis of decision. No purchase, payment, commitment or "
+            "supplier appointment is authorised by this memo.\n\n"
+            "## Approval\n\nDecision and authorised signatory: TBC"
+        ),
+        "event_action_plan": (
+            "## Event definition\n\n"
+            f"Reported or proposed activity: {safe_summary}\n\n"
+            "- Date, venue, participants and capacity: TBC\n- Event owner: TBC\n"
+            "- Learning or community purpose: TBC\n- Budget and supplier status: TBC\n\n"
+            "## Planning workstreams\n\n"
+            "☐ Confirm programme, staffing and student supervision.\n"
+            "☐ Assess access, weather, medical, transport and safeguarding risks.\n"
+            "☐ Confirm consent, accessibility and privacy-safe communications.\n"
+            "☐ Set a human decision point for postponement, cancellation or escalation.\n\n"
+            "## Readiness record\n\n"
+            "Responsible owner, deadline, evidence of completion and unresolved "
+            "dependency are TBC for each workstream. This draft does not approve "
+            "the event or claim that preparation is complete."
+        ),
+        "external_stakeholder_message": (
+            "Dear External Stakeholder,\n\n"
+            f"This draft concerns the following school matter: {safe_summary}\n\n"
+            "The precise request, recipient organisation, authorised contact, "
+            "deadline and information that may be disclosed are TBC. Please do "
+            "not treat this draft as confirmation of an invitation, appointment, "
+            "booking, cancellation, purchase or official school commitment.\n\n"
+            "## Proposed message fields\n\n"
+            "- Purpose of contact: TBC\n- Action or reply requested: TBC\n"
+            "- Necessary attachments: TBC\n- School contact channel: TBC\n\n"
+            "The final message must use verified facts, minimum necessary personal "
+            "data and a separately approved recipient. Nothing has been sent.\n\n"
+            "Authorised school representative: TBC"
+        ),
+        "student_support_plan": (
+            "## Support need\n\n"
+            f"Reported learning or welfare context: {safe_summary}\n\n"
+            "The student's strengths, difficulty, voice, existing support, access "
+            "needs and desired outcome are TBC. This plan must not diagnose, label "
+            "or lower expectations without appropriate evidence and authority.\n\n"
+            "## Proposed support cycle\n\n"
+            "☐ Agree one observable learner-centred outcome.\n"
+            "☐ Choose a proportionate classroom adjustment and responsible adult.\n"
+            "☐ Define evidence and a review point without storing unnecessary data.\n"
+            "☐ Seek specialist or family input through approved channels if needed.\n\n"
+            "## Record\n\n"
+            "Outcome, action owner, start point, evidence, learner feedback and "
+            "review decision: TBC. Each future change requires human confirmation."
+        ),
+        "transport_response_plan": (
+            "## Transport situation\n\n"
+            f"Reported transport matter: {safe_summary}\n\n"
+            "Vehicle, driver, operator, route, passenger list, current location, "
+            "injury status and continuing danger are TBC. Urgent danger must use "
+            "the live emergency process rather than wait for this plan.\n\n"
+            "## Proposed coordination prompts\n\n"
+            "☐ Establish one authorised school incident owner.\n"
+            "☐ Verify accountability from the current authorised passenger list.\n"
+            "☐ Confirm operator and emergency contacts without publishing identities.\n"
+            "☐ Record any route, pickup, release or replacement decision.\n\n"
+            "## Decision log\n\n"
+            "Actual action, owner, time, external reference, family-contact status "
+            "and transport continuation decision: TBC. No dispatch is claimed."
+        ),
+        "food_safety_response": (
+            "## Exposure definition\n\n"
+            f"Reported food or water matter: {safe_summary}\n\n"
+            "Affected people, symptoms, item, batch, supplier, service point and "
+            "remaining stock are TBC. Medical assessment belongs to qualified "
+            "people; do not diagnose from this document.\n\n"
+            "## Proposed containment and traceability prompts\n\n"
+            "☐ Prevent further service of the suspected item without destroying evidence.\n"
+            "☐ Preserve labels, receipts, menus and handling records.\n"
+            "☐ Create a privacy-controlled symptom and exposure line list.\n"
+            "☐ Check the current official health and notification route.\n\n"
+            "## Status record\n\n"
+            "Containment actually performed, clinical status, guardian contact, "
+            "supplier contact, sample custody and authority decision: TBC."
+        ),
+        "post_incident_review": (
+            "## Review scope\n\n"
+            f"Reported case for later review: {safe_summary}\n\n"
+            "The final chronology, outcomes, response decisions and evidence base "
+            "are TBC. Conduct this review only after urgent safety and welfare needs "
+            "are handled by responsible humans.\n\n"
+            "## Review questions\n\n"
+            "- What was expected to happen under the approved process? TBC\n"
+            "- What actually happened, based on verified evidence? TBC\n"
+            "- Which controls helped, failed or created delay? TBC\n"
+            "- What action, owner, due date and proof of completion are proposed? TBC\n\n"
+            "## Learning boundary\n\n"
+            "Retain reusable procedure improvements only; do not turn personal "
+            "student, family or staff data into long-term agent memory."
+        ),
+        "school_document": (
+            "## Purpose and scope\n\n"
+            f"School administration request: {safe_summary}\n\n"
+            "The intended reader, decision required, deadline, applicable approved "
+            "procedure and supporting evidence are TBC. This file is a governed "
+            "working draft and does not by itself authorise an action.\n\n"
+            "## Supplied facts\n\n" + facts_block + "\n\n"
+            "## Missing inputs\n\n" + unknowns_block + "\n\n"
+            "## Proposed completion controls\n\n"
+            "Confirm the document owner and audience, verify source facts, separate "
+            "fact from assumption, minimise personal data, record approvals, and "
+            "use a distinct human gate before any external release.\n\n"
+            "## Decision record\n\nOwner, reviewer, approval status and next action: TBC"
+        ),
+    }
+    body = bodies.get(role, bodies["school_document"])
+    if public:
+        body = bodies["public_communication_draft"]
+    result = common + body + source_note
+    minimum = 500 if role in {
+        "private_parent_notice", "public_communication_draft",
+        "emergency_contact_script", "fire_rescue_contact_script",
+        "medical_handover_script", "external_stakeholder_message",
+        "staff_internal_notice",
+    } else 750
+    if len(result) < minimum:
+        result += (
+            "\n\n## Completion control\n\n"
+            "All TBC fields require an authorised human source. Record the source, "
+            "time, reviewer and decision before operational use. Keep the draft "
+            "inside its stated audience boundary and apply a separate approval "
+            "gate before any external release."
+        )
+    return result.strip()
 
 
 def _workflow_draft_body(user_intent: str, meta: dict) -> str:
@@ -912,6 +1403,459 @@ class ContentSynthesizer:
         return {"action_id": action.action_id, "tool": tool, "op": op,
                 "skipped": "no_handler"}
 
+    def enrich_school_plan(
+        self,
+        actions: list[CandidateAction],
+        *,
+        user_intent: str,
+    ) -> dict:
+        """Generate every governed school Markdown artifact in one JSON call.
+
+        The response is keyed by ``action_id`` and is accepted only when its
+        key set exactly matches the planned artifact actions.  This preserves
+        sibling boundaries and avoids the old failure mode where three
+        independent 102B calls each answered the full multi-document request.
+        A targeted per-action writer remains as a failure-isolated fallback.
+        """
+        artifacts = [
+            a for a in actions
+            if (a.metadata or {}).get("school_output_contract")
+            and (a.metadata or {}).get("school_content_role") == "artifact"
+        ]
+        if not artifacts:
+            return {"result": "skipped_no_school_artifacts", "artifacts": 0}
+        # Product response packs can contain 6-10 independent Markdown files.
+        # One 6.5k-token JSON response is likely to truncate at that size and
+        # then fail every file together. Keep the exact action-id contract, but
+        # synthesize in failure-isolated batches of at most six artifacts.
+        if len(artifacts) > 6:
+            batches: list[dict] = []
+            failed = False
+            for start in range(0, len(artifacts), 6):
+                batch = artifacts[start:start + 6]
+                result = self.enrich_school_plan(batch, user_intent=user_intent)
+                batches.append(result)
+                if not str(result.get("result") or "").startswith(
+                    "synthesized_verified"
+                ):
+                    failed = True
+            return {
+                "result": (
+                    "batched_with_per_action_fallback" if failed
+                    else "synthesized_verified_batched_action_bundle"
+                ),
+                "artifacts": len(artifacts),
+                "batch_count": len(batches),
+                "batches": batches,
+            }
+
+        descriptors = [
+            {
+                "action_id": a.action_id,
+                "target": Path(a.target).name,
+                "purpose": a.purpose,
+                "artifact_id": a.metadata.get("artifact_id"),
+                "artifact_role": a.metadata.get("artifact_role"),
+                "audience": a.metadata.get("audience"),
+                "release_state": a.metadata.get("release_state"),
+                "source_policy": a.metadata.get("source_policy"),
+                "sibling_artifacts": a.metadata.get("sibling_artifacts") or [],
+            }
+            for a in artifacts
+        ]
+        expected_ids = {a.action_id for a in artifacts}
+        system = (
+            "You are Module 102S, a role-scoped writer inside a governed "
+            "Malaysian public-school administration system. Return ONE JSON "
+            "object whose only top-level key is 'artifacts'. 'artifacts' must "
+            "be an object mapping every supplied action_id to exactly one "
+            "Markdown body string. Use every action_id exactly once; do not "
+            "add keys.\n\n"
+            "For EACH artifact: write ONLY that action's requested deliverable. "
+            "Never include a sibling deliverable, sibling title, second letter, "
+            "or second report. Begin with exactly one '# ' H1; use '## ' for "
+            "subsections; no code fences. Include a visible status line such as "
+            "'DRAFT - NOT SENT' and the correct audience boundary. Use TBC for "
+            "missing or unverified facts; write 'TBC - authorised school "
+            "representative' rather than a name placeholder. Do not use square "
+            "brackets, [Your Name], [Parent Name], TODO, TBD, sample, or other "
+            "generic placeholders.\n\n"
+            "QUALITY RULE: make each file usable by a first school operator, "
+            "not a token stub. Reports, plans, assessments and checklists should "
+            "contain at least 750 characters with role-appropriate sections; "
+            "short messages and call/handover scripts must contain at least 500 "
+            "characters. Keep facts TBC rather than padding or "
+            "inventing details.\n\n"
+            "SOURCE STATUS RULE: if source_policy says official verification "
+            "is required and no cited official source appears in the supplied "
+            "context, include a visible 'Official-source check: REQUIRED - not "
+            "yet completed' note. Give only case-fact fields and conservative "
+            "proposed steps; never imply the draft contains verified policy or "
+            "official medical instructions. Urgent human safety action must not "
+            "wait for this document or for web research.\n\n"
+            "FACT RULE: the source request below is the only factual evidence. "
+            "Do not infer routine actions. In particular, do not claim emergency "
+            "services were contacted/arrived, a student was transported or "
+            "admitted, witnesses existed or gave statements, police/authorities "
+            "are investigating, a family was contacted, protocols were activated, "
+            "or safety measures were implemented unless the source explicitly "
+            "says so. Reported facts must stay reported; unverified facts must "
+            "stay TBC. Do not say details are 'under review', verification is "
+            "'ongoing', the school is reviewing/gathering information/taking "
+            "necessary steps, or updates will be provided unless the source "
+            "explicitly states that process or asks for that commitment. Use a "
+            "plain TBC field instead. Recommendations must be phrased as proposed "
+            "next steps, not completed events. Never add 'today', a date, or a "
+            "promise to monitor/provide updates unless the source says so. Do not "
+            "turn a general school/recess reference into a specific playground, "
+            "canteen, classroom, or other location; use Location: TBC. Do not add "
+            "'promptly' or 'immediately' to a reported action unless supplied. "
+            "Do not assign blame.\n\n"
+            "For a private parent notice, use only the minimum family-relevant "
+            "facts and exclude internal investigation sections. For an internal "
+            "incident report, do not include a parent-letter salutation or "
+            "sign-off, and do not add a Recommendations section unless the "
+            "source request explicitly asks for recommendations; fact-"
+            "verification next steps are allowed. "
+            "Return JSON only."
+        )
+
+        response_pack_owned = all(
+            (a.metadata or {}).get("coverage_source") == "school_response_pack"
+            for a in artifacts
+        )
+        # A response pack has a deterministic, role-scoped safety net. One
+        # live bundle attempt is enough: three bundle attempts followed by
+        # three attempts per file made a six-file emergency pack take minutes
+        # and still allowed partial delivery. Legacy free-form artifacts retain
+        # the older three-attempt behaviour.
+        attempt_count = 1 if response_pack_owned else 3
+        feedback = ""
+        last_issues: list[str] = []
+        for attempt in range(1, attempt_count + 1):
+            user = (
+                f"SOURCE REQUEST (facts and constraints only):\n{user_intent}\n\n"
+                "PLANNED ARTIFACT CONTRACTS:\n"
+                + json.dumps(descriptors, ensure_ascii=False, indent=2)
+                + "\n\nReturn the exact JSON mapping now."
+                + feedback
+            )
+            data = self.chat_llm.chat_json(
+                system=system, user=user, max_tokens=8500)
+            mapping = self._school_artifact_mapping(data)
+            issues: list[str] = []
+            if set(mapping) != expected_ids:
+                issues.append(
+                    "action_id_set_mismatch:expected="
+                    + ",".join(sorted(expected_ids))
+                    + ":got=" + ",".join(sorted(mapping))
+                )
+            if not issues:
+                for action in artifacts:
+                    body = str(mapping.get(action.action_id) or "").strip()
+                    checked = validate_school_markdown(
+                        action, body, user_intent)
+                    for layer, found in checked.items():
+                        issues.extend(
+                            f"{action.action_id}:{layer}:{item}"
+                            for item in found
+                        )
+                for i, left in enumerate(artifacts):
+                    for right in artifacts[i + 1:]:
+                        score = artifact_similarity(
+                            mapping.get(left.action_id, ""),
+                            mapping.get(right.action_id, ""),
+                        )
+                        if score >= 0.72:
+                            issues.append(
+                                f"cross_artifact_similarity:{left.action_id}:"
+                                f"{right.action_id}:{score:.3f}"
+                            )
+            # Deterministic validators catch known assertion shapes; every
+            # fully clean live bundle still receives a semantic evidence read
+            # before any LLM prose is trusted, including low-severity packs.
+            needs_semantic_audit = True
+            if not issues and needs_semantic_audit:
+                audit = self._school_fact_grounding_audit(
+                    artifacts, mapping, user_intent)
+                if audit.get("pass") is not True:
+                    issues.extend(audit.get("issues") or [
+                        "semantic_grounding_audit_unavailable"
+                    ])
+            if not issues:
+                for action in artifacts:
+                    body = str(mapping[action.action_id]).strip()
+                    action.metadata["content"] = body
+                    action.metadata["synthesis_skip"] = True
+                    action.metadata["school_generation_failed"] = False
+                    action.metadata["school_generation_validation"] = {
+                        "pass": True, "attempt": attempt,
+                        "mode": "plan_level_action_id_mapping",
+                    }
+                return {
+                    "result": "synthesized_verified_action_bundle",
+                    "artifacts": len(artifacts), "attempt": attempt,
+                    "action_ids": sorted(expected_ids),
+                }
+            last_issues = issues
+            feedback = (
+                "\n\nYour previous JSON was rejected by deterministic checks. "
+                "Repair every listed issue without adding facts or changing "
+                "action ids. Replace the rejected drafts; do not repeat their "
+                "unsupported process language:\n- " + "\n- ".join(issues[:20])
+                + "\n\nPREVIOUS REJECTED ARTIFACTS:\n"
+                + json.dumps(
+                    {key: str(value)[:2500] for key, value in mapping.items()},
+                    ensure_ascii=False,
+                    indent=2,
+                )[:9000]
+            )
+
+        global_failure = response_pack_owned or any(
+            issue.startswith("action_id_set_mismatch")
+            or issue == "semantic_grounding_audit_unavailable_or_failed"
+            for issue in last_issues
+        )
+        retained: list[str] = []
+        failed_ids: list[str] = []
+        safe_fallback_ids: list[str] = []
+        for action in artifacts:
+            action_issues = [
+                issue for issue in last_issues if action.action_id in issue
+            ]
+            body = str(mapping.get(action.action_id) or "").strip()
+            if body and not global_failure and not action_issues:
+                action.metadata["content"] = body
+                action.metadata["synthesis_skip"] = True
+                action.metadata["school_generation_failed"] = False
+                action.metadata["school_generation_validation"] = {
+                    "pass": True,
+                    "mode": "partial_bundle_retained",
+                }
+                retained.append(action.action_id)
+                continue
+            if response_pack_owned:
+                safe_body = _school_response_pack_safe_fallback(
+                    action, user_intent)
+                safe_issues = validate_school_markdown(
+                    action, safe_body, user_intent)
+                flat_safe = [
+                    f"{layer}:{item}"
+                    for layer, values in safe_issues.items() for item in values
+                ]
+                if not flat_safe:
+                    action.metadata["content"] = safe_body
+                    action.metadata["synthesis_skip"] = True
+                    action.metadata["school_generation_failed"] = False
+                    action.metadata["school_generation_validation"] = {
+                        "pass": True,
+                        "mode": "deterministic_response_pack_fallback",
+                        "live_bundle_issues": (
+                            action_issues or last_issues
+                        )[:20],
+                    }
+                    safe_fallback_ids.append(action.action_id)
+                    continue
+                action.metadata["school_fallback_validation_issues"] = flat_safe[:20]
+            action.metadata["school_bundle_failure_issues"] = (
+                action_issues or last_issues
+            )[:20]
+            action.metadata["school_generation_failed"] = True
+            failed_ids.append(action.action_id)
+
+        # A clean retained LLM draft can still duplicate a deterministic
+        # sibling after the two sets are merged. Re-run the cross-artifact
+        # invariant over the final bundle. Replace every conflict participant
+        # with its canonical role fallback, then fail closed if a same-role
+        # custom pair remains indistinguishable.
+        if response_pack_owned and not failed_ids:
+            conflicting: set[str] = set()
+            for index, left in enumerate(artifacts):
+                for right in artifacts[index + 1:]:
+                    if artifact_similarity(
+                        str(left.metadata.get("content") or ""),
+                        str(right.metadata.get("content") or ""),
+                    ) >= 0.72:
+                        conflicting.update({left.action_id, right.action_id})
+            for action in artifacts:
+                if action.action_id not in conflicting:
+                    continue
+                replacement = _school_response_pack_safe_fallback(
+                    action, user_intent)
+                checked = validate_school_markdown(
+                    action, replacement, user_intent)
+                if any(checked.values()):
+                    action.metadata["school_generation_failed"] = True
+                    failed_ids.append(action.action_id)
+                    continue
+                action.metadata["content"] = replacement
+                action.metadata["synthesis_skip"] = True
+                action.metadata["school_generation_failed"] = False
+                action.metadata["school_generation_validation"] = {
+                    "pass": True,
+                    "mode": "deterministic_response_pack_similarity_repair",
+                }
+                if action.action_id not in safe_fallback_ids:
+                    safe_fallback_ids.append(action.action_id)
+                if action.action_id in retained:
+                    retained.remove(action.action_id)
+
+            for index, left in enumerate(artifacts):
+                for right in artifacts[index + 1:]:
+                    if artifact_similarity(
+                        str(left.metadata.get("content") or ""),
+                        str(right.metadata.get("content") or ""),
+                    ) < 0.72:
+                        continue
+                    for action in (left, right):
+                        action.metadata["school_generation_failed"] = True
+                        action.metadata["school_generation_validation"] = {
+                            "pass": False,
+                            "mode": "final_cross_artifact_similarity",
+                        }
+                        if action.action_id not in failed_ids:
+                            failed_ids.append(action.action_id)
+        return {
+            "result": (
+                "synthesized_verified_response_pack_safe_fallback"
+                if safe_fallback_ids and not failed_ids
+                else "partial_bundle_per_action_fallback" if retained
+                else "bundle_rejected_per_action_fallback"
+            ),
+            "artifacts": len(artifacts), "issues": last_issues[:20],
+            "retained_action_ids": retained,
+            "safe_fallback_action_ids": safe_fallback_ids,
+            "fallback_action_ids": failed_ids,
+        }
+
+    @staticmethod
+    def _school_artifact_mapping(data: dict) -> dict[str, str]:
+        if not isinstance(data, dict):
+            return {}
+        raw = data.get("artifacts")
+        if isinstance(raw, dict):
+            out: dict[str, str] = {}
+            for key, value in raw.items():
+                if isinstance(value, dict):
+                    value = value.get("content") or value.get("body") or ""
+                out[str(key)] = str(value or "")
+            return out
+        if isinstance(raw, list):
+            out = {}
+            for item in raw:
+                if not isinstance(item, dict):
+                    continue
+                key = str(item.get("action_id") or "")
+                if key:
+                    out[key] = str(item.get("content") or item.get("body") or "")
+            return out
+        return {}
+
+    def _school_fact_grounding_audit(
+        self,
+        artifacts: list[CandidateAction],
+        mapping: dict[str, str],
+        source_request: str,
+    ) -> dict:
+        """LLM semantic evidence check; deterministic code owns pass/fail.
+
+        Regex rules catch known unsafe assertions cheaply. This second read is
+        what generalises to arbitrary wording: the model identifies claims and
+        their source evidence, while the runtime accepts only an explicit clean
+        result. The auditor never chooses BLUE/GREEN/RED.
+        """
+        if getattr(self.chat_llm, "backend", "mock") == "mock":
+            return {"pass": True, "issues": [], "skipped": "mock_backend"}
+        contracts = {
+            action.action_id: {
+                "role": action.metadata.get("artifact_role"),
+                "audience": action.metadata.get("audience"),
+                "content": str(mapping.get(action.action_id) or ""),
+            }
+            for action in artifacts
+        }
+        system = (
+            "You are a strict fact-grounding auditor, not a writer and not a "
+            "governance decision-maker. Compare every factual, institutional-"
+            "process, completed-action, current-action, and definite future-"
+            "commitment claim in each school artifact against SOURCE REQUEST. "
+            "Treat claims such as 'we are reviewing', 'verification is ongoing', "
+            "'we are gathering information', 'we are taking necessary steps', "
+            "'an investigation is underway', 'the family was contacted', or "
+            "'updates will be provided' as unsupported unless the source says "
+            "that action/state exists or explicitly requests that commitment. "
+            "A request to CREATE a report is not evidence that the incident was "
+            "already reported to administrators. A request to CONTACT a parent "
+            "is not evidence that the school is already reviewing, verifying, "
+            "gathering facts, taking action, or committed to future updates. "
+            "Those must be TBC or clearly proposed for human review. "
+            "Reported facts must remain reported; do not allow stronger medical, "
+            "injury, witness, police, blame, or response details than the source. "
+            "Do not flag headings, DRAFT/NOT SENT labels, audience labels, TBC "
+            "fields, or clearly proposed/recommended verification steps. Return "
+            "JSON only: {\"pass\": boolean, \"unsupported_claims\": "
+            "[{\"action_id\": string, \"claim\": string, \"reason\": string}]}. "
+            "pass may be true only when unsupported_claims is empty."
+        )
+        data = self.chat_llm.chat_json(
+            system=system,
+            user=(
+                f"SOURCE REQUEST:\n{source_request}\n\n"
+                "ARTIFACTS TO AUDIT:\n"
+                + json.dumps(contracts, ensure_ascii=False, indent=2)
+            ),
+            max_tokens=1800,
+        )
+        raw_claims = data.get("unsupported_claims") if isinstance(data, dict) else None
+        claims = raw_claims if isinstance(raw_claims, list) else []
+        issues: list[str] = []
+        source_lower = re.sub(r"\s+", " ", (source_request or "").casefold())
+        stopwords = {
+            "a", "an", "the", "is", "was", "were", "are", "has", "have",
+            "of", "to", "for", "and", "or", "at", "in", "on", "during",
+            "this", "that", "student", "school",
+        }
+        for item in claims[:12]:
+            if not isinstance(item, dict):
+                continue
+            aid = str(item.get("action_id") or "unknown")[:80]
+            claim = re.sub(r"\s+", " ", str(item.get("claim") or "")).strip()[:180]
+            reason = re.sub(r"\s+", " ", str(item.get("reason") or "")).strip()[:180]
+            # The semantic auditor occasionally flags the exact safe forms it
+            # was instructed to allow. Deterministically discard only claims
+            # that are visibly TBC or future/proposed; positive completed-action
+            # claims still fail and are rewritten.
+            if re.search(
+                r"\b(?:tbc|to be confirmed|proposed|recommended|prepare to|"
+                r"if required|if needed|as necessary|authorised school "
+                r"representative to|next steps?:?\s*-?\s*tbc|actions? taken:?\s*-?\s*tbc)\b",
+                claim,
+                flags=re.IGNORECASE,
+            ):
+                continue
+            claim_tokens = {
+                token for token in re.findall(r"[a-z0-9]+", claim.casefold())
+                if token not in stopwords and len(token) > 1
+            }
+            source_tokens = set(re.findall(r"[a-z0-9]+", source_lower))
+            token_support = (
+                len(claim_tokens.intersection(source_tokens)) / len(claim_tokens)
+                if claim_tokens else 0.0
+            )
+            unsupported_time = (
+                "today" in claim_tokens and "today" not in source_tokens
+            )
+            if token_support >= 0.85 and not unsupported_time:
+                continue
+            issues.append(
+                f"semantic_grounding:{aid}:{claim or reason or 'unsupported_claim'}"
+            )
+        if not isinstance(data, dict) or issues:
+            if not issues:
+                issues.append("semantic_grounding_audit_unavailable_or_failed")
+            return {"pass": False, "issues": issues, "raw": data}
+        return {"pass": True, "issues": []}
+
     # ------------------------------------------------------------------
     # Tool-specific synthesizers
     # ------------------------------------------------------------------
@@ -1335,6 +2279,9 @@ class ContentSynthesizer:
         ext_text = target.endswith((".md", ".markdown", ".txt", ".text"))
         if not ext_text:
             return self._status(action, "skipped_non_text_target")
+        if (meta.get("school_output_contract")
+                and meta.get("school_content_role") == "artifact"):
+            return self._enrich_school_markdown(action, user_intent)
         if self._looks_real(content, min_chars=200):
             return self._status(action, "kept_planner_content", chars=len(content))
         # Workflow content draft — two tiers, IDENTICAL governance:
@@ -1380,6 +2327,121 @@ class ContentSynthesizer:
         meta["content"] = _fallback_body(user_intent, "chat")
         return self._status(action, "synth_failed_fallback_body_written",
                             chars=len(meta["content"]))
+
+    def _enrich_school_markdown(
+        self, action: CandidateAction, user_intent: str,
+    ) -> dict:
+        """Failure-isolated writer for one role-scoped school artifact."""
+        meta = action.metadata
+        role = str(meta.get("artifact_role") or "school_document")
+        audience = str(meta.get("audience") or "internal")
+        siblings = meta.get("sibling_artifacts") or []
+        system = (
+            "Write exactly ONE governed public-school Markdown artifact. "
+            "Output Markdown body only, no JSON and no code fence. Start with "
+            "exactly one '# ' heading. The artifact role is " + role +
+            "; audience is " + audience + ". Write only this artifact and "
+            "exclude all sibling deliverables. Mark it DRAFT - NOT SENT. Use "
+            "enough role-appropriate sections to be operationally useful: "
+            "at least 750 characters for reports/plans/checklists and at least "
+            "500 characters for messages or contact scripts. Never pad with "
+            "invented facts. "
+            "only facts explicitly present in the source request. Missing or "
+            "unverified facts must be TBC. Do not infer completed emergency, "
+            "medical, witness, police, family-contact, investigation, record, "
+            "financial, or communication actions. Do not say details are under "
+            "review, verification is ongoing, the school is reviewing or gathering "
+            "information, the school is taking necessary steps, or updates will "
+            "be provided unless the source says so. Use TBC instead. "
+            "Never add 'today', a date, or a promise to monitor/provide updates "
+            "unless the source says so. "
+            "Do not turn a general school/recess reference into a specific "
+            "location; use Location: TBC. Do not add 'promptly' or 'immediately' "
+            "unless supplied. "
+            "Recommendations must be "
+            "future/proposed actions. Do not assign blame. Do not use square "
+            "brackets or generic placeholders; write plain 'TBC - ...' fields. "
+            "A private parent notice must not contain "
+            "internal-report sections; an internal report must not contain a "
+            "parent-letter salutation or sign-off. An internal incident report "
+            "must not add a Recommendations section unless the source request "
+            "explicitly asks for recommendations; fact-verification next steps "
+            "are allowed. "
+            + (
+                "Include a visible 'Official-source check: REQUIRED - not yet "
+                "completed' note and do not claim verified official guidance."
+                if "verification_required" in str(meta.get("source_policy") or "")
+                else ""
+            )
+        )
+        feedback = ""
+        last: dict[str, list[str]] = {}
+        for attempt in range(1, 4):
+            body = (self.chat_llm.chat(
+                system=system,
+                user=(
+                    f"SOURCE REQUEST:\n{user_intent}\n\n"
+                    f"THIS ARTIFACT PURPOSE:\n{action.purpose}\n\n"
+                    f"TARGET FILE: {Path(action.target).name}\n"
+                    f"SIBLINGS TO EXCLUDE: "
+                    f"{json.dumps(siblings, ensure_ascii=False)}\n\n"
+                    "Write this artifact now." + feedback
+                ),
+                max_tokens=3500,
+            ) or "").strip()
+            last = validate_school_markdown(action, body, user_intent)
+            flat = [f"{layer}:{item}" for layer, values in last.items()
+                    for item in values]
+            needs_semantic_audit = bool(
+                not meta.get("coverage_source")
+                or str(meta.get("situation_severity") or "").lower()
+                in {"high", "critical"}
+                or str(meta.get("audience") or "").lower() == "public"
+            )
+            if body and not flat and needs_semantic_audit:
+                audit = self._school_fact_grounding_audit(
+                    [action], {action.action_id: body}, user_intent)
+                if audit.get("pass") is not True:
+                    flat.extend(audit.get("issues") or [
+                        "semantic_grounding_audit_unavailable"
+                    ])
+            if body and not flat:
+                meta["content"] = body
+                meta["school_generation_failed"] = False
+                meta["school_generation_validation"] = {
+                    "pass": True, "attempt": attempt,
+                    "mode": "per_action_scoped_fallback",
+                }
+                return self._status(
+                    action, "school_markdown_synthesized_verified",
+                    chars=len(body), attempt=attempt)
+            feedback = (
+                "\n\nThe previous draft below failed these checks. Replace it "
+                "and remove every unsupported process/action claim; do not repeat "
+                "the rejected wording:\n- " + "\n- ".join(flat[:12])
+                + "\n\nPREVIOUS REJECTED DRAFT:\n---\n"
+                + body[:5000] + "\n---"
+            )
+
+        meta["content"] = (
+            "# Draft generation held for review\n\n"
+            "> **Status:** UNVERIFIED - NOT SENT\n\n"
+            "The governed writer could not safely produce this artifact from "
+            "the supplied facts. No unsupported content has been released.\n\n"
+            "## Information status\n\n- Required case details: TBC\n"
+        )
+        meta["school_generation_failed"] = True
+        meta["school_generation_validation"] = {
+            "pass": False, "issues": last,
+            "mode": "per_action_scoped_fallback",
+        }
+        return self._status(
+            action, "school_markdown_generation_held",
+            chars=len(meta["content"]),
+            issues=[
+                f"{layer}:{item}"
+                for layer, values in last.items() for item in values
+            ][:12])
 
     # ------------------------------------------------------------------
     # Helpers

@@ -26,7 +26,7 @@ import json
 import os
 import re
 from typing import Any
-from urllib.parse import quote_plus, unquote
+from urllib.parse import quote_plus, unquote, urlparse
 
 from ..models import CandidateAction
 
@@ -91,6 +91,22 @@ class WebSearchTool:
                     "error": "web_search_missing_query", "affected": []}
         max_results = int(meta.get("max_results", 5))
         results = search_web(query, max_results=max_results, timeout=self.timeout)
+        allowed_domains = {
+            str(domain).strip().lower()
+            for domain in (meta.get("allowed_domains") or [])
+            if str(domain).strip()
+        }
+        if allowed_domains:
+            results = [
+                hit for hit in results
+                if any(
+                    (urlparse(str(hit.get("url") or "")).hostname or "").lower()
+                    == domain
+                    or (urlparse(str(hit.get("url") or "")).hostname or "").lower()
+                    .endswith("." + domain)
+                    for domain in allowed_domains
+                )
+            ]
         if not results:
             return {"status": "failed", "summary": "no_results",
                     "error": "web_search_no_results", "affected": []}

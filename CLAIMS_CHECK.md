@@ -53,7 +53,7 @@ cannot reproduce.
 
 Command: `python -X utf8 -m pytest -q`
 
-- **1080** collected — **1079 passed**, **1 skipped**, **0 failed**.
+- **1121** collected — **1120 passed**, **1 skipped**, **0 failed**.
 - Reproduced green on a fresh venv on a clean (non-CJK) path.
 
 ## Claim 9 — Evaluation status
@@ -80,6 +80,16 @@ appropriate (provided separately, not in this repository). See
 
 ## Note on the live LLM path
 
-The `TEOW_AGL_PLANNER=openai` path is implemented and unit-tested (stub / curated
-fallback), but should be validated with a rotated API key before it is used;
-the offline `smart_mock` demo is the reproducible, recommended path.
+The competition Mixed Live path keeps the core scripted demo deterministic and
+can run Route A/B, their continued questions, and new school-domain cases on the
+OpenAI API. `scripts/verify_competition_enhancements.py` independently checks
+the closed semantic schema, deterministic concept policy, mandatory learning
+floor, live-tier selection, out-of-domain boundary, and browser continuity
+wire. The LLM is never the route authority. On **2026-07-12**, the private-key smoke test passed six live
+semantic probes plus a complete `openai_gpt_4o_mini` follow-up run through
+planner → governance → execution → verification (BLUE, one governed action,
+one successful execution, verification passed, zero cache hits). The key and
+runtime trace are not included in the clean public package. Re-run
+`python -X utf8 scripts/verify_openai_school_inputs.py --full` with the event
+key before presenting; the offline `smart_mock` path remains the reproducible
+fallback.

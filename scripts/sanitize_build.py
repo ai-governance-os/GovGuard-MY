@@ -43,6 +43,15 @@ BLOCKED_DIR_NAMES = {
 BLOCKED_DIR_GLOBS = ("state*", "*.egg-info")
 # Specific nested dirs (relative to root) removed if present.
 BLOCKED_RELDIRS = ("workspace/uploads", "workspace/temp")
+# Runtime-seeded demo copies. Canonical public fixtures live in demo/ and the
+# server recreates these workspace files on first start; a release must not
+# carry leftovers from tests or rehearsals.
+BLOCKED_RELFILES = (
+    "workspace/results.md",
+    "workspace/national_athletics_results.md",
+    "workspace/ad_hoc_school_event_results.md",
+    "workspace/charity_bazaar_case.md",
+)
 # File GLOBS removed anywhere in the tree.
 BLOCKED_FILE_GLOBS = (
     ".env", ".env.*", "*.db", "*.sqlite", "*.sqlite3", "*.log",
@@ -103,6 +112,10 @@ def main() -> int:
     for reldir in BLOCKED_RELDIRS:
         p = root / reldir
         if p.is_dir():
+            rm(p)
+    for relfile in BLOCKED_RELFILES:
+        p = root / relfile
+        if p.is_file():
             rm(p)
 
     # Walk top-down, pruning PRUNE_DIRS so we never descend into the venv/git.

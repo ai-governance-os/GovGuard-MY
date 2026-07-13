@@ -172,6 +172,9 @@ class PreGovernanceModule:
             groups = rule.get("require_all") or []
             if not groups:
                 continue
+            exclusions = rule.get("exclude_any") or []
+            if any(str(p).lower() in low for p in exclusions if str(p).strip()):
+                continue
             if all(any(str(p).lower() in low for p in grp) for grp in groups):
                 return rule
         return None

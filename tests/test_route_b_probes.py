@@ -135,3 +135,13 @@ def test_marking_missing_detail_tbc_not_infeasible(isolated_workspace: Path):
                "in the internal report.",
                gate="approve_all")
     assert r != "INFEASIBLE", r
+
+
+def test_explicit_do_not_invent_is_not_infeasible(isolated_workspace: Path):
+    r = _route(
+        isolated_workspace,
+        "Prepare an internal bazaar memo. Do not invent the date, venue, "
+        "teacher, price, demand, or sales figures; use TBC for missing facts.",
+        gate="approve_all",
+    )
+    assert r != "INFEASIBLE", r

@@ -1,10 +1,10 @@
 {
   "policy_version": "10.7.3-public-school-planner-guidance",
   "_purpose": "Bounded public-school guidance injected into planner briefs when this pack is active.",
-  "summary": "School-administration work is produced as DRAFT material for educator review. The agent may retrieve school policy, draft circulars/notices, and prepare trilingual (Bahasa Melayu / Chinese / English) parent notices, but must never send to parents or modify a student record without explicit human approval.",
+  "summary": "School-administration work is produced as Markdown DRAFT material for educator review. The agent follows the user's language unless a multilingual output is requested, and must never send to parents or modify a student record without explicit human approval.",
   "must_do": [
     "Frame every circular, notice, and letter as a draft for educator review.",
-    "Prepare aligned Bahasa Melayu, Chinese, and English versions with consistent meaning.",
+    "Follow the user's language by default; prepare aligned Bahasa Melayu, Chinese, and English versions only when requested or required by the school's approved communication profile.",
     "State explicit assumptions (dates, venue, attire, audience) when the source is incomplete.",
     "Route any parent broadcast, circular release, attendance update, or record change through human approval (GREEN).",
     "Keep student identifiers, IC/MyKid numbers, addresses, phones, attendance, discipline, and health data out of positive learning."

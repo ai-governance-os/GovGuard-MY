@@ -36,6 +36,35 @@ of the file, not a separate chat turn. `task_category` in the brief
 (computed by Module 101A) confirms which: `office_doc_generation` /
 `report_generation` / `image_generation`.
 
+## Open school inputs: Markdown artifact contract
+
+When the PlanningBrief contains `school_case_context`, the public-school
+competition pack overrides the generic Word/report default for TEXT
+deliverables:
+
+- Use `fs.save_under_outputs` with an explicit `.md` target under the outputs
+  workspace. Do not use `docx` or the non-saving `report` tool for school text.
+- Emit one file action per requested deliverable. Never put two reports,
+  letters, notices, plans, or memos into the same action body.
+- Every file action metadata MUST include:
+  `artifact_role`, `audience` (`internal|private_recipient|public`),
+  `source_policy="prompt_only"`, `missing_fact_policy="TBC"`, and
+  `release_state="draft_only"`.
+- `metadata.content` must contain only that action's artifact. Treat the raw
+  user request as source facts and constraints, not as permission for this one
+  action to reproduce every sibling deliverable.
+- Use only facts explicitly supplied in the request. Do not infer that routine
+  emergency, medical, witness, police, family-contact, investigation, record,
+  financial, or communication actions occurred. Mark missing/unverified facts
+  `TBC`; recommendations must be future/proposed actions, not completed events.
+- The required `chat.answer` companion is only a 2-4 sentence delivery and
+  governance cover. It may name generated files, state that unknowns are TBC
+  and that nothing was sent/published, and ask for review. It must never repeat
+  a file body.
+
+The runtime validates and normalises this contract defensively. The planner
+still proposes content; governance and verification remain authoritative.
+
 ## Pair every file with a chat companion
 
 When you emit a file-producing action (`docx`, `pptx`, `xlsx`, `image_gen`,
@@ -54,6 +83,8 @@ an LLM. Whatever you leave blank stays blank. Write real prose/data inline:
   Match their language. No "Here is your answer:" preamble.
 - `docx.save_under_outputs` → `metadata.title`, `metadata.body` (full
   paragraphs separated by blank lines), optional `metadata.headings`.
+- `fs.save_under_outputs` for `.md` / `.txt` uses `metadata.content` as the
+  complete file body. For Markdown, use one `#` title and `##` sections.
 - `pptx.save_under_outputs` → `metadata.title`, `metadata.subtitle`,
   `metadata.slides=[{title,bullets:[...]}]`. Aim 6–10 slides, 3–5 real
   bullets each.
@@ -63,7 +94,9 @@ an LLM. Whatever you leave blank stays blank. Write real prose/data inline:
 
 If the user asked for ~N words, deliver approximately N words of real prose.
 NEVER use placeholders: `<content here>`, `to be filled`, `sample text`,
-`lorem ipsum`, `TBD`, `TODO`, `...`, `placeholder`. Ground prose in
+`lorem ipsum`, `TBD`, `TODO`, `...`, `placeholder`. The one exception is
+the governed school-case marker `TBC`, which is required for explicitly
+missing or unverified facts. Ground prose in
 `relevant_context` (RAG hits) when present; otherwise draw on your general
 knowledge and write honest, substantive content.
 

@@ -5,19 +5,19 @@
     {
       "id": "parent_notice_broadcast",
       "when": { "features_all": ["parent_notice"] },
-      "title": "Approve parent / guardian notice",
+      "title": "Approve release to parent / guardian",
       "warning_level": "high",
-      "risk_reason": "Prepares a communication for parents/guardians. Must be educator-reviewed before any release.",
-      "decision_prompt": "Approve only if content, recipients, dates, and all three language versions are correct.",
-      "approve_label": "Approve notice draft",
-      "reject_label": "Do not prepare notice"
+      "risk_reason": "The Markdown draft is already available for internal review. This separate action would release it outside the school workspace.",
+      "decision_prompt": "Approve only if the content, recipient, channel and verified facts are correct. Demo mode simulates the release.",
+      "approve_label": "Approve simulated release",
+      "reject_label": "Do not release"
     },
     {
       "id": "student_record_modification",
       "when": { "features_all": ["student_record_change"] },
       "title": "Approve student-record change",
       "warning_level": "high",
-      "risk_reason": "Would change a PDPA-protected student record (e.g. attendance/discipline).",
+      "risk_reason": "Would change a sensitive official student record (e.g. attendance/discipline); the applicable legal and school-policy basis must be verified.",
       "decision_prompt": "Approve only if the change is intended, authorised, and the student is correctly identified.",
       "approve_label": "Approve change",
       "reject_label": "Do not change record"

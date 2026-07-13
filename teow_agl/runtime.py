@@ -20,6 +20,14 @@ from .modules.module_101a_pre_governance import PreGovernanceModule
 from .modules.module_101b_action_risk import ActionRiskModule
 from .modules.module_102_planner import PlannerModule
 from .modules.module_102b_synthesizer import ContentSynthesizer
+from .modules.module_school_artifact_guard import (
+    is_school_output_contract,
+    normalize_school_markdown_plan,
+)
+from .modules.module_school_situation import (
+    govern_school_research_actions,
+    reconcile_school_response_pack,
+)
 from .modules.module_102r_refusal_recovery import RefusalRecoveryModule
 from .modules.module_101d_data_use_guard import DataUseGuard
 from .modules.module_102t_task_tree import TaskTreeModule
@@ -191,6 +199,34 @@ def _desktop_boundary_answer(text: str, card: dict | None = None) -> str:
     """Honest bilingual capability + governance statement for desktop
     boundary prompts, served from the capability card."""
     return _answer_from_card(text, "capability_boundary", card)
+
+
+def _is_school_domain_boundary(envelope: TaskEnvelope) -> bool:
+    """True only for a successful semantic classification of an unrelated
+    input. A classifier outage returns checked=False and must not be mistaken
+    for a confident out-of-domain verdict."""
+    sem = (getattr(envelope, "metadata", {}) or {}).get("school_semantics") or {}
+    return bool(
+        sem.get("checked") is True
+        and sem.get("school_domain") is False
+        and str(sem.get("case_relation") or "").lower() == "unrelated"
+    )
+
+
+def _school_domain_boundary_answer(text: str) -> str:
+    """Stable, truthful answer outside the active school domain pack."""
+    if _has_cjk(text):
+        return (
+            "这个请求不属于当前启用的学校行政能力包。我没有调用或继承任何学生、"
+            "家长或学校案件资料。请把任务改写成学校行政相关需求；如果系统启用了"
+            "通用能力包，也可以先切换到该能力包再处理此请求。"
+        )
+    return (
+        "This request is outside the active School Administration Pack. "
+        "I have not used or carried over any student, parent, or school-case "
+        "data. Please reframe it as a school-administration task, or switch "
+        "to a general-purpose domain pack if one is enabled."
+    )
 
 
 def _query_needs_web(text: str, category: str | None,
@@ -946,6 +982,16 @@ class Runtime:
         if (result.refusal is not None
                 and result.refusal.refusal_type == "model_error"):
             return result
+        if ((result.envelope.metadata or {}).get("school_situation") or {}).get(
+            "active"
+        ) is True:
+            # Governed school packs already have per-artifact contract,
+            # grounding, role-isolation and completeness checks. Replanning a
+            # whole case because an advisory prose judge dislikes conservative
+            # TBC wording can create a new task id, duplicate drafts and weaken
+            # the approved pack. Surface any verification failure honestly;
+            # never silently self-fix a governed case into a different plan.
+            return result
 
         # Phase 14 — self-fix loop. Only fires when:
         #   * self_fix is enabled (config + env kill-switch)
@@ -1071,6 +1117,8 @@ class Runtime:
                 route="INFEASIBLE" if is_infeasible else "RED",
                 reasons=(
                     [f"pre_governance_{'infeasible' if is_infeasible else 'hard_block'}:{pre.hard_block_code}"]
+                    + (["emergency_halt_active"]
+                       if pre.hard_block_code == "emergency" else [])
                     # carry any config-driven safe alternative 101A attached, so
                     # the blocked answer shows what to do instead, not just "blocked".
                     + [r for r in (pre.reasons or []) if str(r).startswith("safe_alternative:")]
@@ -1207,6 +1255,15 @@ class Runtime:
                 and workflow_plan is None
                 and semantic_clarify_plan is None
                 and not envelope.metadata.get("_is_subgoal")
+                and not _is_school_domain_boundary(envelope)
+                # Open school inputs already received a bounded semantic case
+                # envelope. Keep them in one live plan so multiple requested
+                # outputs share the same confirmed facts and governance can
+                # route each action independently. Decomposing an incident
+                # draft into "gather facts" first is counterproductive when no
+                # external evidence source exists: the leaf can only repeat
+                # TBC, fail verification, then skip the actual report/notice.
+                and not envelope.metadata.get("school_semantics_checked")
                 and self._should_use_task_tree(envelope, pre)):
             tree_result = self._run_tree(envelope, pre, backup_status, result)
             if tree_result is not None:
@@ -1261,6 +1318,27 @@ class Runtime:
             _is_desktop_boundary_question(envelope.normalized_goal, card)
             or pre.task_category == "capability_boundary"
         )
+        # A confirmed out-of-domain request receives a prepared capability
+        # boundary answer. It does not call the planner or carry prior school
+        # case data, but still flows through 101B/103/107/110 (normally BLUE).
+        if plan_from_cache is None and _is_school_domain_boundary(envelope):
+            plan_from_cache = self._direct_chat_plan(
+                envelope,
+                pre,
+                body=_school_domain_boundary_answer(envelope.normalized_goal),
+                reason="school_domain_boundary",
+                purpose="explain the active school-domain capability boundary",
+            )
+            self._emit(
+                "102", "planner_skipped",
+                envelope.task_id, envelope.session_id,
+                summary="school_domain_boundary chat.answer plan",
+                details={
+                    "reason": "confirmed_out_of_domain",
+                    "school_semantics": envelope.metadata.get("school_semantics"),
+                    "prior_case_data_used": False,
+                },
+            )
         if plan_from_cache is None and (is_identity or is_greeting or is_boundary):
             if is_identity:
                 body, reason = (
@@ -1310,6 +1388,11 @@ class Runtime:
             self.plan_cache is not None
             and self.subject_confidence is not None
             and pre.task_category not in _NO_PLAN_CACHE_CATEGORIES
+            # Open school inputs are semantically varied even when 101A gives
+            # them the same broad/unknown category. Reusing a category-level
+            # cached answer here can answer a pupil-support question with an
+            # unrelated prior shape, so always let the live planner see them.
+            and not envelope.metadata.get("school_semantics_checked")
             and self.subject_confidence.is_confident(pre.task_category)
         ):
             cached = self.plan_cache.lookup(category=pre.task_category)
@@ -1349,6 +1432,61 @@ class Runtime:
                 "domain boundary layered on top of universal governance. "
                 "It may add review, disclaimer, verifier, and learning "
                 "constraints; it never weakens base safety."
+            )
+        # Mixed-Live competition follow-ups are interpreted once by the
+        # semantic intake layer before runtime construction.  Surface only the
+        # bounded, closed-schema result to the planner: it supplies case
+        # continuity and intent, while 101D/103 remain the sole route/policy
+        # authorities.  The raw model output is never treated as an approval.
+        school_semantics = envelope.metadata.get("school_semantics") or {}
+        if school_semantics:
+            brief["school_case_context"] = {
+                "active_workflow_id": envelope.metadata.get(
+                    "active_workflow_id"
+                ),
+                "case_relation": school_semantics.get("case_relation"),
+                "school_area": school_semantics.get("school_area"),
+                "requested_action": school_semantics.get("requested_action"),
+                "audience": school_semantics.get("audience"),
+                "confidence": school_semantics.get("confidence"),
+            }
+            brief["school_case_context_note"] = (
+                "This is semantic context, not a governance decision. If an "
+                "active_workflow_id is present, treat the request as a "
+                "continuation of that school case. Never invent missing case "
+                "facts; preserve TBC values and let governance gate external, "
+                "official-record, financial-value, or sensitive-data actions."
+            )
+        school_situation = envelope.metadata.get("school_situation") or {}
+        school_response_pack = envelope.metadata.get("school_response_pack") or {}
+        if school_situation and school_response_pack:
+            brief["school_situation"] = {
+                "family": school_situation.get("family"),
+                "phase": school_situation.get("phase"),
+                "severity": school_situation.get("severity"),
+                "signals": school_situation.get("signals") or [],
+                "stakeholders": school_situation.get("stakeholder_candidates") or [],
+                "known_facts": school_situation.get("known_facts") or [],
+                "unknowns": school_situation.get("unknowns") or [],
+            }
+            brief["required_response_pack"] = [
+                {
+                    "deliverable_id": item.get("deliverable_id"),
+                    "artifact_role": item.get("artifact_role"),
+                    "label": item.get("label"),
+                    "audience": item.get("audience"),
+                    "recipient_type": item.get("recipient_type"),
+                    "kind": item.get("kind"),
+                    "mode": item.get("mode"),
+                }
+                for item in (school_response_pack.get("deliverables") or [])
+                if item.get("selected") is True
+            ]
+            brief["response_pack_note"] = (
+                "Propose one action per selected deliverable and copy its exact "
+                "deliverable_id into action.metadata. These are coverage requirements, "
+                "not approvals. Unknown case facts remain TBC. Every action will be "
+                "independently governed; never claim an external action occurred."
             )
         # Inject the CLOSED set of tools the executor actually has handlers
         # for. The planner system prompt commands the LLM to pick tool +
@@ -1426,6 +1564,7 @@ class Runtime:
         # would pollute the demo with generic web content. So skip web search
         # entirely for workflow-owned tasks. Generic tasks are unaffected.
         if (workflow_plan is None
+                and not envelope.metadata.get("school_semantics_checked")
                 and _query_needs_web(envelope.normalized_goal, pre.task_category,
                                      self.capability_card)):
             try:
@@ -1675,6 +1814,48 @@ class Runtime:
                        summary=f"plan with {len(plan.actions)} actions",
                        details={"plan_id": plan.plan_id, "planning_mode": plan.planning_mode})
 
+        # The deterministic coverage reconciler compares the planner proposal
+        # with the selected response pack. It may add missing action shells,
+        # but cannot authorise them; all actions still pass through the same
+        # 101D/101B/103/105/107 loop below.
+        response_pack_contract = reconcile_school_response_pack(plan, envelope)
+        if response_pack_contract.get("active"):
+            self._emit(
+                "102P", "school_response_pack_reconciled",
+                envelope.task_id, envelope.session_id,
+                summary=(
+                    f"expected={len(response_pack_contract.get('expected') or [])} "
+                    f"inserted={len(response_pack_contract.get('inserted') or [])}"
+                ),
+                details=response_pack_contract,
+            )
+        research_boundary = govern_school_research_actions(plan, envelope)
+        if research_boundary.get("active"):
+            self._emit(
+                "102Q", "school_official_research_query_sanitized",
+                envelope.task_id, envelope.session_id,
+                summary=(
+                    f"rewritten={len(research_boundary.get('rewritten_action_ids') or [])} "
+                    "case identifiers removed"
+                ),
+                details=research_boundary,
+            )
+
+        # Open school inputs use a plan-level output contract.  Text
+        # deliverables are normalised to independent Markdown artifacts and
+        # the chat action becomes a short deterministic cover.  This happens
+        # before 102B so no content writer can accidentally answer the entire
+        # multi-file request inside every action.
+        school_contract = normalize_school_markdown_plan(plan, envelope)
+        if school_contract.get("active"):
+            self._emit(
+                "102S", "school_output_contract_applied",
+                envelope.task_id, envelope.session_id,
+                summary=(f"markdown_artifacts="
+                         f"{len(school_contract.get('artifacts') or [])}"),
+                details=school_contract,
+            )
+
         result.plan = plan
 
         # Module 102B — content synthesis. For every action whose tool is
@@ -1684,6 +1865,23 @@ class Runtime:
         # them in. Falls through silently on any error so governance still
         # runs.
         if self.synthesizer is not None and plan.actions:
+            if is_school_output_contract(plan.actions):
+                try:
+                    diag = self.synthesizer.enrich_school_plan(
+                        plan.actions, user_intent=envelope.normalized_goal)
+                    self._emit(
+                        "102S", "school_content_bundle_synthesized",
+                        envelope.task_id, envelope.session_id,
+                        summary=(f"result={diag.get('result', 'unknown')} "
+                                 f"artifacts={diag.get('artifacts', 0)}"),
+                        details=diag,
+                    )
+                except Exception as exc:
+                    self._emit(
+                        "102S", "school_content_bundle_error",
+                        envelope.task_id, envelope.session_id,
+                        summary=f"error={exc}", details={"error": str(exc)},
+                    )
             web_ctx = brief.get("web_search_context") or []
             for action in plan.actions:
                 # Thread user_intent through metadata so ChatTool's own
@@ -1747,6 +1945,30 @@ class Runtime:
             else:
                 followup_plan = followup_plan_or_refusal
                 self._normalize_actions(followup_plan)
+                followup_research_boundary = govern_school_research_actions(
+                    followup_plan, envelope
+                )
+                if followup_research_boundary.get("active"):
+                    self._emit(
+                        "102Q", "school_official_research_query_sanitized",
+                        envelope.task_id, envelope.session_id,
+                        summary=(
+                            f"rewritten={len(followup_research_boundary.get('rewritten_action_ids') or [])} "
+                            "case identifiers removed iter=2"
+                        ),
+                        details=followup_research_boundary,
+                    )
+                followup_contract = normalize_school_markdown_plan(
+                    followup_plan, envelope)
+                if followup_contract.get("active"):
+                    self._emit(
+                        "102S", "school_output_contract_applied",
+                        envelope.task_id, envelope.session_id,
+                        summary=(f"markdown_artifacts="
+                                 f"{len(followup_contract.get('artifacts') or [])} "
+                                 "iter=2"),
+                        details=followup_contract,
+                    )
                 self._emit("102", "planner_plan_created",
                            envelope.task_id, envelope.session_id,
                            summary=f"follow-up plan with "
@@ -1756,6 +1978,26 @@ class Runtime:
 
                 # Synthesizer for follow-up plan (same logic as first pass).
                 if self.synthesizer is not None and followup_plan.actions:
+                    if is_school_output_contract(followup_plan.actions):
+                        try:
+                            diag = self.synthesizer.enrich_school_plan(
+                                followup_plan.actions,
+                                user_intent=envelope.normalized_goal)
+                            self._emit(
+                                "102S", "school_content_bundle_synthesized",
+                                envelope.task_id, envelope.session_id,
+                                summary=(f"result={diag.get('result', 'unknown')} "
+                                         f"artifacts={diag.get('artifacts', 0)} "
+                                         "iter=2"),
+                                details=diag,
+                            )
+                        except Exception as exc:
+                            self._emit(
+                                "102S", "school_content_bundle_error",
+                                envelope.task_id, envelope.session_id,
+                                summary=f"error={exc} iter=2",
+                                details={"error": str(exc)},
+                            )
                     web_ctx = followup_brief.get("web_search_context") or []
                     prior = followup_brief.get("prior_iteration_results") or []
                     for action in followup_plan.actions:
@@ -1795,7 +2037,7 @@ class Runtime:
         # cache+confidence-boost broken outputs). Also runs BEFORE
         # _after_run so the reflector (109) doesn't try to learn from
         # a task whose output was wrong.
-        self._run_verification(envelope, plan, result)
+        self._run_verification(envelope, result.plan or plan, result)
 
         # Per-task outcome → SubjectConfidence + PlanCache updates.
         # Counted as success only if at least one action executed successfully
@@ -1822,6 +2064,12 @@ class Runtime:
         "docx": re.compile(
             r"\bdocx?\b|word\s+doc|word\s+document|word文档", re.IGNORECASE),
     }
+    _TARGET_OUTPUT_REQUEST = re.compile(
+        r"\b(?:create|make|generate|prepare|produce|build|write|export|save|"
+        r"edit|update|populate|fill|convert|turn|put|give me|need|want)\b"
+        r"|(?:生成|制作|建立|创建|写|做成|做|准备|整理成|输出|另存为|请做)",
+        re.IGNORECASE,
+    )
 
     @classmethod
     def _detect_target_tool(cls, goal: str) -> str:
@@ -1833,8 +2081,16 @@ class Runtime:
         docx. Pure regex, no LLM."""
         if not goal:
             return ""
+        clauses = [
+            part.strip() for part in re.split(r"[.!?;\n。！？；]+", goal)
+            if part.strip()
+        ]
         for tool in ("pptx", "xlsx", "docx"):
-            if cls._TARGET_TOOL_PATTERNS[tool].search(goal):
+            if any(
+                cls._TARGET_TOOL_PATTERNS[tool].search(clause)
+                and cls._TARGET_OUTPUT_REQUEST.search(clause)
+                for clause in clauses
+            ):
                 return tool
         return ""
 
@@ -1989,7 +2245,12 @@ class Runtime:
         # waste an extra LLM call — the task is going to be coerced
         # to failure regardless.) This is the cheap-gates-expensive
         # discipline NEXT_PHASES.md §4 calls for.
-        if verification.get("pass", True) and self.verifier is not None:
+        verification_skipped = str(
+            verification.get("summary", "")
+        ).startswith("skipped:")
+        if (verification.get("pass", True)
+                and not verification_skipped
+                and self.verifier is not None):
             try:
                 judge = self.verifier.llm_judge(
                     envelope=envelope,
@@ -2005,13 +2266,28 @@ class Runtime:
                          "summary": f"judge_error:{exc}",
                          "skipped_reason": "exception"}
             verification["judge"] = judge
-            # If the judge ran AND failed, flip the overall pass to
-            # False so the downstream synthetic-failure injection fires.
-            if judge.get("pass") is False:
+            # If the judge ran AND failed, flip the overall pass. For an open
+            # school artifact contract, an unavailable/malformed judge is also
+            # a fail-safe failure: the UI must never show VERIFIED when the
+            # semantic grounding review did not actually complete.
+            school_contract = is_school_output_contract(
+                plan.actions if plan else [])
+            intentional_school_judge_skip = (
+                judge.get("skipped_reason") == "school_response_pack_delta"
+            )
+            if (judge.get("pass") is False
+                    or (
+                        school_contract
+                        and judge.get("pass") is not True
+                        and not intentional_school_judge_skip
+                    )):
                 verification["pass"] = False
                 verification["summary"] = (
                     (verification.get("summary") or "")
-                    + " | " + judge.get("summary", "")
+                    + " | " + (
+                        judge.get("summary", "")
+                        or "school_judge_unavailable"
+                    )
                 )
 
         if verification.get("pass", True):
@@ -2071,6 +2347,12 @@ class Runtime:
         A-tier lexicon + fail-safe still govern offline. One call per task."""
         guard = getattr(self, "data_use_guard", None)
         if guard is None:
+            return
+        # The competition server may already have run the school-domain
+        # semantic preflight so Mixed-Live follow-ups inherit their case and
+        # safety concepts. Reuse that single structured interpretation instead
+        # of spending a second LLM call or allowing two label sets to drift.
+        if envelope.metadata.get("school_semantics_checked"):
             return
         llm = getattr(getattr(self, "synthesizer", None), "chat_llm", None)
         if llm is None or getattr(llm, "backend", "mock") == "mock":
@@ -2177,11 +2459,79 @@ class Runtime:
             if envelope.metadata.get("data_use_concepts"):
                 action.metadata.setdefault(
                     "data_use_concepts", envelope.metadata["data_use_concepts"])
+            school_semantics = envelope.metadata.get("school_semantics") or {}
+            if school_semantics.get("audience"):
+                action.metadata.setdefault(
+                    "semantic_audience", school_semantics.get("audience"))
 
             # ── Module 101D — Data Use Guard (self-governance over data use) ──
             # Runs BEFORE 101B. Inert by default; only workflow/data-use or
             # obviously-sensitive actions are judged. RED short-circuits the
             # action (no execution); GREEN elevates a BLUE after 101B.
+            if action.metadata.get("school_generation_failed"):
+                decision = GovernanceDecision(
+                    task_id=envelope.task_id,
+                    action_id=action.action_id,
+                    route="INFEASIBLE",
+                    reasons=["school_artifact_generation_not_verified"],
+                    ticket_required=False,
+                    approval_required=False,
+                    policy_version=self.cfg.policy_version(),
+                )
+                result.decisions.append(decision)
+                self._emit(
+                    "103", "governance_decision",
+                    envelope.task_id, envelope.session_id,
+                    summary="route=INFEASIBLE (artifact generation held)",
+                    details=decision.model_dump(),
+                )
+                self._on_infeasible(envelope, decision, result)
+                continue
+
+            linked_deliverable_id = str(
+                action.metadata.get("linked_deliverable_id") or ""
+            ).strip()
+            if linked_deliverable_id:
+                linked_action = next(
+                    (
+                        candidate for candidate in plan.actions
+                        if str((candidate.metadata or {}).get("deliverable_id") or "")
+                        == linked_deliverable_id
+                    ),
+                    None,
+                )
+                linked_success = bool(
+                    linked_action is not None
+                    and not (linked_action.metadata or {}).get("school_generation_failed")
+                    and any(
+                        execution.action_id == linked_action.action_id
+                        and execution.status == "success"
+                        for execution in result.executions
+                    )
+                )
+                if not linked_success:
+                    decision = GovernanceDecision(
+                        task_id=envelope.task_id,
+                        action_id=action.action_id,
+                        route="INFEASIBLE",
+                        reasons=[
+                            "linked_artifact_not_available",
+                            f"required_deliverable:{linked_deliverable_id}",
+                        ],
+                        ticket_required=False,
+                        approval_required=False,
+                        policy_version=self.cfg.policy_version(),
+                    )
+                    result.decisions.append(decision)
+                    self._emit(
+                        "103", "governance_decision",
+                        envelope.task_id, envelope.session_id,
+                        summary="route=INFEASIBLE (linked artifact unavailable)",
+                        details=decision.model_dump(),
+                    )
+                    self._on_infeasible(envelope, decision, result)
+                    continue
+
             data_use = (self.data_use_guard.assess(action) if self.data_use_guard
                         else {"decision": "NO_OVERRIDE", "reasons": []})
             action.metadata["data_use_decision"] = data_use.get("decision")
@@ -2213,6 +2563,35 @@ class Runtime:
                            details={"decision_id": decision.decision_id})
                 # _on_red appends to result.decisions — do not append again (§H).
                 self._on_red(envelope, decision, result)
+                continue
+
+            if data_use.get("decision") == "INFEASIBLE":
+                risk = ActionRiskAssessment(
+                    task_id=envelope.task_id, action_id=action.action_id,
+                    risk_score=1.0, risk_level="high",
+                    features={"data_use_guard": data_use},
+                    recommended_route="INFEASIBLE",
+                    reasons=data_use.get("reasons", []),
+                )
+                result.risk_assessments.append(risk)
+                decision = GovernanceDecision(
+                    task_id=envelope.task_id, action_id=action.action_id,
+                    route="INFEASIBLE",
+                    reasons=[
+                        "data_use_guard_infeasible",
+                        *data_use.get("reasons", []),
+                    ],
+                    ticket_required=False, approval_required=False,
+                    policy_version=self.cfg.policy_version(),
+                )
+                self._emit(
+                    "103", "governance_decision",
+                    envelope.task_id, envelope.session_id,
+                    summary="route=INFEASIBLE (data_use_guard)",
+                    details={"decision_id": decision.decision_id},
+                )
+                result.decisions.append(decision)
+                self._on_infeasible(envelope, decision, result)
                 continue
 
             risk = self.risk.assess(
@@ -3054,6 +3433,7 @@ class Runtime:
         # caches the simple flow, no point spending decomposer tokens.
         if (self.plan_cache is not None
                 and self.subject_confidence is not None
+                and not envelope.metadata.get("school_semantics_checked")
                 and self.subject_confidence.is_confident(pre.task_category)
                 and self.plan_cache.lookup(category=pre.task_category)):
             return False
@@ -3150,6 +3530,17 @@ class Runtime:
                 # Inherit privacy opt-out from parent
                 "no_index": bool(envelope.metadata.get("no_index")),
             }
+            # Preserve the bounded school-case semantics and governance
+            # concepts across decomposed leaves. Without this, a complex new
+            # school case would be interpreted safely at the root and then
+            # lose that context when each leaf re-enters the pipeline.
+            for key in (
+                "school_semantics_checked", "school_semantics",
+                "data_use_concepts", "active_workflow_id",
+                "school_followup", "school_situation", "school_response_pack",
+            ):
+                if key in envelope.metadata:
+                    leaf_meta[key] = envelope.metadata[key]
 
             try:
                 sub_result = self.run(
@@ -3341,7 +3732,8 @@ class Runtime:
         #     same-shape runs can be served from cache
         #   * success on a cached run → bump successes
         #   * failure on a cached run → invalidate the cached entry
-        if self.plan_cache is None or not plan or not plan.actions:
+        if (self.plan_cache is None or not plan or not plan.actions
+                or envelope.metadata.get("school_semantics_checked")):
             return
         # Don't cache deterministic content-bearing plans (their inline bodies
         # would be dropped on cache replay). Excludes the named categories AND,
@@ -3377,7 +3769,15 @@ class Runtime:
             task_id=envelope.task_id, action_id=decision.action_id,
             reason=";".join(decision.reasons), decision_id=decision.decision_id,
         )
-        triggered_emergency = any("emergency" in r.lower() for r in decision.reasons)
+        # A real-world emergency is not a runtime kill switch. School actions
+        # naturally mention emergency services; substring matching used to
+        # halt every later safe artifact in the same response pack. Only a
+        # closed governance control code may engage the global halt.
+        halt_codes = {"emergency_halt_active", "trigger_system_halt"}
+        triggered_emergency = any(
+            str(reason).strip().lower() in halt_codes
+            for reason in decision.reasons
+        )
         if triggered_emergency:
             self.emergency.halt(reason=";".join(decision.reasons))
             self._emit("108", "emergency_halted", envelope.task_id, envelope.session_id,
@@ -3931,6 +4331,46 @@ class Runtime:
             (self.task_decomposition_cfg.get("leaf_pipeline") or {})
             .get("skip_reflector_on_leaves", True)
         ):
+            return
+
+        school_situation = (envelope.metadata or {}).get(
+            "school_situation") or {}
+        school_semantics = (envelope.metadata or {}).get(
+            "school_semantics") or {}
+        if (
+            school_situation.get("active") is True
+            and school_semantics.get("checked") is True
+            and school_semantics.get("school_domain") is True
+        ):
+            # Open school cases are task-local. Even an apparently anonymous
+            # event type or place can become identifying when accumulated, and
+            # it is not evidence of a stable user preference. Reusable workflow
+            # procedure learning remains available through the separately
+            # owner-gated SOP distiller; USER.md / MEMORY.md receive no case
+            # facts from this path.
+            proposal = {
+                "reflection_id": f"ref_school_boundary_{uuid.uuid4().hex[:10]}",
+                "task_id": envelope.task_id,
+                "confidence": 1.0,
+                "reasoning": (
+                    "Open school-case details stay task-local; only a separately "
+                    "reviewed, non-personal procedure may become reusable."
+                ),
+                "user_md_updates": [],
+                "memory_md_updates": [],
+                "filtered_task_local": [
+                    "school_case_facts", "people", "place", "event_type",
+                ],
+                "disposition": "rejected_by_policy",
+                "rejection_reason": "school_case_data_learning_boundary",
+            }
+            result.reflection = proposal
+            self._emit(
+                "109", "reflection_rejected",
+                envelope.task_id, envelope.session_id,
+                summary="policy_blocked:school_case_data_learning_boundary",
+                details=proposal,
+            )
             return
 
         try:

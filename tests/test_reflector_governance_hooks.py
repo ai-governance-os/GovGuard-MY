@@ -256,6 +256,40 @@ def test_prompt_injection_text_rejected_by_policy(isolated_workspace):
     assert r["disposition"] == "rejected_by_policy"
 
 
+def test_open_school_case_never_updates_user_or_memory_profiles(isolated_workspace):
+    rt = _make_runtime_with_reflector(isolated_workspace, {
+        "confidence": 1.0,
+        "reasoning": "wrongly infer a recurring user pattern from one case",
+        "user_md_updates": [{
+            "action": "add", "text": "User often handles snake-bite cases",
+        }],
+        "memory_md_updates": [{
+            "action": "add", "text": "A snake bit a student near the canteen",
+        }],
+    })
+    before = rt.user_memory.snapshot()
+    result = rt.run(
+        raw_goal="Prepare governed school case drafts.",
+        metadata={
+            "school_semantics_checked": True,
+            "school_semantics": {
+                "checked": True, "school_domain": True,
+                "case_relation": "new_case",
+            },
+            "school_situation": {
+                "active": True, "family": "safety_emergency",
+            },
+        },
+    )
+    after = rt.user_memory.snapshot()
+    assert result.reflection["disposition"] == "rejected_by_policy"
+    assert result.reflection["rejection_reason"] == \
+        "school_case_data_learning_boundary"
+    assert result.reflection["user_md_updates"] == []
+    assert result.reflection["memory_md_updates"] == []
+    assert after == before
+
+
 # ===========================================================================
 # Bounded-delta budget at the runtime apply layer.
 # ===========================================================================

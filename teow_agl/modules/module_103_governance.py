@@ -95,10 +95,31 @@ class GovernanceModule:
             if _r and _r not in reasons:
                 reasons.append(_r)
 
+        # Mandatory policy approvals establish a non-negotiable route floor.
+        # Learned friction-reduction may streamline safe work, but it must
+        # never learn away a human gate imposed by the base profile, a domain
+        # pack, or the deterministic data-use guard.
+        policy_floor = _BLUE
+        md = action.metadata or {}
+        contract_local_draft = bool(
+            md.get("school_output_contract")
+            and (
+                md.get("school_content_role") == "chat_companion"
+                or md.get("release_state") == "draft_only"
+            )
+        )
         matched_approval = self._match_action_names(risk.features, self.profile.approval_required_actions)
+        if contract_local_draft:
+            matched_approval = []
         if matched_approval:
             reasons.extend(f"profile_approval_required:{n}" for n in matched_approval)
             route = _route_max(route, _GREEN)
+            policy_floor = _GREEN
+
+        data_use_guard = (risk.features or {}).get("data_use_guard") or {}
+        if str(data_use_guard.get("decision") or "").upper() == _GREEN:
+            policy_floor = _GREEN
+            reasons.append("policy_floor:data_use_guard:GREEN")
 
         if signature:
             adjustment = float(self.learned_policy.get("route_weight_adjustments", {}).get(signature, 0.0))
@@ -118,13 +139,21 @@ class GovernanceModule:
                     reasons.append(f"learned_upgrade:{signature}:adj={adjustment}:BLUE->GREEN")
                     route = _GREEN
 
+        if _ROUTE_ORDER[route] < _ROUTE_ORDER[policy_floor]:
+            reasons.append(
+                f"policy_floor_enforced:{route}->{policy_floor}"
+            )
+            route = policy_floor
+
         # P2.2 — fail-safe default. If the goal mentions sensitive student /
         # guardian personal data and the action would otherwise auto-execute
         # (BLUE), refuse silent execution: upgrade to GREEN so a human
         # approves. Catches anything the deterministic concept gates didn't
         # already block — we fail toward asking a human, never toward silent
         # action. Deterministic; the LLM is never the safety authority.
-        if route == _BLUE and (pre.context_features or {}).get("sensitive_data_mention"):
+        if (route == _BLUE
+                and (pre.context_features or {}).get("sensitive_data_mention")
+                and not contract_local_draft):
             reasons.append("failsafe_sensitive_mention:BLUE->GREEN")
             route = _GREEN
 

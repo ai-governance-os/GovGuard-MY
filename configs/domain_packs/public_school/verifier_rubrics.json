@@ -11,6 +11,16 @@
         "No student/guardian personal data is invented or exposed unnecessarily."
       ],
       "pass_threshold": 75
+    },
+    "school_governed_markdown": {
+      "criteria": [
+        "The chat reply is only a concise delivery/governance cover and does not repeat any artifact body.",
+        "Every Markdown artifact satisfies its own declared role and audience; no report contains a parent letter and no private parent notice contains internal investigation sections.",
+        "Every material factual claim is explicitly supported by the user's source request. Reported facts remain reported; missing or unverified facts are TBC; routine actions are not inferred as completed.",
+        "Each file contains exactly one coherent deliverable, begins with one H1, is clearly marked as a draft/not sent, and contains no generic bracket placeholders or code fences.",
+        "The artifacts are professionally usable, appropriately concise, do not assign unsupported blame, and do not expose internal or sensitive material to the wrong audience."
+      ],
+      "pass_threshold": 85
     }
   },
   "verifier_rule_overlays": {}

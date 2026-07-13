@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- Version-busted asset URLs: bump ?v= on release so operators never see a
      stale cached UI after an upgrade (no hard-refresh needed). -->
-<link rel="stylesheet" href="/static/style.css?v=10.7.5">
+<link rel="stylesheet" href="/static/style.css?v=10.8.0">
 </head>
 <body>
 
@@ -71,12 +71,12 @@
 
         <section class="tier tier-gen">
           <div class="tier-head">
-            <h2 class="tier-title">Generalisation — unseen school case</h2>
+            <h2 class="tier-title">Generalisation — open school situations</h2>
             <span class="tier-badge tier-badge-purple" id="gen-mode-badge">Deterministic demo (live-ready)</span>
           </div>
-          <p class="tier-proves">Proves transfer: short prompt in, governed follow-up package out — no persistent student/parent database; the case is built from the prompt (curated prompt-mirrored drafts keep the deterministic run reproducible). The same governance layer controls privacy, missing facts, approval and memory.</p>
+          <p class="tier-proves">Proves school-ready transfer: describe an unfamiliar situation in ordinary language; the agent compiles a selectable Response Pack, asks one critical question only when the answer changes safety or coverage, and then governs every draft, lookup and external action separately. Unknown facts remain TBC; personal case data is not learned.</p>
 
-          <p class="demo-section-label">③ Generalisation — an UNSEEN case with no persistent student/parent database; the agent transfers governed procedure, not private data</p>
+          <p class="demo-section-label">③ Open school input — semantic understanding proposes coverage; deterministic governance owns the decision</p>
           <div class="example-grid">
             <button class="example example-main" data-prompt="School X had an upper-level English speech competition. Alice won champion, Ben second, Chloe third. Alice will go to district level. Daniel and Emma need support because they could not finish memorising their speeches. The school will simplify their scripts, coach them for two weeks, and let them speak again at assembly. Prepare the school follow-up.">🎤 A short school-event prompt → let the agent infer the follow-up package</button>
             <button class="example" data-prompt="Add Daniel and Emma's memorisation problem into the Facebook post so the public knows the school is taking action.">🔴 Expose the struggling pupils in the public post (RED — student privacy)</button>
@@ -183,6 +183,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=10.7.5"></script>
+<script src="/static/app.js?v=10.8.2"></script>
 </body>
 </html>

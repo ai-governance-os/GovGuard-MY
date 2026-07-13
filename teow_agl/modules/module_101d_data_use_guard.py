@@ -72,6 +72,12 @@ _PUBLIC_PII = (
 _HEALTH_FIELDS = (
     "health data", "health record", "medical record", "discipline record",
     "disciplinary record", "special needs", "special needs detail",
+    "injured", "injury", "bitten", "bite wound", "hospitalised", "hospitalized",
+    "admitted to hospital", "diagnosis", "medical condition", "unconscious",
+    "bleeding", "poisoned", "food poisoning", "difficulty breathing",
+    "student misconduct", "student was disciplined", "disciplinary action",
+    "受伤", "伤势", "咬伤", "送院", "住院", "诊断", "中毒", "呼吸困难", "纪律处分",
+    "cedera", "digigit", "dimasukkan ke hospital", "diagnosis", "keracunan",
     "健康记录", "病历", "纪律记录", "特殊需要", "残障",
 )
 # Cues that the agent intends to treat people DIFFERENTLY using the data.
@@ -172,6 +178,14 @@ class DataUseGuard:
             "diff": any(c in t for c in _DIFFERENTIAL_CUES),
             "pii": any(f in t for f in _PUBLIC_PII),
             "health": any(f in t for f in _HEALTH_FIELDS),
+            "student_sensitive": any(f in t for f in _STUDENT_SENSITIVE),
+            "persistent": any(c in t for c in (
+                "remember", "store for future", "long term", "long-term",
+                "permanent profile", "future profile", "learn for future",
+            )),
+            "public": any(c in t for c in (
+                "public", "facebook", "publish", "announcement", "post",
+            )),
         }
 
     @staticmethod
@@ -191,7 +205,7 @@ class DataUseGuard:
         )
         user = (
             f"Request: {text}\n\n"
-            "Return JSON with boolean fields:\n"
+            "Return JSON with boolean fields. Label meaning, not exact words:\n"
             '{"socioeconomic_data": uses guardian/household/family income, '
             "salary, occupation, wealth, or family background; "
             '"differential_treatment": treats, prioritises, ranks, or '
@@ -199,7 +213,24 @@ class DataUseGuard:
             '"public_pii": exposes IC/MyKid/passport/phone/home address to a '
             "public or external surface; "
             '"health_or_discipline": uses health, discipline, or special-needs '
-            "records}.\nIf unsure, use false."
+            "records; "
+            '"student_sensitive_data": uses a named pupil\'s learning '
+            "difficulty, weakness, support need, behaviour, or private progress; "
+            '"public_disclosure": asks to put person-level information into a '
+            "public post, announcement, website, social channel, or broad audience; "
+            '"persistent_sensitive_learning": asks the system to remember, '
+            "profile, train on, or reuse person-level sensitive information in future; "
+            '"external_release": asks to send, publish, submit, message, or '
+            "otherwise release something outside the internal draft workspace; "
+            '"official_record_change": asks to write, update, or alter an '
+            "official student, attendance, discipline, finance, or school record; "
+            '"financial_value_change": asks to issue, reprint, change the price '
+            "of, or authorise cash-equivalent coupons/tokens/payments; "
+            '"unsupported_fact_invention": asks to guess, fabricate, or make up '
+            "a fact that was not provided or verified. This MUST be false when "
+            "the request says to mark unknown facts TBC/to-be-confirmed, leave "
+            "them blank, clarify, investigate, or use only available evidence}."
+            "\nIf unsure, use false."
         )
         try:
             data = llm.chat_json(system, user, max_tokens=200)
@@ -208,8 +239,13 @@ class DataUseGuard:
         if not isinstance(data, dict):
             return []
         out = []
-        for key in ("socioeconomic_data", "differential_treatment",
-                    "public_pii", "health_or_discipline"):
+        for key in (
+            "socioeconomic_data", "differential_treatment", "public_pii",
+            "health_or_discipline", "student_sensitive_data",
+            "public_disclosure", "persistent_sensitive_learning",
+            "external_release", "official_record_change",
+            "financial_value_change", "unsupported_fact_invention",
+        ):
             if data.get(key) is True:
                 out.append(key)
         return out
@@ -218,6 +254,7 @@ class DataUseGuard:
     def assess(self, action) -> dict:
         md = getattr(action, "metadata", {}) or {}
         op = _normalize(getattr(action, "operation", ""))
+        tool = _normalize(getattr(action, "tool", ""))
         # Inspect the agent's intended data use: the action itself PLUS the
         # task intent threaded into metadata (so a planner that produced a
         # generic action still surfaces the goal's data-use intent to 101D).
@@ -240,6 +277,8 @@ class DataUseGuard:
             str(getattr(action, "purpose", "")),
             str(getattr(action, "expected_effect", "")),
             str(md.get("data_use_purpose", "")),
+            str(md.get("content", "")),
+            str(md.get("body", "")),
             _norm_list(md.get("data_categories")),
             _norm_list(md.get("allowed_data")),
         )))
@@ -253,12 +292,39 @@ class DataUseGuard:
             _norm_list(md.get("allowed_data")),
         )))
         scope = str(md.get("output_scope", "")).lower()
+        audience = str(
+            md.get("audience") or md.get("semantic_audience") or ""
+        ).lower()
         approval_boundary = str(md.get("approval_boundary", "")).lower()
+        release_state = str(md.get("release_state", "")).lower()
+        explicit_release_action = md.get("external_release_action") is True
         # C-tier concepts: closed-vocabulary tags the LLM understanding layer
         # (101D.understand) may have attached for this task. They AUGMENT the
         # deterministic A-tier signals — the route is still decided by the rules
         # below, never by the LLM.
-        concepts = md.get("data_use_concepts") or []
+        concepts = {
+            str(c).strip().lower()
+            for c in (md.get("data_use_concepts") or [])
+            if str(c).strip()
+        }
+
+        # The contract companion is a short operator-only delivery note. It
+        # contains no case body and performs no release, so task-level concepts
+        # must never turn this UI cover into the governed action itself.
+        if md.get("school_content_role") == "chat_companion":
+            return {
+                "decision": "NO_OVERRIDE",
+                "reasons": [],
+                "features": {
+                    "output_scope": "internal",
+                    "audience": "operator",
+                    "is_public": False,
+                    "is_external": False,
+                    "is_private_recipient": False,
+                    "is_public_or_external": False,
+                    "contract_companion": True,
+                },
+            }
 
         # ── §F inert default: nothing to govern → change nothing ──
         if (not self._has_metadata(action) and not concepts
@@ -268,27 +334,105 @@ class DataUseGuard:
 
         has_socio = any(f in text for f in _SOCIO_FIELDS) or "socioeconomic_data" in concepts
         has_diff = any(c in text for c in _DIFFERENTIAL_CUES) or "differential_treatment" in concepts
-        has_pii = any(f in text for f in _PUBLIC_PII) or "public_pii" in concepts
-        has_health = any(f in text for f in _HEALTH_FIELDS) or "health_or_discipline" in concepts
+        pii_scan = f"{text} {own_text}"
+        institutional_contact = bool(re.search(
+            r"\b(?:school office|official school|school's official|main office|pejabat sekolah)\b",
+            pii_scan,
+        ))
+        contact_value = bool(
+            re.search(r"\b(?:\+?60|0)1\d[- ]?\d{3,4}[- ]?\d{4}\b", pii_scan)
+            or re.search(r"\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b", pii_scan)
+        )
+        own_pii_terms = any(f in own_text for f in _PUBLIC_PII)
+        own_pii_negated = bool(re.search(
+            r"\b(?:no|without|exclude(?:s|d)?|do not include|does not include)\b"
+            r"[^.!?\n]{0,100}\b(?:ic|mykid|passport|phone|address|contact)\b",
+            own_text,
+        ))
+        has_pii = (
+            any(f in text for f in _PUBLIC_PII)
+            or (own_pii_terms and not own_pii_negated)
+            or bool(re.search(r"\b\d{6}[- ]?\d{2}[- ]?\d{4}\b", pii_scan))
+            or (contact_value and not institutional_contact)
+            or "public_pii" in concepts
+        )
+        has_health = (
+            any(f in own_text for f in _HEALTH_FIELDS)
+            or "health_or_discipline" in concepts
+        )
         has_student_sensitive = (
             any(f in own_text for f in _STUDENT_SENSITIVE)
+            or "student_sensitive_data" in concepts
             or "student_sensitive_public" in concepts
         )
-        is_public = (
-            scope in _PUBLIC_SCOPES
-            or "publish" in op or "send" in op or "submit" in op
-            or approval_boundary.startswith("human_required")
+        # Public/broad disclosure and private external delivery are different
+        # governance cases.  The old code folded every `external_release` and
+        # every send into `is_public`, so a private health notice to the named
+        # parent was RED instead of GREEN.  Public exposure remains RED; a
+        # private intended-recipient send is external and therefore GREEN.
+        private_audience = audience in {
+            "private_recipient", "parent", "guardian", "family",
+            "named_recipient", "individual_recipient",
+        }
+        operation_public = "publish" in op or tool == "publish"
+        operation_external = (
+            operation_public
+            or any(verb in op for verb in ("send", "submit", "message", "release"))
+            or tool in {"email", "publish"}
         )
+        # Public-facing CONTENT is governed even while it is only a draft.
+        # A task-level `public_disclosure` concept, however, must not contaminate
+        # the private operator cover or an unrelated internal artifact.
+        is_public = (
+            scope in ("public", "public_release", "public_draft")
+            or (scope == "external" and not private_audience)
+            or audience == "public"
+            or operation_public
+            or (
+                "public_disclosure" in concepts
+                and (explicit_release_action or operation_public or audience == "public")
+            )
+        )
+        # External is an ACTION property, not a task property. Draft files and
+        # the short UI cover remain internal even when the user's overall goal
+        # eventually asks to send/publish them. The explicit last gate owns that
+        # release intent and is the only step elevated to GREEN.
+        is_external = (
+            release_state != "draft_only"
+            and (
+                operation_external
+                or explicit_release_action
+                or scope in ("external", "public_release")
+                or approval_boundary.startswith("human_required")
+            )
+        )
+        is_private_recipient = private_audience and not is_public
 
         features = {
             "output_scope": scope or None,
             "approval_boundary": approval_boundary or None,
-            "is_public_or_external": is_public,
+            "release_state": release_state or None,
+            "external_release_action": explicit_release_action,
+            "audience": audience or None,
+            "is_public": is_public,
+            "is_external": is_external,
+            "is_private_recipient": is_private_recipient,
+            # Backward-compatible audit field; new decisions use the split
+            # fields above.
+            "is_public_or_external": is_public or is_external,
             "socioeconomic_data": has_socio,
             "differential_intent": has_diff,
             "public_pii": has_pii,
             "health_discipline_special": has_health,
             "student_sensitive": has_student_sensitive,
+            "persistent_sensitive_learning": (
+                "persistent_sensitive_learning" in concepts
+            ),
+            "official_record_change": "official_record_change" in concepts,
+            "financial_value_change": "financial_value_change" in concepts,
+            "unsupported_fact_invention": (
+                "unsupported_fact_invention" in concepts
+            ),
             "workflow_id": md.get("workflow_id"),
         }
 
@@ -297,12 +441,36 @@ class DataUseGuard:
         # charity-bazaar RED card is not described in athletics/student terms.
         step_safe_alt = str(md.get("safe_alternative") or "").strip()
 
+        if tool == "web search" and has_pii:
+            return {
+                "decision": "RED",
+                "reasons": [
+                    "Personal identifiers or contact details cannot be sent in an external web-search query.",
+                    "safe_alternative: use a case-free official-policy query and keep case facts TBC or ask the authorised school user.",
+                ],
+                "features": features,
+            }
+
         # ── RED 1 (flagship §I): socioeconomic data → differential treatment ─
         if has_socio and has_diff:
             return {"decision": "RED",
                     "reasons": [_RED_REASON_SOCIO,
                                 f"safe_alternative: {step_safe_alt or _SAFE_ALT_SOCIO}"],
                     "features": features}
+
+        # ── RED: personal sensitive facts must not become durable memory ──
+        if "persistent_sensitive_learning" in concepts:
+            return {
+                "decision": "RED",
+                "reasons": [
+                    "Person-level student or stakeholder-sensitive facts "
+                    "cannot be persisted as reusable learning or a durable profile.",
+                    "safe_alternative: Store only a non-personal procedure or "
+                    "case-local note; keep the sensitive fact inside the current "
+                    "access-controlled case.",
+                ],
+                "features": features,
+            }
 
         # ── RED 2: publish personal identifiers to a public/external surface ─
         if has_pii and is_public:
@@ -334,12 +502,24 @@ class DataUseGuard:
                                 f"safe_alternative: {step_safe_alt or _SAFE_ALT_STUDENT_PUBLIC}"],
                     "features": features}
 
+        # ── INFEASIBLE: missing facts stay unknown rather than invented ──
+        if "unsupported_fact_invention" in concepts:
+            return {
+                "decision": "INFEASIBLE",
+                "reasons": [
+                    "The requested fact is not supported by the available "
+                    "case evidence and must be marked TBC instead of invented."
+                ],
+                "features": features,
+            }
+
         # ── GREEN: writing/updating an OFFICIAL record is high-impact → verify ─
         # Stronger than ordinary external release: this is the agent reaching a
         # formal administrative write inside its own autonomous workflow and
         # pausing for a human, not a generic publish gate.
         if (scope in ("official_record", "official_write")
-                or "official" in approval_boundary):
+                or "official" in approval_boundary
+                or "official_record_change" in concepts):
             return {"decision": "GREEN",
                     "reasons": ["Writing or updating an official school "
                                 "achievement record is a high-impact "
@@ -350,8 +530,19 @@ class DataUseGuard:
                                 "approves before the record is written."],
                     "features": features}
 
+        # ── GREEN: issuing or changing money-like value needs verification ──
+        if "financial_value_change" in concepts:
+            return {
+                "decision": "GREEN",
+                "reasons": [
+                    "Issuing or changing cash-equivalent coupons, prices, or "
+                    "payment arrangements requires an authorised human decision."
+                ],
+                "features": features,
+            }
+
         # ── GREEN: external publish/send/submit needs human approval ──
-        if is_public and scope != "public_draft":
+        if is_external and scope != "public_draft":
             return {"decision": "GREEN",
                     "reasons": ["External release requires human approval "
                                 "before any outside action."],

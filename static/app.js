@@ -62,6 +62,14 @@ initAuth();
 const state = {
   attachments: [],         // [{filename, url, size_bytes}]
   tasks: {},               // task_id -> { ui_node, poll_handle }
+  // Mixed-Live case continuity. Only configured live A/B workflows become an
+  // active context; a semantic new case/unrelated request clears it.
+  activeWorkflowId: null,
+  activeCaseTaskId: null,
+  liveWorkflows: [],
+  liveSchoolInputs: false,
+  liveReady: false,
+  packDrafts: {},
   // Track approval-card click state so re-renders (every 500ms poll)
   // don't reset the button styling. Maps approval_id ->
   // { status: "pending"|"submitting"|"submitted"|"error", decision, error }
@@ -114,6 +122,9 @@ async function loadConfig() {
     // server planner is live.
     const liveList = c.live_workflows || [];
     const liveOn = !!c.live_ready;
+    state.liveWorkflows = liveList;
+    state.liveSchoolInputs = !!c.live_school_inputs;
+    state.liveReady = !!c.live_ready || c.planner === "openai";
     const modePill = $("#mode-pill");
     if (modePill) {
       // Short, judge-readable badge (Brief 8 Issue 2); the full explanation
@@ -150,7 +161,7 @@ function autoSizeTextarea(el) {
   el.style.height = Math.min(el.scrollHeight, 200) + "px";
 }
 
-async function startTask() {
+async function startTask(options = {}) {
   const goalEl = $("#goal");
   let goal = goalEl.value.trim();
   if (!goal && !state.attachments.length) return;
@@ -175,7 +186,15 @@ async function startTask() {
     const r = await fetch("/api/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ raw_goal: goal }),
+      body: JSON.stringify({
+        raw_goal: goal,
+        active_workflow_id: state.activeWorkflowId,
+        parent_task_id: state.activeCaseTaskId,
+        interaction_mode: (
+          options.direct === true || !state.liveSchoolInputs || !state.liveReady
+            ? "direct" : "review_if_needed"
+        ),
+      }),
     });
     if (!r.ok) throw new Error(await r.text());
     const { task_id } = await r.json();
@@ -575,6 +594,238 @@ function renderWorkflowPanel(bubble, d) {
   el.hidden = false;
 }
 
+function renderResponsePack(node, d) {
+  const el = node.querySelector(".response-pack");
+  if (!el) return;
+  const pack = d.response_pack;
+  if (!pack || !Array.isArray(pack.deliverables)) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  const key = `${pack.pack_id || "pack"}:${pack.revision || 1}:${d.status}`;
+  if (el.dataset.renderKey === key) return;
+  el.dataset.renderKey = key;
+  el.innerHTML = "";
+
+  const banner = pack.emergency_banner;
+  if (banner) {
+    const alert = document.createElement("div");
+    alert.className = "response-pack-alert";
+    alert.setAttribute("role", "alert");
+    alert.innerHTML = `<strong>Immediate safety</strong><span>${escapeHtml(banner.message || "")}</span>`;
+    el.appendChild(alert);
+  }
+  if (pack.degraded_mode) {
+    const degraded = document.createElement("div");
+    degraded.className = "response-pack-degraded";
+    degraded.textContent = pack.degraded_message || "Degraded semantic mode — confirm this generic pack.";
+    el.appendChild(degraded);
+  }
+
+  const head = document.createElement("div");
+  head.className = "response-pack-head";
+  head.innerHTML = `<div><strong>Recommended Response Pack</strong>`
+    + `<span class="response-pack-sub">${escapeHtml(pack.case_summary || "School case")}</span></div>`
+    + `<span class="response-pack-severity">${escapeHtml(pack.severity || "unknown")}</span>`;
+  el.appendChild(head);
+
+  const fieldset = document.createElement("fieldset");
+  fieldset.className = "response-pack-list";
+  const legend = document.createElement("legend");
+  legend.textContent = d.status === "awaiting_clarification"
+    ? "Choose recommended outputs" : "Response-pack coverage";
+  fieldset.appendChild(legend);
+
+  for (const item of pack.deliverables) {
+    const row = document.createElement("label");
+    row.className = "response-pack-item";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.value = item.deliverable_id || "";
+    box.checked = item.selected === true;
+    if (item.required === true || d.status !== "awaiting_clarification") box.disabled = true;
+    const copy = document.createElement("span");
+    copy.className = "response-pack-item-copy";
+    const title = document.createElement("strong");
+    title.textContent = item.label || item.artifact_role || "School output";
+    const meta = document.createElement("small");
+    meta.textContent = `${item.requirement || "recommended"} · ${item.mode || "draft"} · ${item.audience || "internal"}`;
+    copy.appendChild(title);
+    copy.appendChild(meta);
+    row.appendChild(box);
+    row.appendChild(copy);
+    fieldset.appendChild(row);
+  }
+  el.appendChild(fieldset);
+
+  const question = pack.critical_question;
+  if (d.status === "awaiting_clarification" && question) {
+    const q = document.createElement("fieldset");
+    q.className = "response-pack-question";
+    const qLegend = document.createElement("legend");
+    qLegend.textContent = "One critical question";
+    q.appendChild(qLegend);
+    const prompt = document.createElement("strong");
+    prompt.textContent = question.prompt || "Please confirm the critical unknown.";
+    q.appendChild(prompt);
+    const why = document.createElement("small");
+    why.textContent = question.why || "This can change the response priority.";
+    q.appendChild(why);
+    const options = document.createElement("div");
+    options.className = "response-pack-options";
+    for (const option of question.options || ["Yes", "No", "Unknown"]) {
+      const lab = document.createElement("label");
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = `clarify-${d.task_id}`;
+      radio.value = option;
+      lab.appendChild(radio);
+      lab.appendChild(document.createTextNode(option));
+      options.appendChild(lab);
+    }
+    q.appendChild(options);
+    el.appendChild(q);
+
+    const custom = document.createElement("div");
+    custom.className = "response-pack-custom";
+    custom.innerHTML = `
+      <label>Optional extra output<input class="pack-custom-label" type="text" maxlength="120" placeholder="e.g. Report draft for PPD / JPN"></label>
+      <label>For whom?<input class="pack-custom-recipient" type="text" maxlength="80" placeholder="e.g. education authority"></label>
+      <label>Mode<select class="pack-custom-mode"><option value="draft">Draft only</option><option value="external_release">Request real release</option></select></label>`;
+    el.appendChild(custom);
+
+    const actions = document.createElement("div");
+    actions.className = "response-pack-actions";
+    const tbc = document.createElement("button");
+    tbc.type = "button";
+    tbc.className = "pack-tbc";
+    tbc.textContent = "Proceed with TBC";
+    const proceed = document.createElement("button");
+    proceed.type = "button";
+    proceed.className = "pack-proceed";
+    proceed.textContent = "Proceed to governance";
+    tbc.addEventListener("click", () => submitResponsePack(node, d, true));
+    proceed.addEventListener("click", () => submitResponsePack(node, d, false));
+    actions.appendChild(tbc);
+    actions.appendChild(proceed);
+    el.appendChild(actions);
+  }
+
+  const note = document.createElement("div");
+  note.className = "response-pack-note";
+  note.textContent = pack.governance_note || "Each selected action will be governed separately before execution.";
+  el.appendChild(note);
+  el.hidden = false;
+}
+
+async function submitResponsePack(node, d, proceedWithTbc) {
+  const el = node.querySelector(".response-pack");
+  const checked = Array.from(el.querySelectorAll('.response-pack-list input[type="checkbox"]:checked'))
+    .map(input => input.value);
+  const chosen = el.querySelector(`input[name="clarify-${CSS.escape(d.task_id)}"]:checked`);
+  if (!chosen && !proceedWithTbc) {
+    const q = el.querySelector(".response-pack-question");
+    if (q) q.classList.add("needs-answer");
+    return;
+  }
+  const label = (el.querySelector(".pack-custom-label")?.value || "").trim();
+  const recipient = (el.querySelector(".pack-custom-recipient")?.value || "").trim();
+  const mode = el.querySelector(".pack-custom-mode")?.value || "draft";
+  const custom = label ? [{
+    label,
+    recipient_type: recipient || "school_staff",
+    audience: recipient ? "external_agency" : "internal",
+    mode,
+  }] : [];
+  const buttons = el.querySelectorAll("button");
+  buttons.forEach(button => { button.disabled = true; });
+  try {
+    const r = await fetch(`/api/tasks/${encodeURIComponent(d.task_id)}/response-pack/confirm`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        revision: d.response_pack.revision || 1,
+        question_id: d.response_pack.critical_question?.question_id || null,
+        answer: chosen ? chosen.value : null,
+        proceed_with_tbc: proceedWithTbc,
+        selected_deliverable_ids: checked,
+        custom_deliverables: custom,
+      }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const out = await r.json();
+    el.querySelector(".response-pack-actions").textContent = "Response pack confirmed. Starting independent governance checks…";
+    const child = appendAgentMessage(out.task_id);
+    const handle = setInterval(() => pollTask(out.task_id, child), 500);
+    state.tasks[out.task_id] = {ui_node: child, poll_handle: handle};
+    state.activeCaseTaskId = out.task_id;
+  } catch (err) {
+    buttons.forEach(button => { button.disabled = false; });
+    const actions = el.querySelector(".response-pack-actions");
+    if (actions) actions.insertAdjacentHTML("beforeend", `<span class="pack-error">${escapeHtml(err.message)}</span>`);
+  }
+}
+
+function renderAddMissingOutput(node, d) {
+  const el = node.querySelector(".add-output-card");
+  if (!el) return;
+  if (d.status !== "done" || d.phase !== "complete" || !d.response_pack) {
+    el.hidden = true;
+    return;
+  }
+  if (el.dataset.ready === "1") return;
+  el.dataset.ready = "1";
+  el.innerHTML = `
+    <details>
+      <summary>Add a missing output</summary>
+      <div class="add-output-fields">
+        <label>What should the agent prepare?<input class="add-output-label" type="text" maxlength="120" placeholder="e.g. Notification report for PPD / JPN"></label>
+        <label>For whom?<input class="add-output-recipient" type="text" maxlength="80" placeholder="e.g. education authority"></label>
+        <label>Mode<select class="add-output-mode"><option value="draft">Draft only</option><option value="external_release">Request real release</option></select></label>
+        <button type="button" class="add-output-submit">Run through governance</button>
+        <span class="add-output-status"></span>
+      </div>
+    </details>`;
+  el.querySelector(".add-output-submit").addEventListener("click", () => submitAddedDeliverable(node, d));
+  el.hidden = false;
+}
+
+async function submitAddedDeliverable(node, d) {
+  const el = node.querySelector(".add-output-card");
+  const label = (el.querySelector(".add-output-label").value || "").trim();
+  if (!label) {
+    el.querySelector(".add-output-status").textContent = "Describe the missing output first.";
+    return;
+  }
+  const recipient = (el.querySelector(".add-output-recipient").value || "").trim();
+  const mode = el.querySelector(".add-output-mode").value || "draft";
+  const button = el.querySelector(".add-output-submit");
+  button.disabled = true;
+  try {
+    const r = await fetch(`/api/tasks/${encodeURIComponent(d.task_id)}/deliverables`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({deliverables: [{
+        label,
+        recipient_type: recipient || "school_staff",
+        audience: recipient ? "external_agency" : "internal",
+        mode,
+      }]}),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const out = await r.json();
+    el.querySelector(".add-output-status").textContent = "Added as a new governed task.";
+    const child = appendAgentMessage(out.task_id);
+    const handle = setInterval(() => pollTask(out.task_id, child), 500);
+    state.tasks[out.task_id] = {ui_node: child, poll_handle: handle};
+    state.activeCaseTaskId = out.task_id;
+  } catch (err) {
+    button.disabled = false;
+    el.querySelector(".add-output-status").textContent = err.message;
+  }
+}
+
 function appendAgentMessage(task_id) {
   const wrap = document.createElement("div");
   wrap.className = "msg agent";
@@ -586,6 +837,7 @@ function appendAgentMessage(task_id) {
       <div class="episodic-indicator" hidden></div>
       <div class="answer"></div>
       <div class="web-sources" hidden></div>
+      <section class="response-pack" hidden></section>
       <div class="summary">Thinking…</div>
       <div class="extra-card" hidden></div>
       <div class="route-row"></div>
@@ -593,6 +845,7 @@ function appendAgentMessage(task_id) {
       <div class="workflow-panel" hidden></div>
       <div class="artifacts"></div>
       <div class="approval-area"></div>
+      <section class="add-output-card" hidden></section>
       <details class="task-tree-block" hidden>
         <summary>Sub-goals</summary>
         <div class="task-tree-body"></div>
@@ -640,7 +893,28 @@ async function pollTask(task_id, node) {
     state_d = await r.json();
   } catch (e) { return; }
   renderAgentMessage(node, state_d);
-  if (state_d.status === "done" || state_d.status === "error") {
+  // Establish case continuity as soon as the workflow is visible, including
+  // while its GREEN step is awaiting approval. A judge can therefore type a
+  // follow-up immediately; they do not have to finish the gate first.
+  const wf = state_d.workflow;
+  const detectedId = wf && wf.detected
+    ? (wf.workflow_id || (wf.resolution || {}).workflow_id)
+    : null;
+  if (detectedId && state.liveWorkflows.includes(detectedId)) {
+    state.activeWorkflowId = detectedId;
+  }
+  const sem = state_d.school_semantics || {};
+  if (state_d.school_situation && state_d.school_situation.active !== false) {
+    state.activeCaseTaskId = state_d.task_id;
+  }
+  if (sem.case_relation === "new_case" || sem.case_relation === "unrelated") {
+    state.activeWorkflowId = null;
+    if (sem.case_relation === "unrelated") state.activeCaseTaskId = null;
+  } else if (state_d.context_workflow_id) {
+    state.activeWorkflowId = state_d.context_workflow_id;
+  }
+  if (state_d.status === "done" || state_d.status === "error"
+      || state_d.status === "awaiting_clarification") {
     const slot = state.tasks[task_id];
     if (slot && slot.poll_handle) { clearInterval(slot.poll_handle); slot.poll_handle = null; }
     // Refresh the learning panels the moment a task finishes. loadCurator()
@@ -654,10 +928,12 @@ async function pollTask(task_id, node) {
 function renderAgentMessage(node, d) {
   const bubble = node.querySelector(".bubble");
   bubble.classList.remove("status-running", "status-awaiting", "status-done", "status-error");
-  if (d.status === "awaiting_approval") bubble.classList.add("status-awaiting");
+  if (d.status === "awaiting_approval" || d.status === "awaiting_clarification") bubble.classList.add("status-awaiting");
   else if (d.status === "done") bubble.classList.add("status-done");
   else if (d.status === "error") bubble.classList.add("status-error");
   else bubble.classList.add("status-running");
+
+  renderResponsePack(node, d);
 
   // "🔍 Searched the web" indicator. We surface this BEFORE the answer
   // so the user knows the reply is grounded in live results, not just
@@ -727,6 +1003,10 @@ function renderAgentMessage(node, d) {
   // file artifact was produced.
   const summary = bubble.querySelector(".summary");
   if (d.status === "running") summary.textContent = "Thinking…";
+  else if (d.status === "awaiting_clarification") {
+    summary.textContent = "One answer can materially change the safety priority or response pack. Other missing facts can remain TBC.";
+    summary.style.display = "";
+  }
   else if (d.status === "awaiting_approval") {
     const awf = d.workflow;
     if (awf && awf.detected) {
@@ -849,16 +1129,19 @@ function renderAgentMessage(node, d) {
       && ((ver.checks || []).length > 0 || ver.judge)) {
     const chip = document.createElement("span");
     const judge = ver.judge || null;
-    const judgeBit = judge
+    const judgeRan = judge && typeof judge.pass === "boolean";
+    const judgeBit = judgeRan
       ? `\nLLM judge: ${judge.pass ? "PASS" : "FAIL"} `
         + `(score ${judge.score}/${judge.threshold}, rubric=${judge.rubric_used})`
         + (judge.issues && judge.issues.length
             ? "\nIssues:\n  - " + judge.issues.join("\n  - ")
             : "")
-      : "";
+      : (judge && judge.skipped_reason
+          ? `\nLLM judge: not applicable (${judge.skipped_reason})`
+          : "");
     if (ver.pass) {
       chip.className = "chip VERIFIED";
-      chip.textContent = judge && judge.pass
+      chip.textContent = judgeRan && judge.pass
         ? `VERIFIED ${judge.score}`
         : "VERIFIED";
       chip.title = (ver.summary || "all checks passed") + judgeBit;
@@ -898,6 +1181,7 @@ function renderAgentMessage(node, d) {
 
   // approvals
   renderApprovals(bubble.querySelector(".approval-area"), d);
+  renderAddMissingOutput(node, d);
 
   // Module 109 reflection: surface what the agent decided to remember
   // (or rejected). Hidden when there's nothing to show.
@@ -1196,6 +1480,11 @@ function renderArtifacts(el, d) {
   }
   // file links (docx/pptx/xlsx/md/txt)
   const seen = new Set();
+  const responsePackLabels = new Map(
+    ((d.response_pack && d.response_pack.deliverables) || [])
+      .filter(item => item && item.kind === "artifact" && item.filename)
+      .map(item => [basename(item.filename), item.label || friendlyArtifactLabel(item.filename)])
+  );
   for (const f of files) {
     const fn = basename(f.path);
     if (seen.has(fn)) continue;
@@ -1203,12 +1492,18 @@ function renderArtifacts(el, d) {
     if (/\.(docx|pptx|xlsx|md|txt|pdf|csv|json)$/i.test(fn)) {
       const a = document.createElement("a");
       a.className = "artifact";
-      a.href = `/api/outputs/${encodeURIComponent(fn)}`;
+      const normalPath = String(f.path || "").replace(/\\/g, "/");
+      const pathParts = normalPath.split("/").filter(Boolean);
+      const parentDir = pathParts.length > 1 ? pathParts[pathParts.length - 2] : "";
+      a.href = (d.task_id && parentDir === d.task_id)
+        ? `/api/tasks/${encodeURIComponent(d.task_id)}/outputs/${encodeURIComponent(fn)}`
+        : `/api/outputs/${encodeURIComponent(fn)}`;
       a.target = "_blank";
       a.download = fn;
       a.title = fn;
+      const displayLabel = responsePackLabels.get(fn) || friendlyArtifactLabel(fn);
       a.innerHTML = `<span class="icon">${iconFor(fn)}</span>`
-        + `<span>${escapeHtml(friendlyArtifactLabel(fn))}</span>`;
+        + `<span>${escapeHtml(displayLabel)}</span>`;
       el.appendChild(a);
     }
   }
@@ -2160,7 +2455,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   $("#theme-toggle").addEventListener("click", toggleTheme);
   $("#audit-toggle").addEventListener("click", toggleAudit);
-  $("#run-btn").addEventListener("click", startTask);
+  $("#run-btn").addEventListener("click", () => startTask());
   $("#rag-reindex").addEventListener("click", reindex);
   const curBtn = $("#curator-run-btn");
   if (curBtn) curBtn.addEventListener("click", () => runCurator(curBtn));
@@ -2182,7 +2477,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if ($("#run-btn").disabled) return;
     $("#goal").value = b.dataset.prompt;
     autoSizeTextarea($("#goal"));
-    startTask();
+    startTask({direct: true});
   });
   const dockToggle = $("#demo-dock-toggle");
   if (dockToggle) dockToggle.addEventListener("click", () => {

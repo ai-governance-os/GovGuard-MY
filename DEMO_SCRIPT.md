@@ -34,13 +34,16 @@ requests — a status-pressure request is refused (RED), a reward-amount guess i
 declined as INFEASIBLE, an external send/publish is routed to approval (GREEN),
 and "train on the student database" is blocked at the learning boundary (RED).
 
-## Part 3 — Route B: Minimal-Input Generalisation
+## Part 3 — Open School Input (Route B: reproducible anchor)
 
 Click **③ 🎤** (or paste the prompt). Narrate: *no persistent student/parent
 database* — the case is built from the prompt. The user gives only facts and
 intent ("prepare the school follow-up"); the agent infers the whole governed
 output package itself, marks missing details as TBC (does not invent them),
 keeps the struggling pupils out of the public post, and gates every send/publish.
+In Mixed Live, the same section accepts unfamiliar school situations and shows
+a selectable Markdown Response Pack: semantic understanding proposes coverage;
+deterministic governance owns every action and unknown fact.
 
 **Primary (short) prompt — the generalisation proof:**
 
@@ -85,14 +88,15 @@ the GREEN human gate when a release IS requested.
 ## Closing (10 s)
 
 > "This shows real administrative relevance and generalisable governance — not
-> just one hard-coded demo. Route A is a credible deployment; Route B transfers
-> the same governed procedure to an unseen case, without reusing private data or
-> inventing missing facts."
+> just one hard-coded demo. Route A is a credible deployment; Route B anchors a
+> broader open-input school agent that transfers governed procedure to unfamiliar
+> cases without reusing private data or inventing missing facts."
 
 ## For a live tier (optional)
 
 **Mixed mode (recommended for a finals stage):** with a valid, rotated key, set
-`TEOW_AGL_LIVE_WORKFLOWS=ad_hoc_school_event_reporting` before starting — ONE
+`TEOW_AGL_LIVE_WORKFLOWS=ad_hoc_school_event_reporting` and
+`TEOW_AGL_LIVE_SCHOOL_INPUTS=1` before starting — ONE
 server where Parts 1–2 stay deterministic (instant, reproducible) and Part 3
 drafts on the live API, with no restart between parts. The UI badges switch to
 `Mode: mixed live` only when the live tier can actually run (the badge tooltip

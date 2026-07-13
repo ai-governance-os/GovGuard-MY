@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import threading
 import uuid
@@ -25,6 +26,8 @@ from teow_agl.modules.module_102w_workflow_resolver import WorkflowResolver
 from teow_agl.modules.module_102t_task_tree import TaskTreeModule
 from teow_agl.modules.module_105_web_gate import WebHumanGate
 from teow_agl.modules.module_109_reflector import ReflectorModule
+from teow_agl.modules.module_school_input_semantics import SchoolInputSemantics
+from teow_agl.modules.module_school_situation import SchoolSituationCompiler
 from teow_agl.modules.module_curator import CuratorModule
 from teow_agl.runtime import Runtime
 from teow_agl.tools.chat_tool import ChatTool
@@ -160,6 +163,19 @@ class TaskState:
     # detected OR the agent self-blocked a sensitive data use. The UI renders
     # this as a workflow panel beside the governance pipeline card.
     workflow: dict | None = None
+    # Mixed-Live open-input context. These fields make the judge-visible trace
+    # honest about whether a free-form question inherited Route A/B or opened a
+    # new school case, without giving the LLM any routing authority.
+    context_workflow_id: str | None = None
+    school_semantics: dict | None = None
+    # Product-grade open-school case contract. These fields contain no route:
+    # they describe proposed coverage before every action is independently
+    # governed by the unchanged runtime pipeline.
+    school_situation: dict | None = None
+    response_pack: dict | None = None
+    parent_task_id: str | None = None
+    case_context_id: str | None = None
+    phase: str = "planning"
 
 
 _tasks_store = JsonlStore(STATE_DIR / "tasks.jsonl")
@@ -186,6 +202,13 @@ def _load_initial_state() -> tuple[dict, dict]:
             verification=rec.get("verification"),
             task_tree=rec.get("task_tree"),
             workflow=rec.get("workflow"),
+            context_workflow_id=rec.get("context_workflow_id"),
+            school_semantics=rec.get("school_semantics"),
+            school_situation=rec.get("school_situation"),
+            response_pack=rec.get("response_pack"),
+            parent_task_id=rec.get("parent_task_id"),
+            case_context_id=rec.get("case_context_id"),
+            phase=rec.get("phase", "complete"),
         )
     proposals: dict[str, dict] = _proposals_store.latest_by_id("patch_id")
     return tasks, proposals
@@ -344,11 +367,24 @@ def _build_runtime() -> Runtime:
 # ---------------------------------------------------------------------------
 _RUNTIME_BUILD_LOCK = threading.Lock()
 _WF_PRERESOLVER: WorkflowResolver | None = None
+_SCHOOL_SITUATION_COMPILER: SchoolSituationCompiler | None = None
 
 
 def _live_workflow_ids() -> set[str]:
     raw = os.environ.get("TEOW_AGL_LIVE_WORKFLOWS", "")
     return {w.strip() for w in raw.split(",") if w.strip()}
+
+
+def _live_school_inputs_enabled() -> bool:
+    """Opt-in live understanding for open-ended school-domain questions.
+
+    Scripted core workflows keep their existing deterministic/live selection.
+    This flag only extends Mixed Live to semantic school follow-ups and new
+    school cases that do not contain a prepared workflow trigger phrase.
+    """
+    return os.environ.get("TEOW_AGL_LIVE_SCHOOL_INPUTS", "0").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
 
 
 def _preresolve_workflow_id(raw_goal: str) -> str | None:
@@ -370,23 +406,99 @@ def _preresolve_workflow_id(raw_goal: str) -> str | None:
         return None
 
 
-def _goal_runs_live(raw_goal: str) -> bool:
+def _school_semantics_for_goal(
+    raw_goal: str,
+    *,
+    active_workflow_id: str | None = None,
+) -> dict:
+    """Interpret an open school input once before choosing the planner tier."""
+    if not os.environ.get("OPENAI_API_KEY", "").strip():
+        return {}
+    if not (active_workflow_id or _live_school_inputs_enabled()):
+        return {}
+    # Prepared workflows already have config-grounded semantics. Avoid adding
+    # latency to the main buttons; this preflight is for their free follow-ups
+    # and for other open-ended school-administration cases.
+    if _preresolve_workflow_id(raw_goal):
+        return {}
+    try:
+        return SchoolInputSemantics(
+            ChatLLM(backend="openai", timeout=20)
+        ).classify(raw_goal, active_workflow_id=active_workflow_id)
+    except Exception:
+        return {}
+
+
+def _compile_school_situation(
+    raw_goal: str,
+    semantics: dict,
+    *,
+    clarification_answers: dict | None = None,
+    selected_deliverable_ids: list[str] | None = None,
+    custom_deliverables: list[dict] | None = None,
+) -> dict:
+    global _SCHOOL_SITUATION_COMPILER
+    if semantics.get("school_domain") is not True:
+        return {"active": False, "reason": "outside_school_domain"}
+    if _SCHOOL_SITUATION_COMPILER is None:
+        _SCHOOL_SITUATION_COMPILER = SchoolSituationCompiler(
+            CONFIG_DIR / "domain_packs" / "public_school" /
+            "situation_response_policy.json"
+        )
+    return _SCHOOL_SITUATION_COMPILER.compile(
+        raw_goal,
+        semantics,
+        clarification_answers=clarification_answers,
+        selected_deliverable_ids=selected_deliverable_ids,
+        custom_deliverables=custom_deliverables,
+    )
+
+
+def _goal_runs_live(
+    raw_goal: str,
+    *,
+    active_workflow_id: str | None = None,
+    school_semantics: dict | None = None,
+) -> bool:
     live = _live_workflow_ids()
-    if not live:
+    if not live and not _live_school_inputs_enabled():
         return False
     if not os.environ.get("OPENAI_API_KEY", "").strip():
         return False  # never pretend: no key, no live tier
     if os.environ.get("TEOW_AGL_PLANNER", "smart_mock").lower() == "openai":
         return False  # whole server already live — no override needed
-    return _preresolve_workflow_id(raw_goal) in live
+    resolved = _preresolve_workflow_id(raw_goal)
+    if resolved:
+        return resolved in live
+
+    sem = school_semantics or {}
+    relation = str(sem.get("case_relation") or "").lower()
+    if (active_workflow_id in live
+            and sem.get("school_domain") is True
+            and relation in ("follow_up", "ambiguous")):
+        return True
+    return bool(
+        _live_school_inputs_enabled()
+        and sem.get("school_domain") is True
+        and relation in ("follow_up", "new_case", "ambiguous")
+    )
 
 
-def _make_runtime_for_goal(raw_goal: str) -> tuple[Runtime, str]:
+def _make_runtime_for_goal(
+    raw_goal: str,
+    *,
+    active_workflow_id: str | None = None,
+    school_semantics: dict | None = None,
+) -> tuple[Runtime, str]:
     """Build the per-task runtime, upgrading planner + chat LLM to the live
     API when the goal resolves to a live-listed workflow. ALL construction is
     serialised under one lock so the temporary env override can never leak
     into a concurrently-built deterministic runtime; env is always restored."""
-    live = _goal_runs_live(raw_goal)
+    live = _goal_runs_live(
+        raw_goal,
+        active_workflow_id=active_workflow_id,
+        school_semantics=school_semantics,
+    )
     with _RUNTIME_BUILD_LOCK:
         if not live:
             return _build_runtime(), "deterministic"
@@ -413,7 +525,7 @@ def _make_runtime() -> Runtime:
         return _build_runtime()
 
 
-app = FastAPI(title="GovGuard MY", version="10.7.5-MAIC")
+app = FastAPI(title="GovGuard MY", version="10.8.0-MAIC")
 
 
 # ---------------------------------------------------------------------------
@@ -492,12 +604,32 @@ def login(req: LoginRequest):
 class StartTaskRequest(BaseModel):
     raw_goal: str
     backup_status: str | None = None
+    active_workflow_id: str | None = None
+    interaction_mode: str = "direct"
+    parent_task_id: str | None = None
+    clarification_answers: dict = {}
+    selected_deliverable_ids: list[str] | None = None
+    custom_deliverables: list[dict] = []
+    response_pack_mode: str = "full"
 
 
 class DecideRequest(BaseModel):
     approval_id: str
     status: str
     note: str | None = None
+
+
+class ConfirmResponsePackRequest(BaseModel):
+    revision: int
+    question_id: str | None = None
+    answer: str | None = None
+    proceed_with_tbc: bool = False
+    selected_deliverable_ids: list[str] = []
+    custom_deliverables: list[dict] = []
+
+
+class AddDeliverablesRequest(BaseModel):
+    deliverables: list[dict]
 
 
 @app.get("/api/health")
@@ -529,7 +661,7 @@ def health() -> dict:
     return {
         "ok": all(checks.values()),
         "product": "GovGuard MY",
-        "version": "10.7.5-MAIC",
+        "version": "10.8.0-MAIC",
         "runtime": "Powered by TEOW-AGL Governance Runtime",
         "checks": checks,
         "planner": os.environ.get("TEOW_AGL_PLANNER", "smart_mock"),
@@ -550,8 +682,9 @@ def config_summary() -> dict:
         # whether that tier can actually run (a key is present). The UI mode
         # badges read these so they NEVER claim "live" when it isn't.
         "live_workflows": sorted(_live_workflow_ids()),
+        "live_school_inputs": _live_school_inputs_enabled(),
         "live_ready": bool(
-            _live_workflow_ids()
+            (_live_workflow_ids() or _live_school_inputs_enabled())
             and os.environ.get("OPENAI_API_KEY", "").strip()
         ),
         "workspace_roots": _workspace_roots(),
@@ -564,14 +697,109 @@ def config_summary() -> dict:
 
 @app.post("/api/tasks")
 def start_task(req: StartTaskRequest) -> dict:
+    if req.interaction_mode not in {"direct", "review_if_needed"}:
+        raise HTTPException(400, "invalid_interaction_mode")
+    if req.response_pack_mode not in {"full", "delta"}:
+        raise HTTPException(400, "invalid_response_pack_mode")
+    if req.response_pack_mode == "delta" and (
+        not req.parent_task_id or not req.custom_deliverables
+    ):
+        raise HTTPException(400, "delta_requires_parent_and_custom_deliverables")
+    if len(req.custom_deliverables or []) > 10:
+        raise HTTPException(400, "too_many_custom_deliverables")
     task_id = f"task_{uuid.uuid4().hex[:12]}"
+    parent_case_id = None
+    parent_school_semantics: dict | None = None
+    if req.parent_task_id:
+        with _app_state["lock"]:
+            parent = _app_state["tasks"].get(req.parent_task_id)
+            if parent is None:
+                raise HTTPException(404, "parent_task_not_found")
+            parent_case_id = parent.case_context_id
+            parent_school_semantics = dict(parent.school_semantics or {})
     state = TaskState(task_id=task_id, raw_goal=req.raw_goal,
-                      started_at=datetime.now(timezone.utc).isoformat())
+                      started_at=datetime.now(timezone.utc).isoformat(),
+                      parent_task_id=req.parent_task_id,
+                      case_context_id=parent_case_id or f"case_{uuid.uuid4().hex[:12]}")
     with _app_state["lock"]:
         _app_state["tasks"][task_id] = state
 
     def runner():
-        rt, planner_mode = _make_runtime_for_goal(req.raw_goal)
+        if req.response_pack_mode == "delta" and parent_school_semantics:
+            school_semantics = dict(parent_school_semantics)
+            school_semantics.update({
+                "checked": True,
+                "case_relation": "follow_up",
+                "source": "parent_case_context",
+            })
+        else:
+            school_semantics = _school_semantics_for_goal(
+                req.raw_goal,
+                active_workflow_id=req.active_workflow_id or req.parent_task_id,
+            )
+        relation = str(school_semantics.get("case_relation") or "").lower()
+        if (
+            relation in {"new_case", "unrelated"}
+            and req.parent_task_id
+            and req.response_pack_mode != "delta"
+        ):
+            with _app_state["lock"]:
+                state.case_context_id = f"case_{uuid.uuid4().hex[:12]}"
+        context_workflow_id = (
+            req.active_workflow_id
+            if relation in ("follow_up", "ambiguous")
+            else None
+        )
+        with _app_state["lock"]:
+            state.context_workflow_id = context_workflow_id
+            state.school_semantics = school_semantics or None
+        compiled: dict = {}
+        effective_review = bool(
+            req.interaction_mode == "review_if_needed"
+            or (
+                school_semantics.get("school_domain") is True
+                and _live_school_inputs_enabled()
+                and _preresolve_workflow_id(req.raw_goal) is None
+            )
+        )
+        if effective_review and school_semantics:
+            compiled = _compile_school_situation(
+                req.raw_goal,
+                school_semantics,
+                clarification_answers=req.clarification_answers,
+                selected_deliverable_ids=req.selected_deliverable_ids,
+                custom_deliverables=req.custom_deliverables,
+            )
+            situation = compiled.get("situation") or None
+            response_pack = compiled.get("response_pack") or None
+            if response_pack and req.response_pack_mode == "delta":
+                for item in response_pack.get("deliverables") or []:
+                    if item.get("requirement") != "user_added":
+                        item["selected"] = False
+                        item["required"] = False
+                response_pack["coverage"]["expected_selected"] = sum(
+                    1 for item in response_pack.get("deliverables") or []
+                    if item.get("selected") is True
+                )
+                response_pack["critical_question"] = None
+                response_pack["state"] = "ready"
+            with _app_state["lock"]:
+                state.school_situation = situation
+                state.response_pack = response_pack
+            question = (response_pack or {}).get("critical_question")
+            if question and not req.clarification_answers:
+                with _app_state["lock"]:
+                    state.status = "awaiting_clarification"
+                    state.phase = "response_pack_review"
+                _tasks_store.append(_state_to_dict(state))
+                return
+        with _app_state["lock"]:
+            state.phase = "governance"
+        rt, planner_mode = _make_runtime_for_goal(
+            req.raw_goal,
+            active_workflow_id=req.active_workflow_id,
+            school_semantics=school_semantics,
+        )
         with _app_state["lock"]:
             state.planner_mode = planner_mode
         original_emit = rt.trace.emit
@@ -584,8 +812,29 @@ def start_task(req: StartTaskRequest) -> dict:
         rt.trace.emit = capture_emit  # type: ignore[method-assign]
 
         try:
-            result = rt.run(raw_goal=req.raw_goal, backup_status=req.backup_status,
-                            session_id=task_id, task_id=task_id)
+            metadata = {}
+            if school_semantics:
+                metadata = {
+                    "school_semantics_checked": True,
+                    "school_semantics": school_semantics,
+                    "data_use_concepts": school_semantics.get(
+                        "data_use_concepts", []
+                    ),
+                    "active_workflow_id": context_workflow_id,
+                    "school_followup": relation == "follow_up",
+                }
+                if compiled.get("situation") and compiled.get("response_pack"):
+                    metadata["school_situation"] = compiled["situation"]
+                    metadata["school_response_pack"] = compiled["response_pack"]
+                    metadata["case_context_id"] = state.case_context_id
+                    metadata["response_pack_mode"] = req.response_pack_mode
+            result = rt.run(
+                raw_goal=req.raw_goal,
+                backup_status=req.backup_status,
+                session_id=task_id,
+                task_id=task_id,
+                metadata=metadata,
+            )
             with _app_state["lock"]:
                 state.decisions = [d.model_dump() for d in result.decisions]
                 state.executions = [e.model_dump() for e in result.executions]
@@ -607,6 +856,7 @@ def start_task(req: StartTaskRequest) -> dict:
                 # Workflow Autonomy panel (102W/101D). None for ordinary tasks.
                 state.workflow = _workflow_view(result)
                 state.status = "done"
+                state.phase = "complete"
                 state.finished_at = datetime.now(timezone.utc).isoformat()
                 state.pending_approvals = []
                 # register every newly-proposed patch in the global registry
@@ -652,6 +902,7 @@ def start_task(req: StartTaskRequest) -> dict:
         except Exception as exc:
             with _app_state["lock"]:
                 state.status = "error"
+                state.phase = "error"
                 state.error = str(exc)
                 state.finished_at = datetime.now(timezone.utc).isoformat()
             _tasks_store.append(_state_to_dict(state))
@@ -725,10 +976,102 @@ def list_tasks() -> dict:
 def decide(task_id: str, req: DecideRequest) -> dict:
     if req.status not in ("approved", "rejected", "modified"):
         raise HTTPException(400, "invalid_status")
+    pending = next(
+        (
+            item for item in _app_state["gate"].pending_snapshot()
+            if item.get("approval_id") == req.approval_id
+        ),
+        None,
+    )
+    if pending is None or pending.get("task_id") != task_id:
+        raise HTTPException(404, "approval_not_pending_for_task")
     ok = _app_state["gate"].decide(req.approval_id, req.status, req.note)
     if not ok:
         raise HTTPException(404, "approval_not_pending")
     return {"ok": True}
+
+
+@app.post("/api/tasks/{task_id}/response-pack/confirm")
+def confirm_response_pack(task_id: str, req: ConfirmResponsePackRequest) -> dict:
+    """Resolve one high-impact question and launch the governed continuation.
+
+    Confirming a response pack is not an approval. The child task still passes
+    every selected and custom action through the full governance pipeline.
+    """
+    with _app_state["lock"]:
+        state = _app_state["tasks"].get(task_id)
+        if state is None:
+            raise HTTPException(404, "task_not_found")
+        if state.status != "awaiting_clarification":
+            raise HTTPException(409, "task_not_awaiting_clarification")
+        pack = state.response_pack or {}
+        if int(pack.get("revision") or 0) != req.revision:
+            raise HTTPException(409, "response_pack_revision_conflict")
+        question = pack.get("critical_question") or {}
+        expected_question_id = str(question.get("question_id") or "")
+        if req.question_id and req.question_id != expected_question_id:
+            raise HTTPException(409, "clarification_question_conflict")
+        if len(req.custom_deliverables or []) > 10:
+            raise HTTPException(400, "too_many_custom_deliverables")
+        answer = str(req.answer or "").strip()
+        if not answer and req.proceed_with_tbc:
+            answer = "Unknown"
+        if not answer:
+            raise HTTPException(400, "clarification_answer_required")
+        state.status = "done"
+        state.phase = "clarification_resolved"
+        state.finished_at = datetime.now(timezone.utc).isoformat()
+        pack["state"] = "confirmed_for_governance"
+        state.response_pack = pack
+        raw_goal = state.raw_goal
+        active_workflow_id = state.context_workflow_id
+        backup_parent = state.task_id
+    _tasks_store.append(_state_to_dict(state))
+    child = start_task(StartTaskRequest(
+        raw_goal=raw_goal,
+        active_workflow_id=active_workflow_id,
+        interaction_mode="review_if_needed",
+        parent_task_id=backup_parent,
+        clarification_answers={expected_question_id: answer},
+        selected_deliverable_ids=req.selected_deliverable_ids,
+        custom_deliverables=req.custom_deliverables,
+        response_pack_mode="full",
+    ))
+    return {"ok": True, "task_id": child["task_id"], "governance_pending": True}
+
+
+@app.post("/api/tasks/{task_id}/deliverables")
+def add_deliverables(task_id: str, req: AddDeliverablesRequest) -> dict:
+    """Create a governed delta task for outputs missing from a completed pack."""
+    if not req.deliverables or len(req.deliverables) > 10:
+        raise HTTPException(400, "deliverables_must_contain_1_to_10_items")
+    with _app_state["lock"]:
+        parent = _app_state["tasks"].get(task_id)
+        if parent is None:
+            raise HTTPException(404, "task_not_found")
+        if parent.status not in {"done", "awaiting_approval"}:
+            raise HTTPException(409, "parent_task_not_ready")
+        labels = [
+            str(item.get("label") or "").strip()[:120]
+            for item in req.deliverables if isinstance(item, dict)
+        ]
+        if not any(labels):
+            raise HTTPException(400, "deliverable_label_required")
+        raw_goal = (
+            parent.raw_goal.rstrip()
+            + "\n\nAdditional governed output request: "
+            + "; ".join(label for label in labels if label)
+            + ". Prepare only the added output(s); preserve all unknown case facts as TBC."
+        )
+    child = start_task(StartTaskRequest(
+        raw_goal=raw_goal,
+        interaction_mode="review_if_needed",
+        parent_task_id=task_id,
+        clarification_answers={},
+        custom_deliverables=req.deliverables,
+        response_pack_mode="delta",
+    ))
+    return {"ok": True, "task_id": child["task_id"], "governance_pending": True}
 
 
 @app.get("/api/patches")
@@ -1208,6 +1551,40 @@ def serve_output(filename: str) -> FileResponse:
     return FileResponse(path)
 
 
+@app.get("/api/tasks/{task_id}/outputs/{filename}")
+def serve_task_output(task_id: str, filename: str) -> FileResponse:
+    """Serve a task-isolated live-school artifact by basename.
+
+    The task/action evidence must name the exact file. This prevents a user
+    who knows another task id from using the download route as a directory
+    oracle, while keeping legacy scripted-demo outputs backward compatible.
+    """
+    if not re.fullmatch(r"task_[a-zA-Z0-9]+", task_id or ""):
+        raise HTTPException(400, "invalid_task_id")
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(400, "invalid_filename")
+    path = (OUTPUTS_DIR / task_id / filename).resolve()
+    base = (OUTPUTS_DIR / task_id).resolve()
+    try:
+        path.relative_to(base)
+    except ValueError:
+        raise HTTPException(400, "outside_task_outputs_dir")
+    with _app_state["lock"]:
+        state = _app_state["tasks"].get(task_id)
+        if state is None:
+            raise HTTPException(404, "task_not_found")
+        allowed = {
+            str(Path(resource).resolve()).casefold()
+            for execution in (state.executions or [])
+            for resource in (execution.get("affected_resources") or [])
+        }
+    if str(path).casefold() not in allowed:
+        raise HTTPException(404, "artifact_not_recorded_for_task")
+    if not path.is_file():
+        raise HTTPException(404, "not_found")
+    return FileResponse(path)
+
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -1375,6 +1752,13 @@ def _state_to_dict(state: TaskState) -> dict:
         "task_tree": state.task_tree,
         "workflow": state.workflow,
         "planner_mode": state.planner_mode,
+        "context_workflow_id": state.context_workflow_id,
+        "school_semantics": state.school_semantics,
+        "school_situation": state.school_situation,
+        "response_pack": state.response_pack,
+        "parent_task_id": state.parent_task_id,
+        "case_context_id": state.case_context_id,
+        "phase": state.phase,
     }
 
 

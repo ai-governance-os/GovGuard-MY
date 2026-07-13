@@ -1,0 +1,257 @@
+{
+  "schema_version": "1.0",
+  "policy_version": "10.8.0-school-ready-response-pack",
+  "families": [
+    "safety_emergency",
+    "health_medical",
+    "safeguarding_welfare",
+    "discipline_behaviour",
+    "attendance_student_movement",
+    "facilities_environment",
+    "transport_travel",
+    "food_hygiene",
+    "cyber_data",
+    "finance_procurement",
+    "events_cocurricular",
+    "teaching_learning_support",
+    "staffing_hr",
+    "communications_reputation",
+    "records_regulatory",
+    "community_external_party",
+    "general_school_admin"
+  ],
+  "phases": ["ongoing", "just_occurred", "post_incident", "planned", "follow_up", "unknown"],
+  "severities": ["critical", "high", "medium", "low", "unknown"],
+  "signals": [
+    "active_danger",
+    "injury_or_illness",
+    "minor_involved",
+    "person_missing",
+    "safeguarding_concern",
+    "external_help_may_be_required",
+    "possible_regulatory_trigger",
+    "public_interest",
+    "personal_data_involved",
+    "financial_value_involved",
+    "official_record_involved",
+    "service_disruption",
+    "evidence_preservation_needed",
+    "transport_operation",
+    "food_water_exposure",
+    "event_operation",
+    "evacuation_accountability",
+    "data_security_incident",
+    "guardian_notification_relevant"
+  ],
+  "stakeholders": [
+    "school_leadership",
+    "school_staff",
+    "student",
+    "guardian",
+    "medical_services",
+    "malaysia_emergency_services_999",
+    "fire_and_rescue",
+    "police",
+    "education_authority",
+    "local_authority",
+    "event_organizer",
+    "vendor",
+    "transport_provider",
+    "public_media"
+  ],
+  "artifact_catalog": {
+    "internal_incident_report": {
+      "label": "Internal incident report",
+      "filename": "internal_incident_report.md",
+      "audience": "internal",
+      "recipient_type": "school_leadership",
+      "source_policy": "case_facts_only"
+    },
+    "private_parent_notice": {
+      "label": "Private parent / guardian notification draft",
+      "filename": "parent_notification_draft.md",
+      "audience": "private_recipient",
+      "recipient_type": "guardian",
+      "source_policy": "case_facts_only"
+    },
+    "emergency_contact_script": {
+      "label": "Emergency-service contact script",
+      "filename": "emergency_contact_script.md",
+      "audience": "external_agency",
+      "recipient_type": "malaysia_emergency_services_999",
+      "source_policy": "case_facts_only_official_verification_required"
+    },
+    "fire_rescue_contact_script": {
+      "label": "Fire and Rescue contact script",
+      "filename": "fire_rescue_contact_script.md",
+      "audience": "external_agency",
+      "recipient_type": "fire_and_rescue",
+      "source_policy": "case_facts_only_official_verification_required"
+    },
+    "medical_handover_script": {
+      "label": "Medical handover script",
+      "filename": "medical_handover_script.md",
+      "audience": "external_agency",
+      "recipient_type": "medical_services",
+      "source_policy": "case_facts_only"
+    },
+    "site_safety_checklist": {
+      "label": "Immediate site-safety checklist",
+      "filename": "site_safety_checklist.md",
+      "audience": "internal",
+      "recipient_type": "school_staff",
+      "source_policy": "official_verification_required_before_use"
+    },
+    "student_accountability_checklist": {
+      "label": "Student accountability checklist",
+      "filename": "student_accountability_checklist.md",
+      "audience": "internal",
+      "recipient_type": "school_staff",
+      "source_policy": "case_facts_only"
+    },
+    "regulatory_notification_assessment": {
+      "label": "Regulatory notification assessment",
+      "filename": "regulatory_notification_assessment.md",
+      "audience": "internal",
+      "recipient_type": "school_leadership",
+      "source_policy": "official_verification_required_before_use"
+    },
+    "education_authority_report": {
+      "label": "Education-authority report draft",
+      "filename": "education_authority_report_draft.md",
+      "audience": "external_agency",
+      "recipient_type": "education_authority",
+      "source_policy": "case_facts_only_official_verification_required"
+    },
+    "staff_internal_notice": {
+      "label": "Internal staff notice",
+      "filename": "staff_internal_notice.md",
+      "audience": "internal",
+      "recipient_type": "school_staff",
+      "source_policy": "case_facts_only"
+    },
+    "public_communication_draft": {
+      "label": "Public holding statement",
+      "filename": "public_communication_draft.md",
+      "audience": "public",
+      "recipient_type": "public_media",
+      "source_policy": "verified_non_personal_facts_only"
+    },
+    "discipline_investigation_report": {
+      "label": "Discipline investigation report",
+      "filename": "discipline_investigation_report.md",
+      "audience": "internal",
+      "recipient_type": "school_leadership",
+      "source_policy": "case_facts_only"
+    },
+    "safeguarding_action_plan": {
+      "label": "Safeguarding action plan",
+      "filename": "safeguarding_action_plan.md",
+      "audience": "internal",
+      "recipient_type": "school_leadership",
+      "source_policy": "case_facts_only_official_verification_required"
+    },
+    "evidence_preservation_log": {
+      "label": "Evidence preservation log",
+      "filename": "evidence_preservation_log.md",
+      "audience": "internal",
+      "recipient_type": "school_leadership",
+      "source_policy": "case_facts_only"
+    },
+    "cyber_incident_response": {
+      "label": "Cyber / data incident response plan",
+      "filename": "cyber_incident_response.md",
+      "audience": "internal",
+      "recipient_type": "school_leadership",
+      "source_policy": "case_facts_only_official_verification_required"
+    },
+    "finance_procurement_memo": {
+      "label": "Finance / procurement decision memo",
+      "filename": "finance_procurement_memo.md",
+      "audience": "internal",
+      "recipient_type": "school_leadership",
+      "source_policy": "case_facts_only"
+    },
+    "event_action_plan": {
+      "label": "Event action plan",
+      "filename": "event_action_plan.md",
+      "audience": "internal",
+      "recipient_type": "school_staff",
+      "source_policy": "case_facts_only"
+    },
+    "external_stakeholder_message": {
+      "label": "External stakeholder message draft",
+      "filename": "external_stakeholder_message_draft.md",
+      "audience": "private_recipient",
+      "recipient_type": "external_stakeholder",
+      "source_policy": "case_facts_only"
+    },
+    "student_support_plan": {
+      "label": "Student support plan",
+      "filename": "student_support_plan.md",
+      "audience": "internal",
+      "recipient_type": "school_staff",
+      "source_policy": "case_facts_only"
+    },
+    "transport_response_plan": {
+      "label": "Transport response plan",
+      "filename": "transport_response_plan.md",
+      "audience": "internal",
+      "recipient_type": "school_leadership",
+      "source_policy": "case_facts_only"
+    },
+    "food_safety_response": {
+      "label": "Food-safety response plan",
+      "filename": "food_safety_response.md",
+      "audience": "internal",
+      "recipient_type": "school_leadership",
+      "source_policy": "case_facts_only_official_verification_required"
+    },
+    "post_incident_review": {
+      "label": "Post-incident review",
+      "filename": "post_incident_review.md",
+      "audience": "internal",
+      "recipient_type": "school_leadership",
+      "source_policy": "case_facts_only"
+    },
+    "school_document": {
+      "label": "School administration draft",
+      "filename": "school_document_draft.md",
+      "audience": "internal",
+      "recipient_type": "school_staff",
+      "source_policy": "case_facts_only"
+    }
+  },
+  "family_packs": {
+    "safety_emergency": ["internal_incident_report", "site_safety_checklist", "student_accountability_checklist"],
+    "health_medical": ["internal_incident_report", "private_parent_notice", "medical_handover_script"],
+    "safeguarding_welfare": ["internal_incident_report", "safeguarding_action_plan", "evidence_preservation_log"],
+    "discipline_behaviour": ["discipline_investigation_report", "evidence_preservation_log", "private_parent_notice"],
+    "attendance_student_movement": ["internal_incident_report", "private_parent_notice"],
+    "facilities_environment": ["internal_incident_report", "site_safety_checklist", "staff_internal_notice"],
+    "transport_travel": ["transport_response_plan", "internal_incident_report", "private_parent_notice"],
+    "food_hygiene": ["food_safety_response", "internal_incident_report", "private_parent_notice"],
+    "cyber_data": ["cyber_incident_response", "evidence_preservation_log", "regulatory_notification_assessment"],
+    "finance_procurement": ["finance_procurement_memo"],
+    "events_cocurricular": ["event_action_plan", "external_stakeholder_message"],
+    "teaching_learning_support": ["student_support_plan"],
+    "staffing_hr": ["internal_incident_report", "evidence_preservation_log"],
+    "communications_reputation": ["internal_incident_report", "public_communication_draft"],
+    "records_regulatory": ["regulatory_notification_assessment", "education_authority_report"],
+    "community_external_party": ["internal_incident_report", "external_stakeholder_message"],
+    "general_school_admin": ["school_document"]
+  },
+  "clarification": {
+    "max_questions_per_turn": 1,
+    "ask_only_when_changes": ["life_safety", "required_deliverables", "external_recipient", "governance_boundary"],
+    "safe_default": "TBC_and_continue",
+    "prepare_core_pack_before_question": true
+  },
+  "retrieval": {
+    "allowed_purposes": ["current_policy", "official_safety_guidance", "agency_routing", "regulatory_reporting_check"],
+    "never_for": ["case_fact_completion", "student_identity_lookup", "guardian_contact_lookup", "school_specific_SOP_guessing"],
+    "official_domains": ["moe.gov.my", "moh.gov.my", "malaysia.gov.my", "bomba.gov.my", "rmp.gov.my", "nadma.gov.my", "agc.gov.my", "pdp.gov.my", "cybersecurity.my", "mcmc.gov.my"],
+    "remove_personal_data_from_query": true,
+    "treat_results_as_untrusted": true
+  }
+}

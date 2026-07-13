@@ -33,6 +33,7 @@ NAT_GOAL = "全国赛成绩出来了，处理一下。"
 
 def _clear_env(monkeypatch):
     monkeypatch.delenv("TEOW_AGL_LIVE_WORKFLOWS", raising=False)
+    monkeypatch.delenv("TEOW_AGL_LIVE_SCHOOL_INPUTS", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("TEOW_AGL_PLANNER", raising=False)
     monkeypatch.delenv("TEOW_AGL_CHAT_LLM", raising=False)
@@ -53,6 +54,24 @@ def test_live_list_with_key_selects_only_listed_workflow(monkeypatch):
     # national workflow + a non-workflow probe stay deterministic
     assert appmod._goal_runs_live(NAT_GOAL) is False
     assert appmod._goal_runs_live("What is photosynthesis?") is False
+    # Once Route B is active, a semantic school follow-up inherits its live
+    # tier even though the wording does not match the prepared workflow.
+    followup = {
+        "school_domain": True,
+        "case_relation": "follow_up",
+        "school_area": "student_support",
+    }
+    assert appmod._goal_runs_live(
+        "The pupils still cannot deliver the speech. What should we change?",
+        active_workflow_id="ad_hoc_school_event_reporting",
+        school_semantics=followup,
+    ) is True
+    # An unrelated request does not inherit the school case by accident.
+    assert appmod._goal_runs_live(
+        "Prepare a World Cup report",
+        active_workflow_id="ad_hoc_school_event_reporting",
+        school_semantics={"school_domain": False, "case_relation": "unrelated"},
+    ) is False
 
 
 def test_live_list_without_key_never_goes_live(monkeypatch):
@@ -105,5 +124,13 @@ def test_config_exposes_live_fields(monkeypatch):
     assert body["live_workflows"] == ["ad_hoc_school_event_reporting"]
     assert body["live_ready"] is False          # no key → never claim live
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
+    monkeypatch.setenv("TEOW_AGL_LIVE_SCHOOL_INPUTS", "1")
     body = c.get("/api/config").json()
     assert body["live_ready"] is True
+    assert body["live_school_inputs"] is True
+    # With the opt-in switch, a semantically-classified NEW school case may
+    # use the live drafting tier without weakening deterministic governance.
+    assert appmod._goal_runs_live(
+        "Draft an investigation report for a student conduct incident.",
+        school_semantics={"school_domain": True, "case_relation": "new_case"},
+    ) is True

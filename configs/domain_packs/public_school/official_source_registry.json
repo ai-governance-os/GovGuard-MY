@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "verified_at": "2026-07-13T00:00:00+08:00",
+  "notice": "Registry entries are public reference starting points, not case facts or automatic legal/medical instructions. Re-check status and applicability before use.",
+  "sources": [
+    {
+      "source_id": "kpm_safe_school_guidance_2026",
+      "issuer": "Ministry of Education Malaysia (KPM)",
+      "title": "SPI KPM Bilangan 3 Tahun 2026: Garis Panduan Pengurusan Sekolah Selamat",
+      "url": "https://www.moe.gov.my/index.php/list-page/497",
+      "published_date": "2026-07-10",
+      "verified_status": "listed_on_current_official_directory",
+      "allowed_purposes": ["current_policy", "official_safety_guidance", "regulatory_reporting_check"]
+    },
+    {
+      "source_id": "kkm_snakebite_management",
+      "issuer": "Ministry of Health Malaysia (KKM)",
+      "title": "Guideline: Management of Snakebite",
+      "url": "https://www2.moh.gov.my/moh/resources/Penerbitan/Garis%20Panduan/Garis%20Panduan%20Umum%28KKM%29/Guideline%20Management%20Of%20Snakebite.pdf",
+      "verified_status": "available_on_official_KKM_domain",
+      "allowed_purposes": ["official_safety_guidance"],
+      "applicability_note": "Clinical guidance for qualified medical services; the school agent must not convert it into diagnosis or treatment instructions."
+    },
+    {
+      "source_id": "mygov_emergency_999",
+      "issuer": "Government of Malaysia (MyGovernment)",
+      "title": "Malaysia Emergency Response Services 999",
+      "url": "https://www.malaysia.gov.my/en/my-initiative/cyber-security-and-disaster-response-and-recovery",
+      "verified_status": "current_official_government_page",
+      "allowed_purposes": ["agency_routing", "official_safety_guidance"],
+      "safe_product_copy": "Malaysia emergency services — 999"
+    }
+  ]
+}

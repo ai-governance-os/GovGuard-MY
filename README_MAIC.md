@@ -20,12 +20,13 @@ generalised, and real-case-derived scenarios, not limited to one curated case.
   privacy. GovGuard generates a trilingual Facebook post, a parent notice, an
   internal checklist, donor-outreach drafts, and a data-use audit while blocking
   wealth inference, status pressure, and prior-donor pressure.
-- **Route B — generalisation.** The user gives only a short, unseen school
-  competition prompt. GovGuard builds a temporary case envelope and generates a
-  Facebook post, internal report, champion parent notice, and private guidance
-  notice. It celebrates winners publicly but keeps student-support issues
-  private, marks missing facts as TBC, requires approval before publishing or
-  sending, and refuses to persist student-sensitive facts.
+- **Open-input generalisation.** Route B remains the reproducible short-prompt
+  example, while Mixed Live accepts unfamiliar school situations across safety,
+  welfare, transport, food, events, cyber/data, finance, learning support, and
+  general administration. A semantic Situation Compiler proposes a selectable
+  Markdown Response Pack; deterministic policy owns coverage, TBC, privacy,
+  approval and memory boundaries. A malformed live draft cannot remove a
+  required file: the governed role receives a fact-conservative safe fallback.
 
 ## What judges should notice
 
@@ -34,7 +35,12 @@ generalised, and real-case-derived scenarios, not limited to one curated case.
 3. Sensitive **student** facts are **not publicly exposed**.
 4. **Donor / stakeholder** data is synthetic and governed — no wealth inference, no ranking, no pressure.
 5. Missing facts are marked **TBC** instead of invented.
-6. Learning is **bounded**: a one-off styling instruction does not become persistent sensitive memory.
+6. Learning is **bounded**: open case facts remain task-local; only a
+   non-personal workflow SOP can enter the separate owner-gated learning path.
+7. In Mixed Live, free-form Route A/B follow-ups and new school-admin cases are
+   understood semantically, while deterministic governance still owns the route.
+8. Approved learning may reduce repeated friction, but it cannot downgrade a
+   mandatory GREEN human gate imposed by policy or the data-use guard.
 
 ## Demo — four parts, three tiers
 
@@ -43,12 +49,12 @@ The landing console groups the four demo parts into a three-tier narrative
 
 1. **① National athletics workflow autonomy** — deep workflow + internal self-governance (RED self-block; GREEN protected-record verification). *(Tier 1)*
 2. **② User-input governance probes** — governance over the operator's later free-text requests. *(Tier 1)*
-3. **③ Route B — ad-hoc school speech competition** — minimal-input generalisation; optionally runs on the live API in mixed mode. *(Tier 2)*
+3. **③ Open school input** — school-ready generalisation with Route B as the reproducible example and arbitrary typed cases in Mixed Live. *(Tier 2)*
 4. **④ Route A — real-case-derived charity bazaar** — realistic deployment over synthetic donor data. *(Tier 3, case study)*
 
 ## Evidence
 
-- pytest: **1080** collected — **1079 passed / 1 skipped / 0 failed**.
+- pytest: **1121** collected — **1120 passed / 1 skipped / 0 failed**.
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**.
 - Secret scan: **PASS**.
 - All offline / keyless (`smart_mock`, `MAIC_DEMO_MODE=1`).

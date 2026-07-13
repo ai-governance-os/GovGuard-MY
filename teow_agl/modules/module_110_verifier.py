@@ -32,6 +32,10 @@ from pathlib import Path
 from typing import Any
 
 from ..models import CandidateAction, ExecutionResult, TaskEnvelope
+from .module_school_artifact_guard import (
+    is_school_output_contract,
+    school_artifact_verification_checks,
+)
 
 
 # Tools whose output is conversational prose (counted by words against
@@ -131,12 +135,31 @@ class VerifierModule:
             out["summary"] = "verifier_disabled"
             return out
 
+        any_success = any(e.status == "success" for e in executions)
+        # A pure RED / INFEASIBLE task intentionally produces no artifact or
+        # external side effect. A mixed response pack can still have useful
+        # BLUE artifacts alongside one blocked step; those successful outputs
+        # must continue through verification.
+        if ((final_route or "").upper() in {"RED", "INFEASIBLE"}
+                and not any_success):
+            out["summary"] = f"skipped:route_exempt:{final_route.upper()}"
+            return out
+
         # If nothing executed successfully, there's nothing to verify;
         # we leave the upstream failure handling to do its job and pass
         # silently. (We do NOT mark this as a verifier-pass; we mark it
         # as not-applicable.)
-        any_success = any(e.status == "success" for e in executions)
         if not any_success:
+            if is_school_output_contract(plan_actions):
+                school_checks = school_artifact_verification_checks(
+                    envelope, plan_actions, executions)
+                out["checks"].extend(school_checks)
+                out["pass"] = False
+                out["summary"] = (
+                    "failed: school.execution_completeness="
+                    "no_successful_executions"
+                )
+                return out
             out["pass"] = True
             out["summary"] = "skipped:no_successful_executions"
             return out
@@ -168,6 +191,11 @@ class VerifierModule:
         art_check = self._artifact_failure_sniff(plan_actions, executions)
         if art_check is not None:
             out["checks"].append(art_check)
+
+        # School artifacts are checked independently. A correct sibling can
+        # never hide a contaminated, ungrounded or failed file in an aggregate.
+        out["checks"].extend(school_artifact_verification_checks(
+            envelope, plan_actions, executions))
 
         # Phase B — scenario-specific checks (per-category sub-rules).
         # Returns a LIST of check dicts (one per applicable sub-rule) so
@@ -701,8 +729,22 @@ class VerifierModule:
         if not text:
             return []
         out: list[str] = []
+        clauses = [
+            part.strip() for part in re.split(r"[.!?;\n。！？；]+", text)
+            if part.strip()
+        ]
+        output_request = re.compile(
+            r"\b(?:create|make|generate|prepare|produce|build|write|export|"
+            r"save|edit|update|populate|fill|convert|turn|put|give me|need|want)\b"
+            r"|(?:生成|制作|建立|创建|写|做成|做|准备|整理成|输出|另存为|请做)",
+            re.IGNORECASE,
+        )
         for ext, rx in self._compiled_ext_patterns.items():
-            if rx.search(text):
+            # A format word can describe source evidence rather than the
+            # requested output (for example, "a spreadsheet was emailed to the
+            # wrong vendor"). Require an output-making cue in the same clause.
+            if any(rx.search(clause) and output_request.search(clause)
+                   for clause in clauses):
                 out.append(ext)
         # De-dup preserving order
         seen: set[str] = set()
@@ -754,6 +796,13 @@ class VerifierModule:
                 if title:
                     head += f" — title: {title[:120]}"
                 head += "]"
+                if meta.get("school_output_contract"):
+                    head = head[:-1] + (
+                        f"; target={Path(a.target).name}; "
+                        f"artifact_id={meta.get('artifact_id')}; "
+                        f"role={meta.get('artifact_role')}; "
+                        f"audience={meta.get('audience')}]"
+                    )
                 parts.append(f"{head}\n{body[:4000]}")
 
             elif tool == "pptx":
@@ -927,6 +976,31 @@ class VerifierModule:
             out["summary"] = "llm_judge_skipped:no_chat_llm"
             return out
 
+        school_semantics = (envelope.metadata or {}).get(
+            "school_semantics") or {}
+        if (envelope.metadata or {}).get("response_pack_mode") == "delta":
+            # The parent task already owns the original requested pack. A
+            # delta child is intentionally scoped to one user-added file, so a
+            # general judge comparing it with the full parent request will
+            # wrongly demand all parent siblings again. Contract, grounding
+            # and role checks still run mechanically for the added artifact.
+            out["skipped_reason"] = "school_response_pack_delta"
+            out["summary"] = "llm_judge_skipped:school_response_pack_delta"
+            return out
+        if (
+            school_semantics.get("checked") is True
+            and school_semantics.get("school_domain") is False
+            and str(school_semantics.get("case_relation") or "").lower()
+            == "unrelated"
+        ):
+            # The correct product behaviour is a capability boundary, not a
+            # report about the unrelated topic. A generic quality judge would
+            # otherwise call the intentional boundary a refusal and trigger
+            # two pointless self-fix retries.
+            out["skipped_reason"] = "school_domain_boundary"
+            out["summary"] = "llm_judge_skipped:school_domain_boundary"
+            return out
+
         # Exempt routes (RED/INFEASIBLE) — a refusal IS the right answer
         exempt = {r.upper() for r in cfg.get("judge_exempt_routes", []) or []}
         if (final_route or "").upper() in exempt:
@@ -956,7 +1030,12 @@ class VerifierModule:
             out["summary"] = out["skipped_reason"]
             return out
 
-        rubric = self._rubric_for(task_category)
+        rubric_key = (
+            "school_governed_markdown"
+            if is_school_output_contract(plan_actions)
+            else task_category
+        )
+        rubric = self._rubric_for(rubric_key)
         out["rubric_used"] = rubric["_key"]
         threshold = int(rubric.get("pass_threshold", 60))
         out["threshold"] = threshold

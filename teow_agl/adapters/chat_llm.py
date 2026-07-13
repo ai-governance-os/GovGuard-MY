@@ -90,6 +90,23 @@ class ChatLLM:
     def chat_json(self, system: str, user: str, *, max_tokens: int = 1500) -> dict:
         """Same as chat() but tries to parse a JSON object from the reply.
         Returns {} when nothing parseable comes back."""
+        # OpenAI supports native JSON mode.  Use it for structured school
+        # artifact bundles and judges instead of hoping plain-text JSON is
+        # syntactically valid (the original school-semantics failure produced
+        # correct-looking but unquoted enum values).
+        if self.backend == "openai":
+            guard = self._cost_guard()
+            if guard is not None and not guard.allow("chat_calls"):
+                return {}
+            try:
+                from teow_agl.adapters.openai_provider import openai_chat_json
+                out = openai_chat_json(
+                    system, user, max_tokens=max_tokens, timeout=self.timeout)
+            except Exception:
+                out = {}
+            if out and guard is not None:
+                guard.record("chat_calls")
+            return out if isinstance(out, dict) else {}
         text = self.chat(system, user, max_tokens=max_tokens)
         if not text:
             return {}
