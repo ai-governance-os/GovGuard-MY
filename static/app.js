@@ -108,6 +108,8 @@ async function loadConfig() {
     const c = await r.json();
     const parts = [`planner: ${c.planner}`];
     if (c.domain_pack) parts.push(`pack: ${c.domain_pack}`);
+    if (c.live_provider) parts.push(`live provider: ${c.live_provider}`);
+    if (c.live_model) parts.push(`live model: ${c.live_model}`);
     // Raw technical config lives in the Mode pill's tooltip (and the audit
     // drawer), not as competing topbar text — the pills carry the judge-facing
     // story (retest P2).
@@ -124,15 +126,18 @@ async function loadConfig() {
     const liveOn = !!(c.live_configured ?? c.live_ready);
     state.liveWorkflows = liveList;
     state.liveSchoolInputs = !!c.live_school_inputs;
-    state.liveReady = !!c.live_ready || c.planner === "openai";
+    state.liveReady = !!c.live_ready
+      || c.planner === "openai" || c.planner === "deepseek";
     const modePill = $("#mode-pill");
     if (modePill) {
       // Short, judge-readable badge (Brief 8 Issue 2); the full explanation
       // lives in the tooltip.
-      if (c.planner === "openai") modePill.textContent = "Mode: API configured";
+      if (c.planner === "openai" || c.planner === "deepseek") {
+        modePill.textContent = `Mode: ${c.live_provider || c.planner} API configured`;
+      }
       else if (liveOn) modePill.textContent = "Mode: mixed API configured";
       else modePill.textContent = "Mode: deterministic demo";
-      const detail = (liveOn && c.planner !== "openai")
+      const detail = (liveOn && !["openai", "deepseek"].includes(c.planner))
         ? "Core governance demo is deterministic; live workflows: "
           + liveList.join(", ") + " · "
         : "";
@@ -146,7 +151,7 @@ async function loadConfig() {
     }
     const genBadge = $("#gen-mode-badge");
     if (genBadge) {
-      const genLive = c.planner === "openai"
+      const genLive = c.planner === "openai" || c.planner === "deepseek"
         || (liveOn && liveList.includes("ad_hoc_school_event_reporting"));
       genBadge.textContent = genLive
         ? "API configured · use shown per task"
@@ -1511,8 +1516,13 @@ function renderAgentMessage(node, d) {
     const [label, title] = generationLabels[d.generation_mode];
     const chip = document.createElement("span");
     chip.className = "chip GENERATION-MODE";
-    chip.textContent = label;
-    chip.title = title;
+    const actualProvider = d.live_provider
+      && d.live_provider !== "deterministic" ? d.live_provider : "";
+    chip.textContent = actualProvider && d.generation_mode.startsWith("live")
+      ? `${label} · ${actualProvider.toUpperCase()}` : label;
+    chip.title = actualProvider
+      ? `${title} Provider: ${actualProvider}${d.live_model ? ` · model: ${d.live_model}` : ""}.`
+      : title;
     routes.appendChild(chip);
   }
 

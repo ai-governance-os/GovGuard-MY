@@ -72,7 +72,8 @@ def embedding_provider_available() -> bool:
     """
     p = _resolve_provider()
     if p == "openai":
-        return bool(os.environ.get("OPENAI_API_KEY", "").strip())
+        from teow_agl.adapters.openai_provider import embedding_api_configured
+        return embedding_api_configured()
     if p == "none":
         return False
     return False

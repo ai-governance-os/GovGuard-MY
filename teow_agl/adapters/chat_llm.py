@@ -12,7 +12,8 @@ whatever TEOW_AGL_PLANNER is set to):
   - groq     : llama-3.3-70b-versatile via Groq API
   - gemini   : gemini-2.0-flash via Google API
   - ollama   : local Ollama HTTP server
-  - openai   : gpt-4o-mini via OpenAI API (Phase 2 — abstraction pass)
+  - openai   : OpenAI Chat Completions
+  - deepseek : DeepSeek through the same compatible transport
   - mock     : echo (returns "" — caller decides what to do)
 
 If credentials are missing or the chosen backend is unavailable the
@@ -56,7 +57,9 @@ class ChatLLM:
         Phase C: every backend call is metered by the cost guard.
         Over budget → '' — the same degradation path callers already
         handle for missing keys / network failures."""
-        if self.backend in ("groq", "gemini", "ollama", "openai", "anthropic"):
+        if self.backend in (
+            "groq", "gemini", "ollama", "openai", "deepseek", "anthropic",
+        ):
             guard = self._cost_guard()
             if guard is not None and not guard.allow("chat_calls"):
                 return ""
@@ -68,6 +71,8 @@ class ChatLLM:
         elif self.backend == "ollama":
             out = self._ollama(system, user, max_tokens)
         elif self.backend == "openai":
+            out = self._openai(system, user, max_tokens)
+        elif self.backend == "deepseek":
             out = self._openai(system, user, max_tokens)
         elif self.backend == "anthropic":
             out = self._anthropic(system, user, max_tokens)
@@ -94,7 +99,7 @@ class ChatLLM:
         # artifact bundles and judges instead of hoping plain-text JSON is
         # syntactically valid (the original school-semantics failure produced
         # correct-looking but unquoted enum values).
-        if self.backend == "openai":
+        if self.backend in ("openai", "deepseek"):
             guard = self._cost_guard()
             if guard is not None and not guard.allow("chat_calls"):
                 return {}

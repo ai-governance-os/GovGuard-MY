@@ -60,7 +60,7 @@ The landing console groups the four demo parts into a three-tier narrative
 
 ## Evidence
 
-- pytest: **1,421** collected across **97** files — **1,413 passed /
+- pytest: **1,432** collected across **98** files — **1,424 passed /
   8 intentional/environment-dependent skipped / 0 failed** in the ordinary grouped run.
 - Conditional browser UI suite: **25 / 25 passed** when enabled.
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**.

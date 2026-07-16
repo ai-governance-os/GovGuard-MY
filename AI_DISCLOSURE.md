@@ -22,8 +22,14 @@ public/IP-minimal scoping were made by the founder.
 **Runtime LLM providers — configurable, OFF by default in the public build.**
 The default planner is `smart_mock`, a deterministic offline planner that needs
 no API key, so judges can run the entire build with zero secrets. Optional
-providers (Groq, Gemini, Ollama, OpenAI, Anthropic) are opt-in via environment
+providers (Groq, Gemini, Ollama, OpenAI, DeepSeek, Anthropic) are opt-in via environment
 variables only and are not required for any claim in this repository.
+
+OpenAI and DeepSeek share one OpenAI-compatible transport adapter, but the
+runtime records the actual provider and model. There is **no automatic
+cross-provider fallback**: a failed DeepSeek request degrades to the governed
+deterministic Markdown path, never to an OpenAI model. DeepSeek credentials are
+not reused for OpenAI embeddings.
 
 **Workflow content vs governance — who does what.** The Workflow Autonomy layer
 (modules 102W workflow resolver, 101D data-use guard) is **deterministic and

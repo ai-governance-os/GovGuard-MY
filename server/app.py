@@ -19,6 +19,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from teow_agl.adapters.chat_llm import ChatLLM
+from teow_agl.adapters.openai_provider import (
+    active_chat_model,
+    active_chat_provider,
+    chat_api_configured,
+)
 from teow_agl.adapters.smart_mock_planner import SmartMockPlanner
 from teow_agl.models import TaskEnvelope
 from teow_agl.modules.module_102b_synthesizer import ContentSynthesizer
@@ -110,9 +115,11 @@ def _planner_from_env():
     if choice == "gemini":
         from teow_agl.adapters.gemini_provider import GeminiPlanner
         return GeminiPlanner(model=os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"))
-    if choice == "openai":
+    if choice in ("openai", "deepseek"):
         from teow_agl.adapters.openai_provider import OpenAIPlanner
-        return OpenAIPlanner()  # model via OPENAI_PLANNER_MODEL / OPENAI_MODEL
+        return OpenAIPlanner(
+            provider=choice,
+        )  # model via provider-aware environment resolution
     if choice == "anthropic":
         from teow_agl.adapters.anthropic_provider import AnthropicPlanner
         return AnthropicPlanner()  # model via ANTHROPIC_PLANNER_MODEL / ANTHROPIC_MODEL
@@ -147,6 +154,11 @@ class TaskState:
     # ("deterministic" | "live"). Honest per-task audit of the drafting tier;
     # governance is identical in both.
     planner_mode: str = "deterministic"
+    # Actual configured proposal provider/model for this task. These fields do
+    # not grant authority; they make the audit honest and prove that DeepSeek
+    # mode did not silently call OpenAI.
+    live_provider: str = "deterministic"
+    live_model: str = ""
     # What actually produced the school artifacts. Unlike ``planner_mode`` or
     # config/key presence, this is derived from post-generation validation
     # metadata and can honestly report a deterministic provider fallback.
@@ -203,6 +215,8 @@ def _load_initial_state() -> tuple[dict, dict]:
             executions=rec.get("executions", []), pending_approvals=[],
             proposals=rec.get("proposals", []), final_route=rec.get("final_route", ""),
             planner_mode=rec.get("planner_mode", "deterministic"),
+            live_provider=rec.get("live_provider", "deterministic"),
+            live_model=rec.get("live_model", ""),
             generation_mode=rec.get("generation_mode", "not_applicable"),
             reflection=rec.get("reflection"),
             verification=rec.get("verification"),
@@ -428,8 +442,10 @@ def _school_semantics_for_goal(
         return {}
     try:
         chat_llm = None
-        if os.environ.get("OPENAI_API_KEY", "").strip():
-            chat_llm = ChatLLM(backend="openai", timeout=20)
+        if chat_api_configured():
+            chat_llm = ChatLLM(
+                backend=active_chat_provider(), timeout=20,
+            )
         return SchoolInputSemantics(chat_llm).classify(
             raw_goal, active_workflow_id=active_workflow_id,
         )
@@ -476,9 +492,11 @@ def _goal_runs_live(
     live = _live_workflow_ids()
     if not live and not _live_school_inputs_enabled():
         return False
-    if not os.environ.get("OPENAI_API_KEY", "").strip():
+    if not chat_api_configured():
         return False  # never pretend: no key, no live tier
-    if os.environ.get("TEOW_AGL_PLANNER", "smart_mock").lower() == "openai":
+    if os.environ.get("TEOW_AGL_PLANNER", "smart_mock").lower() in (
+        "openai", "deepseek",
+    ):
         return False  # whole server already live — no override needed
     if scripted_workflow_id:
         return scripted_workflow_id in live
@@ -528,11 +546,19 @@ def _make_runtime_for_goal(
     )
     with _RUNTIME_BUILD_LOCK:
         if not live:
-            return _build_runtime(), "deterministic"
+            # A globally-live OpenAI/DeepSeek planner needs no temporary Mixed
+            # Live override, but it must still be labelled honestly per task.
+            global_live = (
+                os.environ.get("TEOW_AGL_PLANNER", "smart_mock").lower()
+                in ("openai", "deepseek")
+                and chat_api_configured()
+            )
+            return _build_runtime(), "live" if global_live else "deterministic"
         old = {k: os.environ.get(k)
                for k in ("TEOW_AGL_PLANNER", "TEOW_AGL_CHAT_LLM")}
-        os.environ["TEOW_AGL_PLANNER"] = "openai"
-        os.environ["TEOW_AGL_CHAT_LLM"] = "openai"
+        provider = active_chat_provider()
+        os.environ["TEOW_AGL_PLANNER"] = provider
+        os.environ["TEOW_AGL_CHAT_LLM"] = provider
         try:
             rt = _build_runtime()
         finally:
@@ -704,7 +730,7 @@ def health() -> dict:
 def config_summary() -> dict:
     live_configured = bool(
         (_live_workflow_ids() or _live_school_inputs_enabled())
-        and os.environ.get("OPENAI_API_KEY", "").strip()
+        and chat_api_configured()
     )
     return {
         "planner": os.environ.get("TEOW_AGL_PLANNER", "smart_mock"),
@@ -717,6 +743,8 @@ def config_summary() -> dict:
         "live_workflows": sorted(_live_workflow_ids()),
         "live_school_inputs": _live_school_inputs_enabled(),
         "live_configured": live_configured,
+        "live_provider": active_chat_provider(),
+        "live_model": active_chat_model(),
         # Backward-compatible API field; semantically this means configured,
         # not provider-reachable. New UI copy uses ``live_configured``.
         "live_ready": live_configured,
@@ -836,6 +864,13 @@ def start_task(req: StartTaskRequest) -> dict:
         )
         with _app_state["lock"]:
             state.planner_mode = planner_mode
+            state.live_provider = (
+                active_chat_provider()
+                if planner_mode == "live" else "deterministic"
+            )
+            state.live_model = (
+                active_chat_model() if planner_mode == "live" else ""
+            )
         original_emit = rt.trace.emit
 
         def capture_emit(*args, **kwargs):
@@ -1791,6 +1826,8 @@ def _state_to_dict(state: TaskState) -> dict:
         "task_tree": state.task_tree,
         "workflow": state.workflow,
         "planner_mode": state.planner_mode,
+        "live_provider": state.live_provider,
+        "live_model": state.live_model,
         "generation_mode": state.generation_mode,
         "context_workflow_id": state.context_workflow_id,
         "school_semantics": state.school_semantics,

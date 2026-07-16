@@ -1,6 +1,8 @@
-"""OpenAI provider — Phase 2 (skill abstraction + embeddings).
+"""OpenAI-compatible provider — OpenAI/DeepSeek chat plus OpenAI embeddings.
 
-This adapter is dedicated to **Phase 2 use cases**:
+This adapter supports the competition Mixed Live path and **Phase 2 use cases**:
+  * OpenAI or DeepSeek Chat Completions for semantic intake, drafting, judging,
+    and planning. The actual provider/model is exposed in the task audit.
   * `SKILL_ABSTRACTION_LLM=openai` — Module 109B Distiller's second pass
     that lifts a raw procedure into `## Principle` + `## Parameters`.
     GPT-4o-mini quality is materially better than Qwen3 here without
@@ -9,22 +11,21 @@ This adapter is dedicated to **Phase 2 use cases**:
     `openai_embed()` to vectorise skill descriptions / principles for
     cosine-similarity retrieval.
 
-We deliberately keep this **separate** from `groq_provider` / `chat_llm`'s
-backend dispatch. Rationale: the Groq stack is the agent's *main* chat
-LLM, controlled by `TEOW_AGL_CHAT_LLM` / `TEOW_AGL_PLANNER`. OpenAI is a
-*Phase-2-specific* sidecar — you don't want flipping `SKILL_ABSTRACTION_LLM`
-to also yank the main planner to OpenAI. Two env namespaces, two
-adapters.
+The transport is intentionally shared because DeepSeek implements the OpenAI
+Chat Completions shape. Provider identity, credentials, endpoint, model, and
+thinking controls remain explicit and auditable. There is no cross-provider
+fallback: a provider failure returns the existing deterministic governed
+fallback. OpenAI embeddings remain a separate optional lane so a DeepSeek key
+is never sent to an OpenAI endpoint.
 
-That said, `chat_llm.ChatLLM` does grow an `openai` backend so the
-generic ChatLLM contract still works (used by tests + the abstraction
-pass invokes `chat_json` via this path).
-
-Model selection precedence:
+OpenAI model selection precedence:
   1. explicit `model=` arg to constructor
   2. env var OPENAI_MODEL (legacy / chat use)
   3. env var SKILL_ABSTRACTION_MODEL (Phase 2 use)
   4. default `gpt-4o-mini`
+
+DeepSeek model selection precedence is explicit `model=` → `DEEPSEEK_MODEL` →
+compatible `OPENAI_MODEL` → `deepseek-v4-flash`.
 
 Failure mode: every public method **returns "" / {} / None on any
 error** instead of raising. The Phase 2 modules treat absent OpenAI
@@ -90,17 +91,117 @@ _load_dotenv_once()
 
 
 _DEFAULT_CHAT_MODEL = "gpt-4o-mini"
+_DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
 _DEFAULT_EMBED_MODEL = "text-embedding-3-small"
 
-_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions"
-_EMBED_ENDPOINT = "https://api.openai.com/v1/embeddings"
+_DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+_DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
+_DEFAULT_EMBED_BASE_URL = "https://api.openai.com/v1"
+_VALID_CHAT_PROVIDERS = {"openai", "deepseek"}
 
 
-def _resolve_chat_model(explicit: str | None = None) -> str:
+def _provider_name(explicit: str | None = None) -> str:
+    """Return the actual chat provider without making a network call.
+
+    ``OPENAI_*`` remains a supported compatibility namespace because
+    DeepSeek implements the OpenAI Chat Completions shape.  Provider identity
+    is nevertheless inferred and recorded honestly so a DeepSeek request is
+    never labelled as OpenAI in the audit trail.
+    """
+    configured = (explicit or os.environ.get("TEOW_AGL_LIVE_PROVIDER") or "")
+    configured = configured.strip().lower()
+    if configured in _VALID_CHAT_PROVIDERS:
+        return configured
+    base = os.environ.get("OPENAI_BASE_URL", "").strip().lower()
+    model = (
+        os.environ.get("DEEPSEEK_MODEL")
+        or os.environ.get("OPENAI_MODEL")
+        or os.environ.get("OPENAI_PLANNER_MODEL")
+        or ""
+    ).strip().lower()
+    if "deepseek" in base or model.startswith("deepseek-"):
+        return "deepseek"
+    return "openai"
+
+
+def _base_url(provider: str | None = None) -> str:
+    name = _provider_name(provider)
+    configured = os.environ.get("OPENAI_BASE_URL", "").strip()
+    if configured:
+        return configured.rstrip("/")
+    if name == "deepseek":
+        return _DEFAULT_DEEPSEEK_BASE_URL
+    return _DEFAULT_OPENAI_BASE_URL
+
+
+def _chat_endpoint(provider: str | None = None) -> str:
+    return _base_url(provider) + "/chat/completions"
+
+
+def _embed_endpoint() -> str:
+    base = (
+        os.environ.get("OPENAI_EMBED_BASE_URL")
+        or _DEFAULT_EMBED_BASE_URL
+    )
+    return base.strip().rstrip("/") + "/embeddings"
+
+
+def _provider_config_error(
+    provider: str | None = None,
+    model: str | None = None,
+) -> str:
+    """Fail closed on an obvious provider/model/endpoint mismatch.
+
+    This prevents the common expensive mistake where a DeepSeek model/key is
+    accidentally aimed at OpenAI, or an OpenAI model/key is aimed at
+    DeepSeek.  Unknown compatible gateways remain operator-controlled.
+    """
+    name = _provider_name(provider)
+    base = _base_url(name).lower()
+    chosen = (model or _resolve_chat_model(provider=name)).strip().lower()
+    if name == "deepseek":
+        if "api.openai.com" in base:
+            return "deepseek_provider_cannot_use_openai_endpoint"
+        if chosen and not chosen.startswith("deepseek-"):
+            return "deepseek_provider_requires_deepseek_model"
+    else:
+        if "deepseek" in base:
+            return "openai_provider_cannot_use_deepseek_endpoint"
+        if chosen.startswith("deepseek-"):
+            return "openai_provider_cannot_use_deepseek_model"
+    return ""
+
+
+def _thinking_field(provider: str | None = None) -> dict | None:
+    """Return DeepSeek's thinking control only for a DeepSeek request."""
+    if _provider_name(provider) != "deepseek":
+        return None
+    mode = os.environ.get("DEEPSEEK_THINKING", "disabled").strip().lower()
+    if mode not in ("enabled", "disabled"):
+        mode = "disabled"
+    return {"type": mode}
+
+
+def _apply_thinking(payload: dict, provider: str | None = None) -> None:
+    field = _thinking_field(provider)
+    if field is not None:
+        payload["thinking"] = field
+
+
+def _resolve_chat_model(
+    explicit: str | None = None,
+    provider: str | None = None,
+) -> str:
     """Pick the chat model: explicit arg → OPENAI_MODEL →
     SKILL_ABSTRACTION_MODEL → default."""
     if explicit:
         return explicit
+    if _provider_name(provider) == "deepseek":
+        return (
+            os.environ.get("DEEPSEEK_MODEL")
+            or os.environ.get("OPENAI_MODEL")
+            or _DEFAULT_DEEPSEEK_MODEL
+        )
     return (
         os.environ.get("OPENAI_MODEL")
         or os.environ.get("SKILL_ABSTRACTION_MODEL")
@@ -118,8 +219,45 @@ def _resolve_embed_model(explicit: str | None = None) -> str:
     )
 
 
-def _api_key() -> str:
+def _api_key(provider: str | None = None) -> str:
+    if _provider_name(provider) == "deepseek":
+        return (
+            os.environ.get("DEEPSEEK_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+            or ""
+        ).strip()
     return os.environ.get("OPENAI_API_KEY", "").strip()
+
+
+def _embedding_api_key() -> str:
+    explicit = os.environ.get("OPENAI_EMBED_API_KEY", "").strip()
+    if explicit:
+        return explicit
+    # In DeepSeek compatibility mode OPENAI_API_KEY contains a DeepSeek key.
+    # Never send that credential to OpenAI's embedding endpoint.
+    if _provider_name() == "deepseek":
+        return ""
+    return os.environ.get("OPENAI_API_KEY", "").strip()
+
+
+def active_chat_provider() -> str:
+    return _provider_name()
+
+
+def active_chat_model() -> str:
+    return _resolve_chat_model(provider=_provider_name())
+
+
+def chat_api_configured() -> bool:
+    provider = _provider_name()
+    model = _resolve_chat_model(provider=provider)
+    return bool(_api_key(provider)) and not _provider_config_error(
+        provider, model,
+    )
+
+
+def embedding_api_configured() -> bool:
+    return bool(_embedding_api_key())
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +270,7 @@ def _post_with_retry(
     *,
     timeout: int = 60,
     retry_on_transient: bool = True,
+    api_key: str | None = None,
 ) -> dict | None:
     """Return the parsed JSON response, or None on any failure.
 
@@ -140,7 +279,7 @@ def _post_with_retry(
     (400, 401, 403) return None immediately — no point retrying a bad
     key or bad request.
     """
-    key = _api_key()
+    key = _api_key() if api_key is None else api_key.strip()
     if not key:
         return None
     try:
@@ -180,8 +319,7 @@ def _parse_retry_after(value: str | None, default: float) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Public: chat (used by chat_llm.ChatLLM "openai" backend + Distiller
-# abstraction pass)
+# Public: chat (used by ChatLLM's OpenAI and DeepSeek backends + Distiller)
 # ---------------------------------------------------------------------------
 def openai_chat(
     system: str,
@@ -193,7 +331,10 @@ def openai_chat(
     timeout: int = 60,
 ) -> str:
     """Plain-text chat completion. Returns "" on any failure."""
-    chosen = _resolve_chat_model(model)
+    provider = _provider_name()
+    chosen = _resolve_chat_model(model, provider=provider)
+    if _provider_config_error(provider, chosen):
+        return ""
     payload = {
         "model": chosen,
         "messages": [
@@ -203,7 +344,11 @@ def openai_chat(
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
-    data = _post_with_retry(_CHAT_ENDPOINT, payload, timeout=timeout)
+    _apply_thinking(payload, provider)
+    data = _post_with_retry(
+        _chat_endpoint(provider), payload, timeout=timeout,
+        api_key=_api_key(provider),
+    )
     if not data:
         return ""
     try:
@@ -221,13 +366,16 @@ def openai_chat_json(
     temperature: float = 0.0,
     timeout: int = 60,
 ) -> dict:
-    """JSON-mode chat completion using OpenAI's `response_format=json_object`.
+    """JSON-mode chat completion using OpenAI-compatible `json_object` mode.
 
     Returns `{}` on any failure / unparseable output. We always pair this
     with an extra defensive `_extract_json` so even if the model wraps
     its JSON in prose (legacy behaviour) we still recover.
     """
-    chosen = _resolve_chat_model(model)
+    provider = _provider_name()
+    chosen = _resolve_chat_model(model, provider=provider)
+    if _provider_config_error(provider, chosen):
+        return {}
     payload = {
         "model": chosen,
         "messages": [
@@ -238,7 +386,11 @@ def openai_chat_json(
         "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
     }
-    data = _post_with_retry(_CHAT_ENDPOINT, payload, timeout=timeout)
+    _apply_thinking(payload, provider)
+    data = _post_with_retry(
+        _chat_endpoint(provider), payload, timeout=timeout,
+        api_key=_api_key(provider),
+    )
     if not data:
         return {}
     try:
@@ -285,7 +437,10 @@ def openai_embed(
         return []
     chosen = _resolve_embed_model(model)
     payload = {"model": chosen, "input": texts}
-    data = _post_with_retry(_EMBED_ENDPOINT, payload, timeout=timeout)
+    data = _post_with_retry(
+        _embed_endpoint(), payload, timeout=timeout,
+        api_key=_embedding_api_key(),
+    )
     if not data:
         return None
     try:
@@ -312,7 +467,7 @@ def openai_embed_one(
 
 # ---------------------------------------------------------------------------
 # Planner adapter (Phase B of SANDBOX_PLAN) — lets Module 102 run on an
-# OpenAI model. Same contract as GroqPlanner: plan() returns either a
+# compatible provider. Same contract as GroqPlanner: plan() returns either a
 # plan dict or a refusal dict, never raises. Model precedence:
 #   1. explicit `model=` arg
 #   2. env OPENAI_PLANNER_MODEL  (planner-specific override)
@@ -320,28 +475,47 @@ def openai_embed_one(
 #   4. default gpt-4o-mini
 # ---------------------------------------------------------------------------
 
-def _planner_id_from_model(model: str) -> str:
+def _planner_id_from_model(model: str, provider: str = "openai") -> str:
     safe = re.sub(r"[^a-z0-9]+", "_", model.lower()).strip("_")
-    return f"openai_{safe}"
+    prefix = provider if provider in _VALID_CHAT_PROVIDERS else "openai"
+    return f"{prefix}_{safe}"
 
 
 class OpenAIPlanner:
     def __init__(self, model: str | None = None, api_key: str | None = None,
-                 timeout: int = 60) -> None:
+                 timeout: int = 60, provider: str | None = None) -> None:
+        self.provider = _provider_name(provider)
         self.model = (
             model
             or os.environ.get("OPENAI_PLANNER_MODEL")
-            or _resolve_chat_model(None)
+            or _resolve_chat_model(None, provider=self.provider)
         )
-        self.planner_id = _planner_id_from_model(self.model)
-        self.api_key = api_key if api_key is not None else _api_key()
+        self.planner_id = _planner_id_from_model(self.model, self.provider)
+        self.api_key = (
+            api_key if api_key is not None else _api_key(self.provider)
+        )
         self.timeout = timeout
-        self.endpoint = _CHAT_ENDPOINT
+        self.endpoint = _chat_endpoint(self.provider)
+        self.config_error = _provider_config_error(
+            self.provider, self.model,
+        )
+        try:
+            configured_max = int(os.environ.get(
+                "TEOW_AGL_PLANNER_MAX_TOKENS", "2000",
+            ))
+        except ValueError:
+            configured_max = 2000
+        self.max_tokens = max(256, min(8000, configured_max))
 
     def plan(self, planning_brief: dict, system_prompt: str) -> dict:
+        if self.config_error:
+            return self._refusal(
+                planning_brief, "model_error",
+                "provider_config_error:" + self.config_error,
+            )
         if not self.api_key:
             return self._refusal(planning_brief, "model_error",
-                                 "OPENAI_API_KEY missing")
+                                 f"{self.provider}_api_key_missing")
         try:
             import httpx  # type: ignore
         except ImportError:
@@ -355,8 +529,10 @@ class OpenAIPlanner:
                  "content": "PlanningBrief:\n" + json.dumps(planning_brief)},
             ],
             "temperature": 0.1,
+            "max_tokens": self.max_tokens,
             "response_format": {"type": "json_object"},
         }
+        _apply_thinking(payload, self.provider)
         headers = {"Authorization": f"Bearer {self.api_key}",
                    "Content-Type": "application/json"}
         try:

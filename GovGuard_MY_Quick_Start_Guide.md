@@ -35,13 +35,30 @@ top-bar pills show the honest session state (Governance / External / Mode).
 
 ## 5. Optional — competition Mixed Live
 
+Choose **one** provider block. OpenAI:
+
 ```powershell
 $env:TEOW_AGL_PLANNER = "smart_mock"
 $env:MAIC_DEMO_MODE = "1"
+$env:TEOW_AGL_DOMAIN_PACK = "public_school"
+$env:OPENAI_API_KEY = "<private OpenAI key; never commit it>"
+$env:OPENAI_MODEL = "gpt-4o"
 $env:TEOW_AGL_LIVE_WORKFLOWS = "ad_hoc_school_event_reporting,school_charity_bazaar"
 $env:TEOW_AGL_LIVE_SCHOOL_INPUTS = "1"
-$env:OPENAI_API_KEY = "<private key; never commit it>"
-$env:OPENAI_MODEL = "gpt-4o"
+python -X utf8 -m server.app
+```
+
+DeepSeek (the same short OpenAI-compatible startup you already tested):
+
+```powershell
+$env:TEOW_AGL_PLANNER = "smart_mock"
+$env:MAIC_DEMO_MODE = "1"
+$env:TEOW_AGL_DOMAIN_PACK = "public_school"
+$env:OPENAI_API_KEY = "<private DeepSeek key; never commit it>"
+$env:OPENAI_BASE_URL = "https://api.deepseek.com/v1"
+$env:OPENAI_MODEL = "deepseek-v4-flash"
+$env:TEOW_AGL_LIVE_WORKFLOWS = "ad_hoc_school_event_reporting,school_charity_bazaar"
+$env:TEOW_AGL_LIVE_SCHOOL_INPUTS = "1"
 python -X utf8 -m server.app
 ```
 
@@ -50,15 +67,21 @@ school-admin cases attempt the live API; deterministic governance still owns
 every route, artifact and approval decision. Open-input files are Markdown,
 unknowns remain TBC, and a failed or unavailable live bundle falls back to safe
 role-specific drafts. The top badge reports configuration; each task reports
-whether live generation or deterministic fallback actually ran. A
+whether live generation or deterministic fallback actually ran, including the
+actual provider and model. A
 confirmed unrelated request receives a stable capability-boundary response and
 does not inherit any school-case data.
 
-Optional real-key smoke test:
+Optional real-key smoke test (uses the configured OpenAI or DeepSeek endpoint):
 
 ```powershell
 python -X utf8 scripts/verify_openai_school_inputs.py --full
 ```
+
+There is no hidden OpenAI fallback. If DeepSeek is selected and unavailable,
+GovGuard returns its governed deterministic Markdown fallback. DeepSeek
+thinking is disabled by default; set `DEEPSEEK_THINKING=enabled` only when you
+intentionally want the extra latency/cost.
 
 ## 6. Optional — clean rehearsal state
 
@@ -75,7 +98,7 @@ first-run → approve → reuse lifecycle. Restart the server afterwards.
 python -X utf8 -m pytest -q
 ```
 
-Validated baseline: **1,421 collected across 97 files; 1,413 passed /
+Validated baseline: **1,432 collected across 98 files; 1,424 passed /
 8 intentional/environment-dependent skipped / 0 failed** in the ordinary grouped run.
 The conditional browser UI suite passes **25 / 25** when enabled.
 

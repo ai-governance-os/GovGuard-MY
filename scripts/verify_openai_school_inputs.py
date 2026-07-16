@@ -1,7 +1,8 @@
 """Optional real-API smoke test for competition school-domain inputs.
 
-Requires OPENAI_API_KEY in the environment. It prints only the model's bounded
-semantic labels and the deterministic 101D outcome; it never prints the key.
+Supports OpenAI and DeepSeek's OpenAI-compatible endpoint. It prints only the
+actual provider/model, bounded semantic labels, and deterministic 101D outcome;
+it never prints the key.
 """
 from __future__ import annotations
 
@@ -18,6 +19,11 @@ from teow_agl.models import CandidateAction
 from teow_agl.modules.module_101d_data_use_guard import DataUseGuard
 from teow_agl.modules.module_school_input_semantics import SchoolInputSemantics
 from teow_agl.adapters.chat_llm import ChatLLM
+from teow_agl.adapters.openai_provider import (
+    active_chat_model,
+    active_chat_provider,
+    chat_api_configured,
+)
 
 
 CASES = (
@@ -74,7 +80,8 @@ def _full_runtime_smoke() -> None:
 
     prompt = "The pupils still cannot deliver the speech. What should we change next?"
     workflow_id = "ad_hoc_school_event_reporting"
-    sem = SchoolInputSemantics(ChatLLM(backend="openai", timeout=30)).classify(
+    provider = active_chat_provider()
+    sem = SchoolInputSemantics(ChatLLM(backend=provider, timeout=30)).classify(
         prompt, active_workflow_id=workflow_id
     )
     os.environ["TEOW_AGL_LIVE_WORKFLOWS"] = workflow_id
@@ -95,7 +102,7 @@ def _full_runtime_smoke() -> None:
     )
     planner_id = getattr(rt.planner.adapter, "planner_id", "")
     assert mode == "live"
-    assert str(planner_id).startswith("openai_")
+    assert str(planner_id).startswith(provider + "_")
     assert result.final_route in ("BLUE", "GREEN", "RED", "INFEASIBLE")
     print(
         f"PASS: full runtime mode={mode} planner={planner_id} "
@@ -108,12 +115,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--full", action="store_true",
-        help="also run one free-form follow-up through the full OpenAI runtime",
+        help="also run one free-form follow-up through the configured live runtime",
     )
     args = parser.parse_args()
-    if not os.environ.get("OPENAI_API_KEY", "").strip():
-        raise SystemExit("OPENAI_API_KEY not set")
-    intake = SchoolInputSemantics(ChatLLM(backend="openai", timeout=30))
+    if not chat_api_configured():
+        raise SystemExit("OpenAI/DeepSeek live API is not configured consistently")
+    provider = active_chat_provider()
+    print(f"provider={provider} model={active_chat_model()}")
+    intake = SchoolInputSemantics(ChatLLM(backend=provider, timeout=30))
     results = {}
     for label, prompt, workflow_id in CASES:
         sem = intake.classify(prompt, active_workflow_id=workflow_id)
@@ -133,7 +142,7 @@ def main() -> None:
     assert results["persist_student_weakness"][1] == "RED"
     assert results["unrelated_world_cup"][0]["school_domain"] is False
     assert results["unrelated_world_cup"][0]["case_relation"] == "unrelated"
-    print("PASS: real OpenAI school-input smoke test")
+    print(f"PASS: real {provider} school-input smoke test")
     if args.full:
         _full_runtime_smoke()
 

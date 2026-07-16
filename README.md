@@ -135,7 +135,7 @@ Runs offline with **no API keys** (default planner `smart_mock`,
 `MAIC_DEMO_MODE=1`). Keep `-X utf8` on Windows (the demo mixes 中文 / Malay /
 English).
 
-**Optional competition Mixed Live mode** (with a valid key): set both
+**Optional competition Mixed Live mode** (with a valid OpenAI or DeepSeek key): set both
 `TEOW_AGL_LIVE_WORKFLOWS=ad_hoc_school_event_reporting,school_charity_bazaar`
 and `TEOW_AGL_LIVE_SCHOOL_INPUTS=1` before starting. The core main demo remains
 deterministic; Route A/B, their free-form follow-ups, and new school-domain
@@ -152,8 +152,17 @@ school-case data was carried over; the generic planner is skipped. The UI mode
 badge states what is configured; each task's generation badge and audit trace
 state whether the provider was actually used or a deterministic fallback ran.
 
+For OpenAI, set `OPENAI_API_KEY` and `OPENAI_MODEL`. For DeepSeek's
+OpenAI-compatible API, keep the same variable names and additionally set
+`OPENAI_BASE_URL=https://api.deepseek.com/v1` and a `deepseek-*` model (for
+example `deepseek-v4-flash`). The runtime exposes the actual provider/model in
+`/api/config`, the Mode tooltip, and each live task's generation badge. There is
+no automatic cross-provider fallback: DeepSeek failure returns governed
+deterministic Markdown and never calls an OpenAI model. DeepSeek credentials
+are not sent to OpenAI's embedding endpoint.
+
 With a private key present, the optional live smoke test exercises semantic
-intake plus one complete OpenAI planner → governance → execution → verification
+intake plus one complete configured-provider planner → governance → execution → verification
 run (the key is never printed):
 
 ```powershell
@@ -162,7 +171,7 @@ python -X utf8 scripts/verify_openai_school_inputs.py --full
 
 ## Test evidence
 
-- **1,421** tests collected across **97** test files — **1,413 passed**,
+- **1,432** tests collected across **98** test files — **1,424 passed**,
   **8 intentional/environment-dependent skipped**, **0 failed** in the ordinary grouped run
 - Conditional browser UI suite: **25 / 25 passed** when enabled (covering the
   seven browser-dependent skips from the ordinary run)
