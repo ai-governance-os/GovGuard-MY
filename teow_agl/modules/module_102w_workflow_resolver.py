@@ -85,6 +85,22 @@ class WorkflowResolver:
         # Never resolve a sub-goal (a decomposition leaf) — the tree owns it.
         if getattr(envelope, "metadata", {}).get("_is_subgoal"):
             return None
+        forced_id = str(
+            getattr(envelope, "metadata", {}).get("forced_workflow_id") or ""
+        ).strip()
+        if forced_id:
+            template = next(
+                (
+                    tpl for tpl in self.templates
+                    if str(tpl.get("workflow_id") or "") == forced_id
+                ),
+                None,
+            )
+            if template is None:
+                return None
+            return self._resolution(
+                template, confidence=1.0, matched="explicit_scripted_demo",
+            )
         goal = (
             f"{getattr(envelope, 'normalized_goal', '') or ''} "
             f"{getattr(envelope, 'raw_goal', '') or ''}"

@@ -147,6 +147,10 @@ class TaskState:
     # ("deterministic" | "live"). Honest per-task audit of the drafting tier;
     # governance is identical in both.
     planner_mode: str = "deterministic"
+    # What actually produced the school artifacts. Unlike ``planner_mode`` or
+    # config/key presence, this is derived from post-generation validation
+    # metadata and can honestly report a deterministic provider fallback.
+    generation_mode: str = "not_applicable"
     # Module 109 reflection output for this task (None when reflector
     # was skipped / disabled). The UI reads this to render the
     # "What I learned" block and the REFLECT chip.
@@ -198,6 +202,8 @@ def _load_initial_state() -> tuple[dict, dict]:
             events=rec.get("events", []), decisions=rec.get("decisions", []),
             executions=rec.get("executions", []), pending_approvals=[],
             proposals=rec.get("proposals", []), final_route=rec.get("final_route", ""),
+            planner_mode=rec.get("planner_mode", "deterministic"),
+            generation_mode=rec.get("generation_mode", "not_applicable"),
             reflection=rec.get("reflection"),
             verification=rec.get("verification"),
             task_tree=rec.get("task_tree"),
@@ -410,23 +416,29 @@ def _school_semantics_for_goal(
     raw_goal: str,
     *,
     active_workflow_id: str | None = None,
+    scripted_workflow_id: str | None = None,
 ) -> dict:
     """Interpret an open school input once before choosing the planner tier."""
-    if not os.environ.get("OPENAI_API_KEY", "").strip():
+    # Judge-clicked scripted prompts deliberately keep the reproducible
+    # configured workflow. Ordinary typed text must not be captured merely
+    # because it contains one of that workflow's trigger phrases.
+    if scripted_workflow_id:
         return {}
     if not (active_workflow_id or _live_school_inputs_enabled()):
         return {}
-    # Prepared workflows already have config-grounded semantics. Avoid adding
-    # latency to the main buttons; this preflight is for their free follow-ups
-    # and for other open-ended school-administration cases.
-    if _preresolve_workflow_id(raw_goal):
-        return {}
     try:
-        return SchoolInputSemantics(
-            ChatLLM(backend="openai", timeout=20)
-        ).classify(raw_goal, active_workflow_id=active_workflow_id)
+        chat_llm = None
+        if os.environ.get("OPENAI_API_KEY", "").strip():
+            chat_llm = ChatLLM(backend="openai", timeout=20)
+        return SchoolInputSemantics(chat_llm).classify(
+            raw_goal, active_workflow_id=active_workflow_id,
+        )
     except Exception:
-        return {}
+        # Preserve the source-grounded lexical/domain boundary when a provider
+        # is absent or its client cannot be constructed.
+        return SchoolInputSemantics(None).classify(
+            raw_goal, active_workflow_id=active_workflow_id,
+        )
 
 
 def _compile_school_situation(
@@ -459,6 +471,7 @@ def _goal_runs_live(
     *,
     active_workflow_id: str | None = None,
     school_semantics: dict | None = None,
+    scripted_workflow_id: str | None = None,
 ) -> bool:
     live = _live_workflow_ids()
     if not live and not _live_school_inputs_enabled():
@@ -467,19 +480,31 @@ def _goal_runs_live(
         return False  # never pretend: no key, no live tier
     if os.environ.get("TEOW_AGL_PLANNER", "smart_mock").lower() == "openai":
         return False  # whole server already live — no override needed
-    resolved = _preresolve_workflow_id(raw_goal)
-    if resolved:
-        return resolved in live
+    if scripted_workflow_id:
+        return scripted_workflow_id in live
 
     sem = school_semantics or {}
+    # Backward-compatible deterministic demo selection for callers that have
+    # no open-school semantic preflight at all. Server-side arbitrary input
+    # always supplies a (possibly fallback) semantic object, so it cannot be
+    # captured by this legacy workflow trigger.
+    if not sem:
+        resolved = _preresolve_workflow_id(raw_goal)
+        if resolved:
+            return resolved in live
     relation = str(sem.get("case_relation") or "").lower()
+    semantic_preflight_ok = bool(
+        sem.get("checked") is True
+        and sem.get("school_domain") is True
+        and not str(sem.get("source") or "").startswith("fallback")
+    )
     if (active_workflow_id in live
-            and sem.get("school_domain") is True
+            and semantic_preflight_ok
             and relation in ("follow_up", "ambiguous")):
         return True
     return bool(
         _live_school_inputs_enabled()
-        and sem.get("school_domain") is True
+        and semantic_preflight_ok
         and relation in ("follow_up", "new_case", "ambiguous")
     )
 
@@ -489,6 +514,7 @@ def _make_runtime_for_goal(
     *,
     active_workflow_id: str | None = None,
     school_semantics: dict | None = None,
+    scripted_workflow_id: str | None = None,
 ) -> tuple[Runtime, str]:
     """Build the per-task runtime, upgrading planner + chat LLM to the live
     API when the goal resolves to a live-listed workflow. ALL construction is
@@ -498,6 +524,7 @@ def _make_runtime_for_goal(
         raw_goal,
         active_workflow_id=active_workflow_id,
         school_semantics=school_semantics,
+        scripted_workflow_id=scripted_workflow_id,
     )
     with _RUNTIME_BUILD_LOCK:
         if not live:
@@ -605,6 +632,7 @@ class StartTaskRequest(BaseModel):
     raw_goal: str
     backup_status: str | None = None
     active_workflow_id: str | None = None
+    scripted_workflow_id: str | None = None
     interaction_mode: str = "direct"
     parent_task_id: str | None = None
     clarification_answers: dict = {}
@@ -674,19 +702,24 @@ def health() -> dict:
 
 @app.get("/api/config")
 def config_summary() -> dict:
+    live_configured = bool(
+        (_live_workflow_ids() or _live_school_inputs_enabled())
+        and os.environ.get("OPENAI_API_KEY", "").strip()
+    )
     return {
         "planner": os.environ.get("TEOW_AGL_PLANNER", "smart_mock"),
         "domain_pack": os.environ.get("TEOW_AGL_DOMAIN_PACK", "public_school"),
         "demo_mode": _demo_mode(),
         # Mixed mode — which workflows are opted into the live tier, and
-        # whether that tier can actually run (a key is present). The UI mode
-        # badges read these so they NEVER claim "live" when it isn't.
+        # whether that tier is configured (a key is present). Reachability and
+        # successful provider use are reported per task after generation; key
+        # presence alone is never presented as proof that the API ran.
         "live_workflows": sorted(_live_workflow_ids()),
         "live_school_inputs": _live_school_inputs_enabled(),
-        "live_ready": bool(
-            (_live_workflow_ids() or _live_school_inputs_enabled())
-            and os.environ.get("OPENAI_API_KEY", "").strip()
-        ),
+        "live_configured": live_configured,
+        # Backward-compatible API field; semantically this means configured,
+        # not provider-reachable. New UI copy uses ``live_configured``.
+        "live_ready": live_configured,
         "workspace_roots": _workspace_roots(),
         # Desktop path is hidden in demo mode (no local-machine path leak).
         "desktop": ("(disabled in demo mode)" if _demo_mode()
@@ -736,6 +769,7 @@ def start_task(req: StartTaskRequest) -> dict:
             school_semantics = _school_semantics_for_goal(
                 req.raw_goal,
                 active_workflow_id=req.active_workflow_id or req.parent_task_id,
+                scripted_workflow_id=req.scripted_workflow_id,
             )
         relation = str(school_semantics.get("case_relation") or "").lower()
         if (
@@ -759,7 +793,6 @@ def start_task(req: StartTaskRequest) -> dict:
             or (
                 school_semantics.get("school_domain") is True
                 and _live_school_inputs_enabled()
-                and _preresolve_workflow_id(req.raw_goal) is None
             )
         )
         if effective_review and school_semantics:
@@ -799,6 +832,7 @@ def start_task(req: StartTaskRequest) -> dict:
             req.raw_goal,
             active_workflow_id=req.active_workflow_id,
             school_semantics=school_semantics,
+            scripted_workflow_id=req.scripted_workflow_id,
         )
         with _app_state["lock"]:
             state.planner_mode = planner_mode
@@ -813,6 +847,8 @@ def start_task(req: StartTaskRequest) -> dict:
 
         try:
             metadata = {}
+            if req.scripted_workflow_id:
+                metadata["forced_workflow_id"] = req.scripted_workflow_id
             if school_semantics:
                 metadata = {
                     "school_semantics_checked": True,
@@ -855,6 +891,9 @@ def start_task(req: StartTaskRequest) -> dict:
                 )
                 # Workflow Autonomy panel (102W/101D). None for ordinary tasks.
                 state.workflow = _workflow_view(result)
+                state.generation_mode = _school_generation_mode(
+                    result.plan, planner_mode,
+                )
                 state.status = "done"
                 state.phase = "complete"
                 state.finished_at = datetime.now(timezone.utc).isoformat()
@@ -1752,6 +1791,7 @@ def _state_to_dict(state: TaskState) -> dict:
         "task_tree": state.task_tree,
         "workflow": state.workflow,
         "planner_mode": state.planner_mode,
+        "generation_mode": state.generation_mode,
         "context_workflow_id": state.context_workflow_id,
         "school_semantics": state.school_semantics,
         "school_situation": state.school_situation,
@@ -1760,6 +1800,40 @@ def _state_to_dict(state: TaskState) -> dict:
         "case_context_id": state.case_context_id,
         "phase": state.phase,
     }
+
+
+def _school_generation_mode(plan, planner_mode: str) -> str:
+    """Summarise what actually generated validated school artifacts."""
+    actions = list(getattr(plan, "actions", []) or [])
+    school_actions = [
+        action for action in actions
+        if (action.metadata or {}).get("school_output_contract") is True
+        and str((action.metadata or {}).get("artifact_role") or "")
+        != "external_release_gate"
+    ]
+    if not school_actions:
+        return "not_applicable"
+    if any((action.metadata or {}).get("school_generation_failed") is True
+           for action in school_actions):
+        return "failed_closed"
+    modes = {
+        str(((action.metadata or {}).get("school_generation_validation") or {})
+            .get("mode") or "")
+        for action in school_actions
+    }
+    modes.discard("")
+    deterministic = any("deterministic" in mode for mode in modes)
+    live_generated = any(mode in {
+        "plan_level_action_id_mapping", "partial_bundle_retained",
+        "per_action_scoped_fallback",
+    } for mode in modes)
+    if planner_mode == "live" and deterministic and live_generated:
+        return "hybrid_live_with_deterministic_repair"
+    if deterministic:
+        return "deterministic_fallback"
+    if planner_mode == "live" and live_generated:
+        return "live_api_verified"
+    return "deterministic"
 
 
 def main():

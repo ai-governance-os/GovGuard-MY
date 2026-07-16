@@ -52,6 +52,51 @@ _SITUATION_STAKEHOLDERS = {
     "medical_services", "malaysia_emergency_services_999", "fire_and_rescue",
     "police", "education_authority", "local_authority", "event_organizer",
     "vendor", "transport_provider", "public_media",
+    "school_community",
+}
+
+_OUTPUT_ROLES = {
+    "internal_incident_report", "private_parent_notice",
+    "school_parent_notice", "emergency_contact_script",
+    "fire_rescue_contact_script", "medical_handover_script",
+    "site_safety_checklist", "student_accountability_checklist",
+    "regulatory_notification_assessment", "education_authority_report",
+    "education_authority_request", "staff_internal_notice",
+    "public_communication_draft", "discipline_investigation_report",
+    "safeguarding_action_plan", "evidence_preservation_log",
+    "cyber_incident_response", "finance_procurement_memo",
+    "event_action_plan", "external_stakeholder_message",
+    "student_support_plan", "transport_response_plan",
+    "food_safety_response", "post_incident_review",
+    "evidence_status_report", "measurement_plan", "school_document",
+}
+_OUTPUT_AUDIENCES = {
+    "internal", "private_recipient", "school_community",
+    "external_agency", "public",
+}
+_OUTPUT_LANGUAGES = {"en", "ms", "zh"}
+
+_OUTPUT_ROLE_DEFAULT_AUDIENCE = {
+    "private_parent_notice": "private_recipient",
+    "school_parent_notice": "school_community",
+    "public_communication_draft": "public",
+    "education_authority_report": "external_agency",
+    "education_authority_request": "external_agency",
+    "emergency_contact_script": "external_agency",
+    "fire_rescue_contact_script": "external_agency",
+    "medical_handover_script": "external_agency",
+    "external_stakeholder_message": "external_agency",
+}
+_OUTPUT_ROLE_DEFAULT_RECIPIENT = {
+    "private_parent_notice": "guardian",
+    "school_parent_notice": "school_community",
+    "public_communication_draft": "public_media",
+    "education_authority_report": "education_authority",
+    "education_authority_request": "education_authority",
+    "emergency_contact_script": "malaysia_emergency_services_999",
+    "fire_rescue_contact_script": "fire_and_rescue",
+    "medical_handover_script": "medical_services",
+    "external_stakeholder_message": "external_stakeholder",
 }
 
 # The LLM interprets free language, but an active case is never evidence by
@@ -59,7 +104,8 @@ _SITUATION_STAKEHOLDERS = {
 # anchors are deliberately closed and multilingual; they are used only to
 # prevent context capture, never to choose a governance route.
 _SCHOOL_ANCHORS = (
-    "school", "student", "pupil", "teacher", "parent", "guardian",
+    "school", "student", "students", "pupil", "pupils", "teacher",
+    "teachers", "parent", "parents", "guardian", "guardians",
     "classroom", "campus", "attendance", "discipline", "disciplinary",
     "school event", "school notice", "school report", "official record",
     "bazaar", "fundraiser", "fundraising", "coupon", "speech competition",
@@ -68,11 +114,17 @@ _SCHOOL_ANCHORS = (
     "school bus", "hostel", "dormitory", "principal", "headteacher",
     "recess", "playground", "school hall", "form teacher", "homeroom",
     "prefect", "exam paper", "co-curricular", "cocurricular",
+    "timetable", "class schedule", "school calendar", "meeting minutes",
+    "staff meeting", "pibg", "pta", "enrolment", "enrollment",
+    "promotion list", "class promotion", "ppd", "jpn",
     "kantin", "kelas", "makmal", "perhimpunan", "bas sekolah", "asrama",
     "waktu rehat", "padang sekolah", "guru kelas", "pengawas", "kertas peperiksaan",
     "disiplin", "kehadiran", "jualan amal", "kupon",
+    "jadual waktu", "minit mesyuarat", "pendaftaran murid", "senarai kenaikan kelas",
     "学校", "学生", "老师", "教师", "家长", "监护人", "纪律", "出勤",
     "违规", "校园", "校内", "义卖", "固本", "餐券", "演讲", "校方",
+    "课程表", "課程表", "时间表", "時間表", "会议记录", "會議記錄",
+    "家协", "家協", "入学", "入學", "升班名单", "升班名單",
 )
 _FOLLOWUP_ANCHORS = (
     "it", "this", "that", "these", "those", "them", "still", "again",
@@ -138,7 +190,9 @@ Return these fields:
   public_communication | official_records | general_admin | other.
 - requested_action: short verb phrase such as advise, draft, investigate,
   publish, send, persist, update_record, change_value, or clarify.
-- audience: internal | private_recipient | public | unknown.
+- audience: internal | private_recipient | school_community | public | unknown.
+  Use school_community for a broad but non-public school audience such as all
+  parents, all staff, a class group, or the school community.
 - confidence: number from 0 to 1.
 - rationale: one short sentence.
 - socioeconomic_data: uses income, wealth, occupation, donor capacity, or
@@ -198,6 +252,29 @@ governance colours or approval decisions:
   governance_boundary, required_deliverables, external_recipient, or
   content_only. Names, dates and wording-only gaps are content_only.
 - requested_deliverables: canonical artifact roles only when explicit.
+- requested_outputs: one object for EACH output the user explicitly asks for.
+  Do not add merely useful extras. Each object has artifact_role, label,
+  purpose, audience, recipient_type, languages and source_fact_ids.
+  artifact_role must be one of internal_incident_report,
+  private_parent_notice, school_parent_notice, emergency_contact_script,
+  fire_rescue_contact_script, medical_handover_script,
+  site_safety_checklist, student_accountability_checklist,
+  regulatory_notification_assessment, education_authority_report,
+  education_authority_request, staff_internal_notice,
+  public_communication_draft, discipline_investigation_report,
+  safeguarding_action_plan, evidence_preservation_log,
+  cyber_incident_response, finance_procurement_memo, event_action_plan,
+  external_stakeholder_message, student_support_plan,
+  transport_response_plan, food_safety_response, post_incident_review,
+  evidence_status_report, measurement_plan, or school_document.
+  Use school_parent_notice for a circular, WhatsApp-group message or notice to
+  all parents; private_parent_notice is only for one pupil's own guardian.
+  Use education_authority_request for a request, invitation or support message
+  to an education office; education_authority_report is for a formal case
+  report. Use school_document only when no specialised role fits.
+  languages is a subset of en, ms, zh and must preserve explicit requests such
+  as bilingual English and Malay. source_fact_ids names the known_facts that
+  the output is expected to use.
 - explicit_external_actions: stakeholder types only when the user explicitly
   asks to contact, send, publish or submit. Preparing a draft is not an
   external action.
@@ -214,10 +291,10 @@ and lower confidence; use case_relation=ambiguous where appropriate."""
             if (getattr(self.chat_llm, "backend", "") == "openai"
                     and hasattr(self.chat_llm, "chat_json_openai")):
                 raw = self.chat_llm.chat_json_openai(
-                    system, user, max_tokens=900
+                    system, user, max_tokens=1500
                 )
             else:
-                raw = self.chat_llm.chat_json(system, user, max_tokens=900)
+                raw = self.chat_llm.chat_json(system, user, max_tokens=1500)
         except Exception:
             return self._fallback("llm_error", text, active_workflow_id)
         if not isinstance(raw, dict) or not raw:
@@ -300,19 +377,41 @@ and lower confidence; use case_relation=ambiguous where appropriate."""
             relation = "unrelated"
             area = "other"
             concepts = []
+        situation = SchoolInputSemantics._normalise_situation(
+            raw.get("situation")
+        )
+        audience = str(raw.get("audience") or "unknown").strip().lower()
+        if audience not in {
+            "internal", "private_recipient", "school_community",
+            "public", "unknown",
+        }:
+            audience = "unknown"
+        if audience == "unknown":
+            output_audiences = {
+                str(item.get("audience") or "").strip().lower()
+                for item in (situation.get("requested_outputs") or [])
+                if isinstance(item, dict)
+            }
+            # A role-scoped audience is stronger than a missing top-level
+            # suggestion. Prefer the widest explicit audience so privacy and
+            # release governance fail closed rather than defaulting inward.
+            for candidate in (
+                "public", "school_community", "private_recipient", "internal",
+            ):
+                if candidate in output_audiences:
+                    audience = candidate
+                    break
         return {
             "checked": True,
             "school_domain": school_domain,
             "case_relation": relation,
             "school_area": area,
             "requested_action": str(raw.get("requested_action") or "")[:80],
-            "audience": str(raw.get("audience") or "unknown")[:40],
+            "audience": audience[:40],
             "confidence": confidence,
             "rationale": str(raw.get("rationale") or "")[:300],
             "data_use_concepts": concepts,
-            "situation": SchoolInputSemantics._normalise_situation(
-                raw.get("situation")
-            ),
+            "situation": situation,
             "source": "school_semantic_llm",
         }
 
@@ -371,6 +470,45 @@ and lower confidence; use case_relation=ambiguous where appropriate."""
                 "fact_id": str(item.get("fact_id") or "unknown")[:80],
                 "impact": impact,
             })
+        requested_outputs: list[dict] = []
+        for item in (raw.get("requested_outputs") or [])[:8]:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("artifact_role") or "").strip().lower()
+            if role not in _OUTPUT_ROLES:
+                continue
+            audience = str(item.get("audience") or "").strip().lower()
+            if audience not in _OUTPUT_AUDIENCES:
+                audience = _OUTPUT_ROLE_DEFAULT_AUDIENCE.get(role, "internal")
+            recipient = str(item.get("recipient_type") or "").strip().lower()
+            if recipient not in _SITUATION_STAKEHOLDERS:
+                recipient = _OUTPUT_ROLE_DEFAULT_RECIPIENT.get(role) or {
+                    "internal": "school_staff",
+                    "private_recipient": "guardian",
+                    "school_community": "school_community",
+                    "external_agency": "education_authority",
+                    "public": "public_media",
+                }[audience]
+            languages = sorted({
+                str(language).strip().lower()
+                for language in (item.get("languages") or [])
+                if str(language).strip().lower() in _OUTPUT_LANGUAGES
+            })
+            source_fact_ids = [
+                str(fact_id).strip()[:80]
+                for fact_id in (item.get("source_fact_ids") or [])[:20]
+                if str(fact_id).strip()
+            ]
+            requested_outputs.append({
+                "artifact_role": role,
+                "label": str(item.get("label") or role.replace("_", " ").title())[:120],
+                "purpose": str(item.get("purpose") or "")[:240],
+                "audience": audience,
+                "recipient_type": recipient,
+                "languages": languages,
+                "source_fact_ids": source_fact_ids,
+            })
+
         return {
             "family": family,
             "secondary_families": sorted({
@@ -391,6 +529,7 @@ and lower confidence; use case_relation=ambiguous where appropriate."""
                 str(item).strip().lower()[:80]
                 for item in (raw.get("requested_deliverables") or [])[:12]
             ],
+            "requested_outputs": requested_outputs,
             "explicit_external_actions": [
                 str(item).strip().lower()[:80]
                 for item in (raw.get("explicit_external_actions") or [])[:12]
@@ -407,12 +546,19 @@ and lower confidence; use case_relation=ambiguous where appropriate."""
         school_domain = _has_anchor(text, _SCHOOL_ANCHORS) or (
             bool(active_workflow_id) and _has_anchor(text, _FOLLOWUP_ANCHORS)
         )
+        # When the provider is unavailable, a positive school-domain match is
+        # deliberately only a lexical floor (the richer case facets remain
+        # unchecked).  Conversely, a self-contained request with no school
+        # anchor and no active-case follow-up anchor is safely confirmed as
+        # outside this domain pack.  This prevents an outage from handing a
+        # World Cup, recipe or stock-market request to the generic planner.
+        boundary_confirmed = not school_domain
         return {
-            "checked": False,
+            "checked": boundary_confirmed,
             "school_domain": school_domain,
             "case_relation": (
                 "follow_up" if school_domain and active_workflow_id else
-                "new_case" if school_domain else "ambiguous"
+                "new_case" if school_domain else "unrelated"
             ),
             "school_area": "other",
             "requested_action": "",
@@ -421,5 +567,8 @@ and lower confidence; use case_relation=ambiguous where appropriate."""
             "rationale": reason,
             "data_use_concepts": [],
             "situation": {},
-            "source": "fallback",
+            "source": (
+                "fallback+source_domain_boundary"
+                if boundary_confirmed else "fallback"
+            ),
         }

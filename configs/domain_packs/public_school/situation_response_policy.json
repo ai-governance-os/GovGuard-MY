@@ -57,7 +57,8 @@
     "event_organizer",
     "vendor",
     "transport_provider",
-    "public_media"
+    "public_media",
+    "school_community"
   ],
   "artifact_catalog": {
     "internal_incident_report": {
@@ -73,6 +74,13 @@
       "audience": "private_recipient",
       "recipient_type": "guardian",
       "source_policy": "case_facts_only"
+    },
+    "school_parent_notice": {
+      "label": "School-community parent notice draft",
+      "filename": "school_parent_notice_draft.md",
+      "audience": "school_community",
+      "recipient_type": "school_community",
+      "source_policy": "verified_non_personal_facts_only"
     },
     "emergency_contact_script": {
       "label": "Emergency-service contact script",
@@ -122,6 +130,13 @@
       "audience": "external_agency",
       "recipient_type": "education_authority",
       "source_policy": "case_facts_only_official_verification_required"
+    },
+    "education_authority_request": {
+      "label": "Education-authority request draft",
+      "filename": "education_authority_request_draft.md",
+      "audience": "external_agency",
+      "recipient_type": "education_authority",
+      "source_policy": "case_facts_only_official_recipient_verification_required"
     },
     "staff_internal_notice": {
       "label": "Internal staff notice",
@@ -212,6 +227,20 @@
       "filename": "post_incident_review.md",
       "audience": "internal",
       "recipient_type": "school_leadership",
+      "source_policy": "case_facts_only"
+    },
+    "evidence_status_report": {
+      "label": "Evidence-status report",
+      "filename": "evidence_status_report.md",
+      "audience": "internal",
+      "recipient_type": "school_leadership",
+      "source_policy": "case_facts_only"
+    },
+    "measurement_plan": {
+      "label": "Outcome measurement plan",
+      "filename": "outcome_measurement_plan.md",
+      "audience": "internal",
+      "recipient_type": "school_staff",
       "source_policy": "case_facts_only"
     },
     "school_document": {

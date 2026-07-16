@@ -1,6 +1,6 @@
 [project]
 name = "teow_agl"
-version = "10.7.5"
+version = "10.8.0"
 description = "GovGuard MY MAIC Submission — Governed School-Administration Agent Runtime (Powered by TEOW-AGL)"
 requires-python = ">=3.11"
 dependencies = [

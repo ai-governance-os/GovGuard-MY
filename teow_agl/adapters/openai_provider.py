@@ -49,18 +49,16 @@ from pathlib import Path
 # This loader runs ONCE at module import and is a no-op if the file is
 # missing.
 #
-# .env **overrides** existing process env. This is non-standard (the
-# 12-factor convention is the reverse) but is the right default here:
-# the project's checked-in .env represents the user's deliberate, most
-# recent intent, while a stale `setx`'d value can persist across shell
-# restarts and silently shadow it. Project-internal code, controlled
-# blast radius — we choose explicit-wins.
+# Process environment variables take precedence over `.env`.  This matches
+# standard deployment behaviour and, importantly for a live demo, ensures a
+# key/model explicitly set in the current PowerShell cannot be silently
+# replaced by an old local file.  `.env` only fills values that are absent.
 _DOTENV_LOADED = False
 
 
 def _load_dotenv_once() -> None:
     """Walk up from this file looking for a `.env` and apply its values
-    to `os.environ`, **overriding** existing values. Idempotent."""
+    to missing `os.environ` keys. Idempotent."""
     global _DOTENV_LOADED
     if _DOTENV_LOADED:
         return
@@ -80,7 +78,7 @@ def _load_dotenv_once() -> None:
                     key = key.strip()
                     value = value.strip().strip("'").strip('"')
                     if key:
-                        os.environ[key] = value
+                        os.environ.setdefault(key, value)
             except Exception:
                 # .env malformed — silently skip; we'll fall back to
                 # whatever's already in the shell environment.

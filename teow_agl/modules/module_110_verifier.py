@@ -31,7 +31,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ..models import CandidateAction, ExecutionResult, TaskEnvelope
+from ..models import (
+    CandidateAction, ExecutionResult, GovernanceDecision, TaskEnvelope,
+)
 from .module_school_artifact_guard import (
     is_school_output_contract,
     school_artifact_verification_checks,
@@ -41,6 +43,14 @@ from .module_school_artifact_guard import (
 # Tools whose output is conversational prose (counted by words against
 # user's word-count intent).
 _PROSE_TOOLS = {"chat", "docx", "report", "fs"}
+
+# These executions are runtime/UI bookkeeping, not task work.  In particular,
+# a verifier_synthetic failure must never be fed back into a later verification
+# pass as if it were a user-requested action, and a chat companion must not make
+# a task look substantively successful when every requested artifact was
+# intentionally stopped by governance.
+_NON_SUBSTANTIVE_ACTION_IDS = {"verifier_synthetic"}
+_NON_SUBSTANTIVE_SCHOOL_ROLES = {"chat_companion"}
 
 
 class VerifierModule:
@@ -92,6 +102,7 @@ class VerifierModule:
         plan_actions: list[CandidateAction],
         executions: list[ExecutionResult],
         final_route: str,
+        governance_decisions: list[GovernanceDecision | dict] | None = None,
         task_category: str | None = None,
         used_adapted_skill: bool = False,
         adapted_target_tool: str = "",
@@ -121,6 +132,8 @@ class VerifierModule:
               ...
             ],
             "summary": "short string for UI",
+            "verification_status": "verified|verified_partial|verified_safe_stop|...",
+            "scope": {"verified_action_ids": [...], "blocked_action_ids": [...]},
             "fail_outcome": "failure"  # passed through from config
           }
         """
@@ -129,20 +142,100 @@ class VerifierModule:
             "pass": True,
             "checks": [],
             "summary": "",
+            # Stable, UI-friendly state.  `pass` is retained for backwards
+            # compatibility; `verification_status` distinguishes a useful
+            # partial result and an intentional governed safe stop.
+            "verification_status": "pending",
             "fail_outcome": self.rules.get("fail_outcome", "failure"),
         }
         if not out["enabled"]:
             out["summary"] = "verifier_disabled"
+            out["verification_status"] = "disabled"
             return out
 
-        any_success = any(e.status == "success" for e in executions)
+        scope = self.verification_scope(
+            plan_actions=plan_actions,
+            executions=executions,
+            governance_decisions=governance_decisions,
+        )
+        scoped_actions = scope["plan_actions"]
+        scoped_executions = scope["executions"]
+        out["scope"] = {
+            "verified_action_ids": scope["verified_action_ids"],
+            "excluded_action_ids": scope["excluded_action_ids"],
+            "blocked_action_ids": scope["blocked_action_ids"],
+            "pending_green_action_ids": scope["pending_green_action_ids"],
+            "missing_governance_action_ids": (
+                scope["missing_governance_action_ids"]
+            ),
+            "execution_before_approval_action_ids": (
+                scope["execution_before_approval_action_ids"]
+            ),
+        }
+        governance_integrity_errors: list[str] = []
+        if scope["missing_governance_action_ids"]:
+            governance_integrity_errors.append(
+                "missing_governance_decision:"
+                + ",".join(scope["missing_governance_action_ids"])
+            )
+        if scope["execution_before_approval_action_ids"]:
+            governance_integrity_errors.append(
+                "execution_before_approval:"
+                + ",".join(scope["execution_before_approval_action_ids"])
+            )
+        if governance_integrity_errors:
+            # This is an audit-integrity failure, not an artifact-quality
+            # failure.  Do not let route exemptions, a successful execution,
+            # or a pending-approval shortcut conceal missing authority.
+            out["pass"] = False
+            out["audit_failure"] = True
+            out["checks"].append({
+                "name": "governance.execution_authority",
+                "pass": False,
+                "reason": ";".join(governance_integrity_errors),
+                "details": {
+                    "missing_governance_action_ids": (
+                        scope["missing_governance_action_ids"]
+                    ),
+                    "execution_before_approval_action_ids": (
+                        scope["execution_before_approval_action_ids"]
+                    ),
+                },
+            })
+            out["verification_status"] = "failed"
+            out["summary"] = (
+                "failed: governance.execution_authority="
+                + ";".join(governance_integrity_errors)
+            )
+            return out
+        input_boundary = self._input_governance_boundary(envelope)
+        partial = bool(scope["blocked_action_ids"] or input_boundary)
+
+        any_success = bool(scope["successful_substantive_action_ids"])
+        expected_substantive = bool(scope["expected_substantive_action_ids"])
+        scoped_route = scope["effective_route"] or final_route
+        out["effective_route"] = scoped_route
         # A pure RED / INFEASIBLE task intentionally produces no artifact or
         # external side effect. A mixed response pack can still have useful
         # BLUE artifacts alongside one blocked step; those successful outputs
         # must continue through verification.
         if ((final_route or "").upper() in {"RED", "INFEASIBLE"}
-                and not any_success):
+                and not any_success
+                and (
+                    not scope["route_aware"]
+                    or not expected_substantive
+                )):
             out["summary"] = f"skipped:route_exempt:{final_route.upper()}"
+            out["verification_status"] = "verified_safe_stop"
+            return out
+
+        # An unapproved GREEN action has not failed and is not yet eligible
+        # for verification.  Keep it visibly pending instead of manufacturing
+        # a missing-artifact error before the human gate has authorised it.
+        if (not any_success and not expected_substantive
+                and scope["pending_green_action_ids"]):
+            out["summary"] = "skipped:awaiting_human_approval"
+            out["verification_status"] = "awaiting_approval"
             return out
 
         # If nothing executed successfully, there's nothing to verify;
@@ -150,11 +243,12 @@ class VerifierModule:
         # silently. (We do NOT mark this as a verifier-pass; we mark it
         # as not-applicable.)
         if not any_success:
-            if is_school_output_contract(plan_actions):
+            if is_school_output_contract(scoped_actions):
                 school_checks = school_artifact_verification_checks(
-                    envelope, plan_actions, executions)
+                    envelope, scoped_actions, scoped_executions)
                 out["checks"].extend(school_checks)
                 out["pass"] = False
+                out["verification_status"] = "failed"
                 out["summary"] = (
                     "failed: school.execution_completeness="
                     "no_successful_executions"
@@ -162,12 +256,14 @@ class VerifierModule:
                 return out
             out["pass"] = True
             out["summary"] = "skipped:no_successful_executions"
+            out["verification_status"] = "skipped"
             return out
 
         user_intent = (envelope.normalized_goal or "").strip()
 
         # Run checks; collect into `checks`.
-        len_check = self._length_check(user_intent, plan_actions, executions)
+        len_check = self._length_check(
+            user_intent, scoped_actions, scoped_executions)
         if len_check is not None:
             out["checks"].append(len_check)
 
@@ -176,54 +272,245 @@ class VerifierModule:
             preferred_ext = self._TOOL_EXTENSION.get(
                 (adapted_target_tool or "").lower(), "")
         fmt_check = self._format_check(
-            user_intent, plan_actions, executions,
+            user_intent, scoped_actions, scoped_executions,
             preferred_ext=preferred_ext,
         )
         if fmt_check is not None:
             out["checks"].append(fmt_check)
 
-        ref_check = self._refusal_sniff(plan_actions, executions, final_route)
+        ref_check = self._refusal_sniff(
+            scoped_actions, scoped_executions, scoped_route)
         if ref_check is not None:
             out["checks"].append(ref_check)
 
         # P0.2 — no internal generation-failure / apology text inside any
         # generated office artifact (the judge sees the file, not the reason).
-        art_check = self._artifact_failure_sniff(plan_actions, executions)
+        art_check = self._artifact_failure_sniff(
+            scoped_actions, scoped_executions)
         if art_check is not None:
             out["checks"].append(art_check)
 
         # School artifacts are checked independently. A correct sibling can
         # never hide a contaminated, ungrounded or failed file in an aggregate.
         out["checks"].extend(school_artifact_verification_checks(
-            envelope, plan_actions, executions))
+            envelope, scoped_actions, scoped_executions))
 
         # Phase B — scenario-specific checks (per-category sub-rules).
         # Returns a LIST of check dicts (one per applicable sub-rule) so
         # the UI / trace can see which specific scenario rule passed or
         # failed (e.g. office_doc.no_placeholder vs research.has_sources).
         scenario_checks = self._scenario_checks(
-            user_intent, plan_actions, executions, task_category)
+            user_intent, scoped_actions, scoped_executions, task_category)
         out["checks"].extend(scenario_checks)
 
         # Phase 2 (L4.6) — stricter bar for tasks solved via an adapted
         # skill. Only runs when the runtime flags used_adapted_skill.
         if used_adapted_skill:
             strict_checks = self._skill_adapted_strict_checks(
-                user_intent, plan_actions, executions, adapted_target_tool)
+                user_intent, scoped_actions, scoped_executions,
+                adapted_target_tool)
             out["checks"].extend(strict_checks)
             out["adapted_skill_strict_mode"] = True
 
         failed_checks = [c for c in out["checks"] if not c["pass"]]
         out["pass"] = len(failed_checks) == 0
         if out["pass"]:
+            out["verification_status"] = (
+                "verified_partial" if partial else "verified"
+            )
             ok_names = [c["name"] for c in out["checks"]]
             out["summary"] = (f"all checks passed ({len(ok_names)}: "
                               f"{','.join(ok_names) or 'none_applied'})"
                               if ok_names else "no_applicable_checks")
         else:
+            out["verification_status"] = "failed"
             reasons = [f"{c['name']}={c['reason']}" for c in failed_checks]
             out["summary"] = f"failed: {' ; '.join(reasons)[:300]}"
         return out
+
+    # ------------------------------------------------------------------
+    # Route-aware scope
+    # ------------------------------------------------------------------
+    @staticmethod
+    def verification_scope(
+        *,
+        plan_actions: list[CandidateAction],
+        executions: list[ExecutionResult],
+        governance_decisions: list[GovernanceDecision | dict] | None = None,
+    ) -> dict:
+        """Return the actions/results that Module 110 is allowed to judge.
+
+        BLUE work is always expected.  GREEN work is expected only after the
+        human gate explicitly approved its approval request.  Execution is
+        never evidence of approval: a successful execution while the request
+        is pending/rejected/missing is an audit-integrity violation.
+        RED/INFEASIBLE work is deliberately absent and therefore excluded
+        from completeness checks.  With no decisions supplied, the legacy
+        all-actions scope is retained so existing API callers remain
+        compatible until Runtime passes its decision list.
+        """
+        action_by_id = {a.action_id: a for a in plan_actions}
+        execution_by_id: dict[str, ExecutionResult] = {}
+        for execution in executions:
+            if execution.action_id in _NON_SUBSTANTIVE_ACTION_IDS:
+                continue
+            current = execution_by_id.get(execution.action_id)
+            if current is None or execution.status == "success":
+                execution_by_id[execution.action_id] = execution
+
+        decision_by_id: dict[str, GovernanceDecision | dict] = {}
+        for decision in governance_decisions or []:
+            action_id = VerifierModule._decision_value(
+                decision, "action_id")
+            if action_id:
+                decision_by_id[str(action_id)] = decision
+
+        route_aware = governance_decisions is not None
+        included_ids: set[str] = set()
+        blocked_ids: list[str] = []
+        pending_green_ids: list[str] = []
+        missing_governance_ids: list[str] = []
+        execution_before_approval_ids: list[str] = []
+        expected_substantive_ids: list[str] = []
+        included_routes: list[str] = []
+
+        for action in plan_actions:
+            action_id = action.action_id
+            decision = decision_by_id.get(action_id)
+            route = str(
+                VerifierModule._decision_value(decision, "route") or ""
+            ).upper()
+            auxiliary = VerifierModule._is_non_substantive(action)
+
+            if not route_aware:
+                include = True
+            elif route == "BLUE":
+                include = True
+            elif route == "GREEN":
+                approved = VerifierModule._green_was_approved(
+                    decision, execution_by_id.get(action_id))
+                include = approved
+                if not approved:
+                    pending_green_ids.append(action_id)
+                    execution = execution_by_id.get(action_id)
+                    if (execution is not None
+                            and execution.status == "success"):
+                        execution_before_approval_ids.append(action_id)
+            elif route in {"RED", "INFEASIBLE"}:
+                reasons = VerifierModule._decision_value(
+                    decision, "reasons") or []
+                technical_failure = any(
+                    str(reason).startswith((
+                        "school_artifact_generation_not_verified",
+                        "linked_artifact_not_available",
+                        "artifact_generation_failure",
+                    ))
+                    for reason in reasons
+                )
+                # Policy-denied work is correctly absent. A required artifact
+                # that became INFEASIBLE only because generation failed is not
+                # a governed success: keep it in scope so completeness fails.
+                include = technical_failure
+                if not auxiliary and not technical_failure:
+                    blocked_ids.append(action_id)
+            else:
+                # Auxiliary UI copy is still checked for scope/hygiene.  A
+                # substantive action without a governance decision is not
+                # silently treated as authorised once route-aware mode is on.
+                include = auxiliary
+                if route_aware and not auxiliary:
+                    missing_governance_ids.append(action_id)
+
+            if include:
+                included_ids.add(action_id)
+                if not auxiliary:
+                    expected_substantive_ids.append(action_id)
+                    if route in {"BLUE", "GREEN"}:
+                        included_routes.append(route)
+
+        scoped_actions = [
+            action for action in plan_actions
+            if action.action_id in included_ids
+        ]
+        scoped_executions = [
+            execution for execution in executions
+            if execution.action_id in included_ids
+            and execution.action_id not in _NON_SUBSTANTIVE_ACTION_IDS
+        ]
+        successful_substantive_ids = sorted({
+            execution.action_id
+            for execution in scoped_executions
+            if execution.status == "success"
+            and not VerifierModule._is_non_substantive(
+                action_by_id.get(execution.action_id))
+        })
+        excluded_ids = [
+            action.action_id for action in plan_actions
+            if action.action_id not in included_ids
+        ]
+        route_rank = {"BLUE": 0, "GREEN": 1}
+        effective_route = (
+            max(included_routes, key=lambda value: route_rank[value])
+            if included_routes else ""
+        )
+        return {
+            "route_aware": route_aware,
+            "plan_actions": scoped_actions,
+            "executions": scoped_executions,
+            "verified_action_ids": [a.action_id for a in scoped_actions],
+            "excluded_action_ids": excluded_ids,
+            "blocked_action_ids": blocked_ids,
+            "pending_green_action_ids": pending_green_ids,
+            "missing_governance_action_ids": missing_governance_ids,
+            "execution_before_approval_action_ids": (
+                execution_before_approval_ids
+            ),
+            "expected_substantive_action_ids": expected_substantive_ids,
+            "successful_substantive_action_ids": successful_substantive_ids,
+            "effective_route": effective_route,
+        }
+
+    @staticmethod
+    def _decision_value(decision: GovernanceDecision | dict | None,
+                        key: str) -> Any:
+        if decision is None:
+            return None
+        if isinstance(decision, dict):
+            return decision.get(key)
+        return getattr(decision, key, None)
+
+    @staticmethod
+    def _green_was_approved(
+        decision: GovernanceDecision | dict | None,
+        execution: ExecutionResult | None,
+    ) -> bool:
+        # `execution` remains in the signature for compatibility with callers
+        # of this internal helper.  It is deliberately not authority: only an
+        # explicit human-gate status of `approved` authorises GREEN work.
+        del execution
+        approval = VerifierModule._decision_value(
+            decision, "approval_request")
+        if isinstance(approval, dict):
+            return str(approval.get("status") or "").lower() == "approved"
+        return str(getattr(approval, "status", "") or "").lower() == "approved"
+
+    @staticmethod
+    def _is_non_substantive(action: CandidateAction | None) -> bool:
+        if action is None:
+            return False
+        if action.action_id in _NON_SUBSTANTIVE_ACTION_IDS:
+            return True
+        role = str(
+            (action.metadata or {}).get("school_content_role") or ""
+        ).lower()
+        return role in _NON_SUBSTANTIVE_SCHOOL_ROLES
+
+    @staticmethod
+    def _input_governance_boundary(envelope: TaskEnvelope) -> bool:
+        pack = (envelope.metadata or {}).get("school_response_pack") or {}
+        boundary = pack.get("input_governance") or {}
+        decision = str(boundary.get("decision") or "").upper()
+        return decision in {"RED", "INFEASIBLE"}
 
     # ------------------------------------------------------------------
     # Check 1: length sanity
@@ -940,6 +1227,7 @@ class VerifierModule:
         plan_actions: list[CandidateAction],
         executions: list[ExecutionResult],
         final_route: str,
+        governance_decisions: list[GovernanceDecision | dict] | None = None,
         task_category: str = "",
     ) -> dict:
         """Ask an LLM to score the output against per-category rubrics.
@@ -976,6 +1264,20 @@ class VerifierModule:
             out["summary"] = "llm_judge_skipped:no_chat_llm"
             return out
 
+        # Judge the same governed scope as the mechanical verifier.  This is
+        # especially important for a mixed task: a safe BLUE replacement can
+        # be judged even when a sibling request was correctly RED-blocked.
+        scope = self.verification_scope(
+            plan_actions=plan_actions,
+            executions=executions,
+            governance_decisions=governance_decisions,
+        )
+        plan_actions = scope["plan_actions"]
+        executions = scope["executions"]
+        has_judgeable_success = bool(
+            scope["successful_substantive_action_ids"]
+        )
+
         school_semantics = (envelope.metadata or {}).get(
             "school_semantics") or {}
         if (envelope.metadata or {}).get("response_pack_mode") == "delta":
@@ -1003,7 +1305,11 @@ class VerifierModule:
 
         # Exempt routes (RED/INFEASIBLE) — a refusal IS the right answer
         exempt = {r.upper() for r in cfg.get("judge_exempt_routes", []) or []}
-        if (final_route or "").upper() in exempt:
+        if ((final_route or "").upper() in exempt
+                and (
+                    governance_decisions is None
+                    or not has_judgeable_success
+                )):
             out["skipped_reason"] = f"route_exempt:{final_route}"
             out["summary"] = out["skipped_reason"]
             return out
@@ -1044,9 +1350,64 @@ class VerifierModule:
         call_cfg = self.rubrics.get("judge_call") or {}
         max_tokens = int(call_cfg.get("max_tokens", 600))
 
-        system_prompt = self._judge_system_prompt(rubric, threshold)
+        governance_context: dict | None = None
+        if rubric_key == "school_governed_markdown":
+            response_pack = (
+                (envelope.metadata or {}).get("school_response_pack") or {}
+            )
+            action_contracts = []
+            for action in plan_actions:
+                meta = action.metadata or {}
+                if meta.get("school_content_role") != "artifact":
+                    continue
+                action_contracts.append({
+                    "artifact_role": meta.get("artifact_role"),
+                    "purpose": action.purpose,
+                    "audience": meta.get("audience"),
+                    "claim_policy": meta.get("claim_policy"),
+                    "safe_transformation": meta.get("safe_transformation"),
+                    "excluded_data_concepts": (
+                        meta.get("excluded_data_concepts") or []
+                    ),
+                    "requested_languages": meta.get("requested_languages") or [],
+                })
+            blocked_routes = []
+            for decision_item in governance_decisions or []:
+                if isinstance(decision_item, dict):
+                    route = str(decision_item.get("route") or "").upper()
+                    action_id = str(decision_item.get("action_id") or "")
+                    reasons = decision_item.get("reasons") or []
+                else:
+                    route = str(getattr(decision_item, "route", "") or "").upper()
+                    action_id = str(
+                        getattr(decision_item, "action_id", "") or ""
+                    )
+                    reasons = getattr(decision_item, "reasons", []) or []
+                if route in {"RED", "INFEASIBLE"}:
+                    blocked_routes.append({
+                        "action_id": action_id,
+                        "route": route,
+                        "reasons": list(reasons)[:5],
+                    })
+            governance_context = {
+                "input_governance": response_pack.get("input_governance") or {},
+                "authorised_artifact_contracts": action_contracts,
+                "governed_blocked_actions": blocked_routes,
+                "missing_fact_policy": (
+                    "Use TBC for facts the user did not supply; never demand "
+                    "that a draft invent a name, date, place, result or approval."
+                ),
+            }
+
+        system_prompt = self._judge_system_prompt(
+            rubric, threshold,
+            governed_school=governance_context is not None,
+        )
         user_prompt = self._judge_user_prompt(
-            envelope.normalized_goal or envelope.raw_goal, artifact_content)
+            envelope.normalized_goal or envelope.raw_goal,
+            artifact_content,
+            governance_context=governance_context,
+        )
 
         try:
             decision = self.chat_llm.chat_json(
@@ -1091,9 +1452,34 @@ class VerifierModule:
                 {"_key": "default", "criteria": [], "pass_threshold": 60})
 
     @staticmethod
-    def _judge_system_prompt(rubric: dict, threshold: int) -> str:
+    def _judge_system_prompt(
+        rubric: dict,
+        threshold: int,
+        *,
+        governed_school: bool = False,
+    ) -> str:
         criteria = rubric.get("criteria") or []
         bullets = "\n".join(f"- {c}" for c in criteria)
+        governed_rules = (
+            "\n\nGOVERNED SCHOOL CONTRACT RULES:\n"
+            "- The supplied governance contract is the AUTHORISED objective. "
+            "The original request is evidence of intent, but it does not override "
+            "privacy, evidence, approval or safety boundaries.\n"
+            "- When input_governance is RED or INFEASIBLE, do NOT penalise an "
+            "artifact for omitting the blocked names, marks, sensitive details, "
+            "unsupported metric or prohibited action. Penalise it if those items "
+            "are reintroduced. Score the stated safe transformation instead.\n"
+            "- TBC is the correct professional control for a material fact the "
+            "user did not supply. Never demand an invented student identity, date, "
+            "time, location, diagnosis, endorsement, result or completed action.\n"
+            "- A RED/INFEASIBLE sibling intentionally excluded from verification "
+            "is a governed safe stop, not a missing deliverable. A pending GREEN "
+            "external action is correctly waiting for human approval.\n"
+            "- Judge relevance, usefulness and factual fidelity inside each "
+            "authorised artifact role; never reward literal compliance with an "
+            "unsafe or evidentially impossible instruction."
+            if governed_school else ""
+        )
         return (
             "You are Module 110's LLM judge. Score how well an agent's "
             "output satisfies a user's goal.\n\n"
@@ -1109,6 +1495,7 @@ class VerifierModule:
             "Be fair: a reasonable answer for the question deserves a "
             "pass even if not perfect. Be strict: gibberish or refusals "
             "that should have answered get a fail."
+            + governed_rules
         )
 
     # P7 — explicit-language cues. The judge was observed hallucinating a
@@ -1139,7 +1526,13 @@ class VerifierModule:
         return ""
 
     @classmethod
-    def _judge_user_prompt(cls, goal: str, output: str) -> str:
+    def _judge_user_prompt(
+        cls,
+        goal: str,
+        output: str,
+        *,
+        governance_context: dict | None = None,
+    ) -> str:
         requested_lang = cls._detect_requested_language(goal)
         if requested_lang:
             lang_rule = (
@@ -1154,8 +1547,21 @@ class VerifierModule:
                 "judge content and correctness only, never assume a "
                 "language requirement from memory or context."
             )
+        governed_context = ""
+        goal_label = "User's goal"
+        if governance_context is not None:
+            goal_label = "Original user request (not an authority to bypass policy)"
+            governed_context = (
+                "AUTHORITATIVE GOVERNED OBJECTIVE AND ACTION CONTRACTS:\n"
+                + json.dumps(
+                    governance_context, ensure_ascii=False, indent=2,
+                )[:7000]
+                + "\n\nScore the artifacts against this governed objective. "
+                  "Do not score them against a blocked literal instruction.\n\n"
+            )
         return (
-            f"User's goal:\n{goal}\n\n"
+            governed_context
+            + f"{goal_label}:\n{goal}\n\n"
             f"Agent's output (may include section markers like "
             f"[chat reply] / [docx document] / [pptx deck] / "
             f"[xlsx workbook] / [image generated] — judge ALL of them "

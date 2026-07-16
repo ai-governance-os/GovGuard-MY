@@ -19,6 +19,19 @@ import re
 from typing import Iterable
 
 from ..models import CandidateAction, CandidatePlan, ExecutionResult, TaskEnvelope
+from .module_school_release_intent import (
+    infer_explicit_external_recipients,
+    negated_external_recipients,
+    release_is_globally_negated,
+    requests_external_release,
+)
+from .module_school_privacy import (
+    requires_broad_redaction,
+    source_direct_pii_values,
+    source_has_individual_sensitive_detail,
+    source_identifiers,
+    source_individual_mark_values,
+)
 
 
 _TEXT_FILE_TOOLS = {"docx", "report", "fs"}
@@ -27,6 +40,7 @@ _GENERIC_STEMS = {"doc", "document", "report", "draft", "output", "file"}
 _ROLE_FILENAMES = {
     "internal_incident_report": "internal_incident_report.md",
     "private_parent_notice": "parent_notification_draft.md",
+    "school_parent_notice": "school_parent_notice_draft.md",
     "discipline_investigation_report": "discipline_investigation_report.md",
     "internal_action_plan": "internal_action_plan.md",
     "public_communication_draft": "public_communication_draft.md",
@@ -37,6 +51,7 @@ _ROLE_FILENAMES = {
     "student_accountability_checklist": "student_accountability_checklist.md",
     "regulatory_notification_assessment": "regulatory_notification_assessment.md",
     "education_authority_report": "education_authority_report_draft.md",
+    "education_authority_request": "education_authority_request_draft.md",
     "staff_internal_notice": "staff_internal_notice.md",
     "safeguarding_action_plan": "safeguarding_action_plan.md",
     "evidence_preservation_log": "evidence_preservation_log.md",
@@ -48,6 +63,8 @@ _ROLE_FILENAMES = {
     "transport_response_plan": "transport_response_plan.md",
     "food_safety_response": "food_safety_response.md",
     "post_incident_review": "post_incident_review.md",
+    "evidence_status_report": "evidence_status_report.md",
+    "measurement_plan": "outcome_measurement_plan.md",
     "school_document": "school_document_draft.md",
 }
 
@@ -56,6 +73,7 @@ _ROLE_AUDIENCE = {
     "discipline_investigation_report": "internal",
     "internal_action_plan": "internal",
     "private_parent_notice": "private_recipient",
+    "school_parent_notice": "school_community",
     "public_communication_draft": "public",
     "emergency_contact_script": "external_agency",
     "fire_rescue_contact_script": "external_agency",
@@ -64,6 +82,7 @@ _ROLE_AUDIENCE = {
     "student_accountability_checklist": "internal",
     "regulatory_notification_assessment": "internal",
     "education_authority_report": "external_agency",
+    "education_authority_request": "external_agency",
     "staff_internal_notice": "internal",
     "safeguarding_action_plan": "internal",
     "evidence_preservation_log": "internal",
@@ -75,6 +94,8 @@ _ROLE_AUDIENCE = {
     "transport_response_plan": "internal",
     "food_safety_response": "internal",
     "post_incident_review": "internal",
+    "evidence_status_report": "internal",
+    "measurement_plan": "internal",
     "school_document": "internal",
 }
 
@@ -105,6 +126,311 @@ _NEGATIVE_QUALIFIER = re.compile(
     re.IGNORECASE,
 )
 
+# Per-artifact policy contracts are stronger than ordinary source grounding.
+# A source may explicitly contain an unsafe instruction (for example, "Ali is
+# poor, so monitor him more closely").  Being source-backed must never make
+# that instruction admissible after the compiler has excluded the underlying
+# data use.  These multilingual matchers therefore run on GENERATED prose,
+# after the LLM writes and before any artifact may verify.
+_POLICY_SOCIOECONOMIC_DETAIL = re.compile(
+    r"\b(?:poor|impoverished|low[- ]income|disadvantaged|deprived)\s+"
+    r"(?:family|household|background)\b|"
+    r"\b(?:bad|poor|difficult|unstable|challenging)\s+family\s+background\b|"
+    r"\b(?:family|household|guardian|parent(?:s)?)(?:['’]s)?\s+"
+    r"(?:income|financial\s+(?:status|background)|socioeconomic\s+status)\b|"
+    r"\b(?:socioeconomic|socio-economic)\s+(?:status|background)\b|"
+    r"\b(?:comes?|came|is|was)\s+from\s+(?:a\s+)?poor\s+family\b|"
+    r"\bb40(?:\s+(?:family|household))?\b|"
+    r"\b(?:keluarga\s+miskin|keluarga\s+berpendapatan\s+rendah|"
+    r"pendapatan\s+(?:keluarga|isi\s+rumah|ibu\s+bapa|penjaga)|"
+    r"latar\s+belakang\s+keluarga(?:\s+(?:miskin|bermasalah|susah))?|"
+    r"status\s+sosioekonomi|golongan\s+b40|daripada\s+keluarga\s+miskin)\b|"
+    r"(?:贫困|貧困|低收入|清寒)家庭|家庭(?:贫困|貧困|收入|经济状况|經濟狀況)|"
+    r"家长收入|家長收入|父母收入|家庭背景(?:不好|恶劣|惡劣|困难|困難)?|"
+    r"社会经济地位|社會經濟地位|来自低收入家庭|來自低收入家庭|家境(?:贫困|貧困|不好)",
+    re.IGNORECASE,
+)
+
+_POLICY_DIFFERENTIAL_ACTION = re.compile(
+    r"\b(?:monitor|watch|track|observe|supervise|check\s+on)\b"
+    r"[^.!?;\n]{0,55}\b(?:more\s+closely|closely|more\s+strictly|strictly|"
+    r"more\s+frequently|frequently|extra|additional|heightened|increased|special)\b|"
+    r"\b(?:extra|additional|heightened|increased|closer|special)\s+"
+    r"(?:monitoring|surveillance|scrutiny|checks?|supervision)\b|"
+    r"\b(?:label|flag|classif(?:y|ied)|mark)\b[^.!?;\n]{0,45}"
+    r"\b(?:high[- ]risk|problem(?:atic)?\s+student|watch\s*list)\b|"
+    r"\b(?:punish|discipline|sanction|penalise|penalize|treat)\b"
+    r"[^.!?;\n]{0,50}\b(?:more\s+harshly|more\s+strictly|differently|"
+    r"less\s+favourably|less\s+favorably)\b|"
+    r"\b(?:single\s+out|differential\s+(?:monitoring|treatment|discipline))\b|"
+    r"\b(?:pantau|memantau|dipantau|awasi|mengawasi|diawasi)\b"
+    r"[^.!?;\n]{0,55}\b(?:lebih\s+(?:rapat|ketat|kerap)|secara\s+khusus)\b|"
+    r"\b(?:pemantauan|pengawasan)\s+(?:tambahan|lebih\s+ketat|dipertingkatkan)\b|"
+    r"\b(?:label|tandakan|klasifikasikan)\b[^.!?;\n]{0,45}"
+    r"\b(?:berisiko\s+tinggi|bermasalah)\b|"
+    r"\b(?:hukum|menghukum|disiplinkan|denda)\b[^.!?;\n]{0,45}"
+    r"\b(?:lebih\s+keras|lebih\s+ketat|secara\s+berbeza)\b|"
+    r"(?:加强|加強|特别|特別|严密|嚴密)(?:监控|監控|观察|觀察|监督|監督)|"
+    r"(?:更密切|更严格|更嚴格|更频繁|更頻繁)(?:地)?(?:监控|監控|观察|觀察|监督|監督)|"
+    r"(?:标记|標記|列为|列為)[^。！？；\n]{0,20}(?:高风险|高風險|问题学生|問題學生)|"
+    r"(?:更严厉|更嚴厲)[^。！？；\n]{0,20}(?:处罚|處罰|惩罚|懲罰|纪律处分|紀律處分)|"
+    r"(?:区别对待|區別對待|差别对待|差別對待)",
+    re.IGNORECASE,
+)
+
+_POLICY_PROHIBITION = re.compile(
+    r"\b(?:do\s+not|don't|must\s+not|should\s+not|may\s+not|cannot|can't|"
+    r"never|no\s+(?:differential|different|extra|additional)|prohibit(?:ed|s)?|"
+    r"forbid(?:den|s)?|exclude(?:d|s)?|regardless\s+of|without\s+using)\b|"
+    r"\b(?:jangan|tidak\s+boleh|tidak\s+harus|dilarang|bukan\s+berdasarkan|"
+    r"tanpa\s+menggunakan)\b|"
+    r"(?:不得|不应|不應|不要|禁止|不可|不能|不因|不得因|无论|無論)",
+    re.IGNORECASE,
+)
+
+_POLICY_PERSON_SPECIFIC = re.compile(
+    r"\b(?:he|she|him|her|his|hers|this\s+(?:student|pupil|child)|"
+    r"the\s+(?:student|pupil|child)(?:['’]s)?)\b|"
+    r"\b(?:murid|pelajar)\s+(?:ini|tersebut)\b|\b(?:dirinya|keluarganya)\b|"
+    r"(?:该生|該生|这名学生|這名學生|该学生|該學生|他的|她的)",
+    re.IGNORECASE,
+)
+
+_BROAD_STAFF_AUDIENCE = re.compile(
+    r"\b(?:all|every|whole|entire)[-\s]+(?:the[-\s]+)?"
+    r"(?:(?:form|subject|class|school)[-\s]+(?:and[-\s]+)?)*"
+    r"(?:teachers?|staff|school[-\s]+staff|employees?|educators?)\b|"
+    r"\b(?:staff[- ]wide|school[- ]wide)\b|"
+    r"\b(?:semua|seluruh)\s+(?:guru|kakitangan|warga\s+sekolah)\b|"
+    r"(?:全体|全校|所有)(?:教师|教師|老师|老師|教职员|教職員|员工|員工)",
+    re.IGNORECASE,
+)
+
+_LIMITED_INTERNAL_BOUNDARY = re.compile(
+    r"\b(?:limited|restricted)\s+(?:to\s+)?(?:the\s+)?(?:authori[sz]ed\s+)?"
+    r"(?:case\s+team|personnel|staff|officers?)\b|"
+    r"\bauthori[sz]ed\s+case\s+team\s+only\b|\bneed[- ]to[- ]know\b|"
+    r"\bakses\s+terhad\b|\bterhad\s+kepada\b[^.!?;\n]{0,60}"
+    r"\b(?:diberi\s+kuasa|pasukan\s+kes|pegawai)\b|"
+    r"(?:仅限|僅限)[^。！？；\n]{0,30}(?:授权|授權)(?:人员|人員|小组|小組|团队|團隊)|"
+    r"(?:按需知悉|受限内部|受限內部)",
+    re.IGNORECASE,
+)
+
+_RESTRICTED_INTERNAL_ROLES = {
+    "discipline_investigation_report", "internal_incident_report",
+    "staff_internal_notice", "safeguarding_action_plan",
+    "evidence_preservation_log",
+}
+
+
+def _policy_clauses(text: str) -> list[str]:
+    return [
+        item.strip()
+        for item in re.split(r"(?<=[.!?。！？；;])|[\r\n]+", str(text or ""))
+        if item.strip()
+    ]
+
+
+def _has_nonnegated_policy_match(pattern: re.Pattern, text: str) -> bool:
+    return any(
+        pattern.search(clause) and not _POLICY_PROHIBITION.search(clause)
+        for clause in _policy_clauses(text)
+    )
+
+
+def _contains_excluded_socioeconomic_detail(text: str) -> bool:
+    """Detect case-level socioeconomic detail, preserving generic safeguards.
+
+    A generic boundary such as "socioeconomic status must not affect a
+    discipline decision" is useful and does not assert a pupil's status.  A
+    pupil-specific echo ("his poor family") remains a violation even when the
+    sentence says not to use it, because the contract excludes that case fact.
+    """
+    for clause in _policy_clauses(text):
+        if not _POLICY_SOCIOECONOMIC_DETAIL.search(clause):
+            continue
+        generic_prohibition = bool(_POLICY_PROHIBITION.search(clause))
+        person_specific = bool(_POLICY_PERSON_SPECIFIC.search(clause))
+        if generic_prohibition and not person_specific:
+            continue
+        return True
+    return False
+
+
+_EXCLUDED_FACT_ID_HINT = re.compile(
+    r"(?:student|pupil|child|person|name|identifier|family|household|"
+    r"socio|economic|income|welfare|benefit|housing|ppr|occupation|"
+    r"financial|guardian|parent)",
+    re.IGNORECASE,
+)
+
+
+def excluded_known_fact_values(action: CandidateAction) -> set[str]:
+    """Return source fact values the action contract says not to repeat.
+
+    Semantic intake may reduce a sensitive fact to a short value such as
+    ``poor`` or ``Ali``.  Those fragments are too ambiguous for a global text
+    regex, but their fact IDs (``family_background`` / ``student_name``) and
+    the per-action exclusions make the meaning unambiguous.  This helper keeps
+    that structured contract attached to validation and deterministic
+    fallback instead of trusting prose-only keyword matching.
+    """
+    meta = action.metadata or {}
+    excluded = {
+        str(item).strip().lower()
+        for item in (meta.get("excluded_data_concepts") or [])
+        if str(item).strip()
+    }
+    if not excluded.intersection({
+        "person_identifier", "student_sensitive_data",
+        "socioeconomic_data", "differential_treatment",
+    }):
+        return set()
+    values: set[str] = set()
+    for item in meta.get("school_known_facts") or []:
+        if not isinstance(item, dict):
+            continue
+        fact_id = str(item.get("fact_id") or "")
+        value = str(item.get("value") or "").strip()
+        if not value or not _EXCLUDED_FACT_ID_HINT.search(fact_id):
+            continue
+        lowered_id = fact_id.casefold()
+        is_person = bool(re.search(
+            r"(?:student|pupil|child|person|name|identifier)", lowered_id,
+        ))
+        is_status = bool(re.search(
+            r"(?:family|household|socio|economic|income|welfare|benefit|"
+            r"housing|ppr|occupation|financial|guardian|parent)",
+            lowered_id,
+        ))
+        if (
+            is_person and excluded.intersection({
+                "person_identifier", "student_sensitive_data",
+            })
+        ) or (
+            is_status and "socioeconomic_data" in excluded
+        ):
+            values.add(value)
+    return values
+
+
+def _generated_person_identifiers(text: str) -> set[str]:
+    """High-precision names in a generated pupil case artifact."""
+    value = str(text or "")
+    found = {
+        match.group(1)
+        for match in re.finditer(
+            r"(?i:\b(?:student|pupil|child|murid|pelajar)(?:\s+name)?)\s*"
+            r"(?:is|:|-)?\s*([A-Z][A-Za-z'’-]{1,40})\b",
+            value,
+        )
+    }
+    found.update(
+        match.group(1)
+        for match in re.finditer(
+            r"\b([A-Z][A-Za-z'’-]{1,40})\b(?=[^.!?;\n]{0,70}"
+            r"(?i:poor\s+family|low[- ]income|family\s+background|"
+            r"caught\s+(?:stealing|taking)|stole|misconduct|disciplin|"
+            r"monitor(?:ed|ing)?\s+more\s+closely))",
+            value,
+        )
+    )
+    non_names = {
+        "student", "pupil", "child", "murid", "pelajar", "draft",
+        "internal", "reported", "status", "tbc", "school", "discipline",
+    }
+    return {item for item in found if item.casefold() not in non_names}
+
+
+def requires_restricted_staff_boundary(
+    source_goal: str,
+    *,
+    role: str = "",
+    metadata: dict | None = None,
+) -> bool:
+    """Fail closed for person-level cases requested for the whole staff.
+
+    "Internal" is not automatically minimum-necessary.  A discipline or
+    safeguarding file requested for every teacher is transformed into a
+    de-identified, limited-case-team artifact.  Explicitly negated broadcast
+    language ("do not send this to all staff") does not activate the rule.
+    """
+    meta = metadata or {}
+    if meta.get("restricted_internal_audience") is True:
+        return True
+    if str(role or "").strip().lower() not in _RESTRICTED_INTERNAL_ROLES:
+        return False
+    source = str(source_goal or "")
+    if not source_has_individual_sensitive_detail(source):
+        return False
+    return _has_nonnegated_policy_match(_BROAD_STAFF_AUDIENCE, source)
+
+
+def school_policy_contract_issues(
+    action: CandidateAction,
+    content: str,
+    source_goal: str,
+    *,
+    include_boundary: bool = True,
+) -> list[str]:
+    """Return deterministic violations of one artifact's exclusion contract."""
+    meta = action.metadata or {}
+    text = str(content or "")
+    role = str(meta.get("artifact_role") or "").strip().lower()
+    excluded = {
+        str(item).strip().lower()
+        for item in (meta.get("excluded_data_concepts") or [])
+        if str(item).strip()
+    }
+    found: list[str] = []
+
+    excluded_values = excluded_known_fact_values(action)
+    leaked_excluded_values = {
+        value for value in excluded_values
+        if re.search(rf"(?<!\w){re.escape(value)}(?!\w)", text, re.IGNORECASE)
+    }
+    if leaked_excluded_values:
+        found.append("excluded_structured_fact_reintroduced")
+
+    if (
+        "socioeconomic_data" in excluded
+        and _contains_excluded_socioeconomic_detail(text)
+    ):
+        found.append("excluded_socioeconomic_data_reintroduced")
+    if (
+        "differential_treatment" in excluded
+        and _has_nonnegated_policy_match(_POLICY_DIFFERENTIAL_ACTION, text)
+    ):
+        found.append("excluded_differential_treatment_reintroduced")
+
+    restricted = requires_restricted_staff_boundary(
+        source_goal, role=role, metadata=meta,
+    )
+    if restricted or "person_identifier" in excluded:
+        source_names = {
+            item for item in source_identifiers(source_goal)
+            if item.casefold() not in {
+                "draft", "prepare", "report", "notice", "student",
+                "pupil", "child", "school", "teacher", "teachers",
+            }
+        }
+        exact_leaks = {
+            item for item in source_names
+            if re.search(rf"(?<!\w){re.escape(item)}(?!\w)", text, re.IGNORECASE)
+        }
+        generated_names = _generated_person_identifiers(text)
+        if exact_leaks or generated_names:
+            found.append("restricted_staff_artifact_contains_person_identifier")
+
+    if restricted:
+        if _has_nonnegated_policy_match(_BROAD_STAFF_AUDIENCE, text):
+            found.append("restricted_staff_artifact_keeps_broad_distribution")
+        if include_boundary and text and not _LIMITED_INTERNAL_BOUNDARY.search(text):
+            found.append("restricted_staff_boundary_missing")
+
+    return found
+
 # label, unsupported positive assertion in the artifact, positive evidence in
 # the source request.  Merely naming an unknown field ("witnesses not
 # verified") is not positive evidence.
@@ -127,7 +453,7 @@ _GROUNDING_RULES = (
     (
         "student_transported_or_admitted",
         re.compile(
-            r"\b(?:was|has been|had been|were)\s+(?:transported|taken|admitted)\b"
+            r"\b(?:was|has been|had been|were)\s+(?:transported|admitted)\b"
             r"|\b(?:transported|taken)\s+to\s+(?:a\s+)?(?:hospital|medical facility)",
             re.IGNORECASE,
         ),
@@ -410,7 +736,42 @@ def _contains_cjk(text: str) -> bool:
     return bool(re.search(r"[\u3400-\u9fff]", text or ""))
 
 
+def _looks_malay(text: str) -> bool:
+    cues = re.findall(
+        r"\b(?:sediakan|jangan|murid|pelajar|sekolah|kantin|berhampiran|"
+        r"ibu\s+bapa|penjaga|laporan|draf|hantar|masih|berlaku)\b",
+        (text or "").casefold(),
+    )
+    return len(cues) >= 2
+
+
 def school_cover_message(user_intent: str, filenames: list[str]) -> str:
+    """Pre-execution companion that never claims planned files already exist."""
+    quoted = ", ".join(f"`{name}`" for name in filenames)
+    count = len(filenames)
+    noun = "draft" if count == 1 else "drafts"
+    if _contains_cjk(user_intent):
+        return (
+            f"已接收一个包含 {count} 份 Markdown 草稿的治理任务：{quoted}。"
+            "系统会逐份生成、治理和验证；此时不代表文件已经成功生成。"
+            "任何内容都尚未发送或发布。"
+        )
+    if _looks_malay(user_intent):
+        return (
+            f"Tugasan tadbir urus untuk {count} draf Markdown telah diterima: "
+            f"{quoted}. Setiap fail akan dijana, ditadbir dan disahkan secara "
+            "berasingan; mesej ini belum mendakwa bahawa penjanaan telah berjaya. "
+            "Tiada kandungan telah dihantar atau diterbitkan."
+        )
+    return (
+        f"Received a governed task for {count} Markdown {noun}: {quoted}. "
+        "Each file will be generated, governed and verified separately; this "
+        "message does not claim generation succeeded. Nothing was sent "
+        "or published."
+    )
+
+
+def _school_cover_message_legacy(user_intent: str, filenames: list[str]) -> str:
     quoted = ", ".join(f"`{name}`" for name in filenames)
     count = len(filenames)
     if _contains_cjk(user_intent):
@@ -445,25 +806,7 @@ def _is_external_release_action(action: CandidateAction) -> bool:
 
 
 def _requests_external_release(semantics: dict, user_intent: str = "") -> bool:
-    requested = str(semantics.get("requested_action") or "").casefold()
-    if re.search(
-        r"\b(?:send|publish|submit|release|message|contact|notify|email|hantar)\b|"
-        r"发送|發送|发布|發佈|提交|联系|聯絡|通知|发给|發給",
-        requested,
-    ):
-        return True
-    text = (user_intent or "").casefold()
-    return bool(re.search(
-        r"\b(?:contact|notify|email|message)\s+"
-        r"(?:(?:his|her|their|the|a)\s+|(?:[\w-]+'s)\s+)?"
-        r"(?:parent|guardian|family)\b|"
-        r"\bsend\b[^\n.!?]{0,100}\bto\s+(?:the\s+)?"
-        r"(?:parent|guardian|family|public|facebook)\b|"
-        r"\bpublish\b|\bpost\b[^\n.!?]{0,80}\b(?:facebook|publicly|online)\b|"
-        r"联系(?:他|她|其|这名学生)?(?:的)?家长|聯絡(?:他|她|其)?(?:的)?家長|"
-        r"通知家长|通知家長|发给家长|發給家長",
-        text,
-    ))
+    return requests_external_release(semantics, user_intent)
 
 
 def _release_audience(semantics: dict, user_intent: str) -> str:
@@ -479,15 +822,7 @@ def _release_audience(semantics: dict, user_intent: str) -> str:
 
 
 def _external_release_is_negated(user_intent: str) -> bool:
-    text = (user_intent or "").casefold()
-    return bool(re.search(
-        r"\b(?:do\s+not|don't|not\s+to|never)\s+(?:\w+\s+){0,3}"
-        r"(?:send|publish|submit|release|message|email|contact|notify)\b|"
-        r"\b(?:draft\s+only|do\s+not\s+send\s+or\s+publish|"
-        r"do\s+not\s+publish\s+or\s+send)\b|"
-        r"不要(?:发送|發送|发布|發佈|提交|联系|聯絡|通知)|只(?:做|要)草稿",
-        text,
-    ))
+    return release_is_globally_negated(user_intent)
 
 
 def _requests_public_student_sensitive_detail(user_intent: str) -> bool:
@@ -515,6 +850,7 @@ def _requests_public_student_sensitive_detail(user_intent: str) -> bool:
 
 def _mark_external_gate(action: CandidateAction, *, audience: str) -> None:
     public = audience == "public"
+    community = audience == "school_community"
     action.metadata.update({
         "school_output_contract": True,
         "school_output_contract_version": "1.0",
@@ -522,7 +858,11 @@ def _mark_external_gate(action: CandidateAction, *, audience: str) -> None:
         "artifact_role": "external_release_gate",
         "external_release_action": True,
         "audience": audience or "unknown",
-        "output_scope": "public_release" if public else "private_recipient",
+        "output_scope": (
+            "public_release" if public
+            else "community_release" if community
+            else "private_recipient"
+        ),
         "release_state": "pending_approval",
         "approval_boundary": "human_required_before_external_release",
     })
@@ -591,7 +931,8 @@ def normalize_school_markdown_plan(
             declared_audience
             if meta.get("coverage_source") == "school_response_pack"
             and declared_audience in {
-                "internal", "private_recipient", "external_agency", "public",
+                "internal", "private_recipient", "school_community",
+                "external_agency", "public",
             }
             else _ROLE_AUDIENCE.get(role, "internal")
         )
@@ -620,12 +961,27 @@ def normalize_school_markdown_plan(
             "missing_fact_policy": "TBC",
             "release_state": "draft_only",
             "output_scope": (
-                "public_draft" if audience == "public" else audience
+                "public_draft" if audience == "public"
+                else "community_draft" if audience == "school_community"
+                else audience
             ),
         })
+        # A response pack carries an explicit per-action data-use contract.
+        # Request-level hazards are shown by response_pack.input_governance;
+        # copying them into every safe replacement artifact would collapse the
+        # system's two governance layers back into one whole-case colour.
+        if meta.get("coverage_source") == "school_response_pack":
+            concept_source = meta.get("response_pack_data_use_concepts") or []
+        elif "data_use_concepts" in meta:
+            # An explicit per-action concept list, including an intentionally
+            # empty list, is a closed action contract.  Do not replace it with
+            # request-level hazards: doing so would block a safe alternative
+            # merely because a sibling action was RED or INFEASIBLE.
+            concept_source = meta.get("data_use_concepts") or []
+        else:
+            concept_source = envelope.metadata.get("data_use_concepts") or []
         task_concepts = {
-            str(item).strip().lower()
-            for item in (envelope.metadata.get("data_use_concepts") or [])
+            str(item).strip().lower() for item in concept_source
             if str(item).strip()
         }
         task_concepts.discard("external_release")
@@ -654,6 +1010,53 @@ def normalize_school_markdown_plan(
         # Pre-set a step-local list so Runtime.set_default cannot copy the
         # task's eventual release intent into an internal draft action.
         meta["data_use_concepts"] = sorted(task_concepts)
+
+        # Whole-staff access is still a broad disclosure when the file names a
+        # pupil or contains discipline, welfare or family-status detail. Keep
+        # the useful internal artifact, but narrow it to the authorised case
+        # team and close the data contract before synthesis begins. This rule
+        # intentionally reads the raw request as a fail-safe when live semantic
+        # intake mislabels "all teachers" as ordinary internal use.
+        if requires_restricted_staff_boundary(
+            envelope.normalized_goal or envelope.raw_goal,
+            role=role,
+            metadata=meta,
+        ):
+            meta.update({
+                "restricted_internal_audience": True,
+                "audience": "internal",
+                "audience_boundary": "limited_authorised_case_team",
+                "output_scope": "internal",
+                "claim_policy": (
+                    "anonymous_observed_conduct_and_verified_evidence_only"
+                ),
+            })
+            exclusions = {
+                str(item).strip().lower()
+                for item in (meta.get("excluded_data_concepts") or [])
+                if str(item).strip()
+            }
+            exclusions.update({
+                "person_identifier", "health_or_discipline",
+                "student_sensitive_data", "socioeconomic_data",
+                "differential_treatment",
+            })
+            meta["excluded_data_concepts"] = sorted(exclusions)
+            boundary_transform = (
+                "Prepare a de-identified internal artifact limited to the "
+                "authorised case team. Exclude the pupil's identity, family "
+                "or socioeconomic status, and any differential monitoring, "
+                "labelling or sanction; use observed conduct and verified "
+                "evidence only."
+            )
+            existing_transform = str(
+                meta.get("safe_transformation") or ""
+            ).strip()
+            if boundary_transform not in existing_transform:
+                meta["safe_transformation"] = " ".join(
+                    item for item in (existing_transform, boundary_transform)
+                    if item
+                )
 
     sibling_summary = [
         {
@@ -745,25 +1148,101 @@ def normalize_school_markdown_plan(
         a for a in remaining
         if a not in release_actions and (a.tool or "").lower() != "chat"
     ]
-    gates = list(release_actions)
+    negated_recipients = negated_external_recipients(
+        envelope.normalized_goal
+    )
+    gates = [
+        action for action in release_actions
+        if str(
+            (action.metadata or {}).get("recipient_type")
+            or action.target or "external_stakeholder"
+        ).strip().lower() not in negated_recipients
+    ]
     release_negated = _external_release_is_negated(envelope.normalized_goal)
-    requested_release = _requests_external_release(
-        semantics, envelope.normalized_goal) and not release_negated
+    governed_pack = (envelope.metadata or {}).get("school_response_pack") or {}
+    if governed_pack:
+        # After the one-question review, the confirmed response pack owns
+        # release authority. The original ambiguous verb must not resurrect a
+        # GREEN gate when the operator answered “Draft only - do not send”.
+        selected_gate_ids = {
+            str(item.get("deliverable_id") or "")
+            for item in (governed_pack.get("deliverables") or [])
+            if item.get("selected") is True
+            and item.get("kind") == "external_action"
+        }
+        gates = [
+            action for action in gates
+            if str((action.metadata or {}).get("deliverable_id") or "")
+            in selected_gate_ids
+        ]
+        requested_release = bool(selected_gate_ids)
+        release_negated = not requested_release
+    else:
+        requested_release = _requests_external_release(
+            semantics, envelope.normalized_goal) and not release_negated
     if requested_release or (gates and not release_negated):
         if not gates:
-            gates = [CandidateAction(
-                tool="chat", operation="answer", target="",
-                purpose="request human approval before external release",
-                expected_effect="pause before any external send or publication",
-                reversibility="high", uncertainty="low", requires_governance=True,
-                metadata={
-                    "body": (
-                        "The governed draft is ready. Human approval is required "
-                        "before any external release; nothing has been sent or published."
-                    ),
-                    "synthesis_skip": True,
-                },
-            )]
+            structured_outputs = (
+                ((semantics.get("situation") or {}).get("requested_outputs"))
+                or []
+            )
+            positive_recipients = infer_explicit_external_recipients(
+                envelope.normalized_goal,
+                requested_audience=str(
+                    semantics.get("audience") or "unknown"
+                ),
+                requested_outputs=structured_outputs,
+            )
+            external_recipients = {
+                "guardian", "school_community", "medical_services",
+                "malaysia_emergency_services_999", "fire_and_rescue",
+                "police", "education_authority", "local_authority",
+                "event_organizer", "vendor", "transport_provider",
+                "public_media", "external_stakeholder",
+            }
+            for output in structured_outputs:
+                if not isinstance(output, dict):
+                    continue
+                recipient = str(
+                    output.get("recipient_type") or ""
+                ).strip().lower()
+                if recipient not in external_recipients:
+                    continue
+                if positive_recipients and recipient not in positive_recipients:
+                    continue
+                gates.append(CandidateAction(
+                    tool="chat", operation="answer", target="",
+                    purpose="request human approval before external release",
+                    expected_effect="pause before any external send or publication",
+                    reversibility="high", uncertainty="low",
+                    requires_governance=True,
+                    metadata={
+                        "body": (
+                            "The governed draft is ready. Human approval is required "
+                            "before any external release; nothing was sent or published."
+                        ),
+                        "synthesis_skip": True,
+                        "recipient_type": recipient,
+                        "linked_deliverable_id": str(
+                            output.get("artifact_role") or ""
+                        ).strip(),
+                    },
+                ))
+            if not gates:
+                gates = [CandidateAction(
+                    tool="chat", operation="answer", target="",
+                    purpose="request human approval before external release",
+                    expected_effect="pause before any external send or publication",
+                    reversibility="high", uncertainty="low",
+                    requires_governance=True,
+                    metadata={
+                        "body": (
+                            "The governed draft is ready. Human approval is required "
+                            "before any external release; nothing was sent or published."
+                        ),
+                        "synthesis_skip": True,
+                    },
+                )]
         # Legacy open tasks had no recipient model, so duplicate live-planner
         # sends are still coalesced. A structured response pack carries an
         # explicit recipient per gate and keeps each unique recipient separate.
@@ -798,6 +1277,7 @@ def normalize_school_markdown_plan(
                     "vendor": "private_recipient",
                     "transport_provider": "private_recipient",
                     "external_stakeholder": "private_recipient",
+                    "school_community": "school_community",
                 }
                 if recipient not in recipient_audience:
                     recipient = "external_stakeholder"
@@ -817,9 +1297,14 @@ def normalize_school_markdown_plan(
             seen_gate_keys.add(key)
             _mark_external_gate(gate, audience=audience)
             gate.metadata["recipient_type"] = recipient or "unknown"
+            gate_concept_source = (
+                (gate.metadata or {}).get("data_use_concepts") or ["external_release"]
+                if (envelope.metadata or {}).get("school_response_pack")
+                else envelope.metadata.get("data_use_concepts") or []
+            )
             gate.metadata["data_use_concepts"] = sorted({
                 str(item).strip().lower()
-                for item in (envelope.metadata.get("data_use_concepts") or [])
+                for item in gate_concept_source
                 if str(item).strip()
             } | {"external_release"} | (
                 {
@@ -878,18 +1363,34 @@ def validate_school_markdown(
     """Return deterministic validation issues grouped by policy layer."""
     text = (content or "").strip()
     role = str((action.metadata or {}).get("artifact_role") or "")
-    issues: dict[str, list[str]] = {"hygiene": [], "role": [], "grounding": []}
+    source = source_goal or ""
+    issues: dict[str, list[str]] = {
+        "hygiene": [], "role": [], "grounding": [], "policy": [],
+    }
 
     if len(text) < 120:
         issues["hygiene"].append("artifact_too_short")
     if (action.metadata or {}).get("coverage_source") == "school_response_pack":
         short_roles = {
-            "private_parent_notice", "public_communication_draft",
+            "private_parent_notice", "school_parent_notice",
+            "public_communication_draft", "education_authority_request",
             "emergency_contact_script", "fire_rescue_contact_script",
             "medical_handover_script", "external_stakeholder_message",
             "staff_internal_notice",
         }
-        minimum = 500 if role in short_roles else 750
+        requested_language_set = {
+            str(item).strip().lower()
+            for item in ((action.metadata or {}).get("requested_languages") or [])
+            if str(item).strip()
+        }
+        # Chinese conveys substantially more information per character than
+        # space-delimited English/Malay. Applying the Latin-character floor
+        # verbatim rejected a complete 251-character Chinese parent notice.
+        # Bilingual drafts still satisfy the full combined floor.
+        if requested_language_set == {"zh"}:
+            minimum = 250 if role in short_roles else 375
+        else:
+            minimum = 500 if role in short_roles else 750
         if len(text) < minimum:
             issues["hygiene"].append(
                 f"response_pack_artifact_too_short:{len(text)}<{minimum}"
@@ -906,20 +1407,82 @@ def validate_school_markdown(
     if Path(action.target).suffix.lower() != ".md":
         issues["hygiene"].append("artifact_not_markdown")
 
+    polarity_source = re.sub(
+        r"\b(?:no|none\s+of\s+the)\s+(?:facts?|details?|information)?\s*"
+        r"(?:is|are|was|were)?\s*(?:unverified|unknown|missing|unconfirmed)"
+        r"(?:\s+(?:or|and)\s+(?:unverified|unknown|missing|unconfirmed))*\b|"
+        r"\ball\s+(?:facts?|details?|information)\s+(?:is|are|was|were)\s+verified\b",
+        "",
+        source,
+        flags=re.IGNORECASE,
+    )
     needs_tbc = bool(re.search(
         r"\btbc\b|\bunverified\b|not\s+(?:been\s+)?verified|not\s+confirmed|"
         r"\bunknown\b|not\s+provided|missing\s+(?:fact|detail|information)",
-        source_goal or "", re.IGNORECASE,
+        polarity_source, re.IGNORECASE,
     ))
     if needs_tbc and "tbc" not in text.lower():
         issues["hygiene"].append("source_requires_tbc_but_artifact_has_none")
 
-    if role != "private_parent_notice":
+    parent_roles = {"private_parent_notice", "school_parent_notice"}
+    if role not in parent_roles:
         if any(rx.search(text) for rx in _PARENT_LETTER_MARKERS):
             issues["role"].append("parent_letter_content_in_non_parent_artifact")
-    if role == "private_parent_notice":
+    if role in parent_roles:
         if any(rx.search(text) for rx in _INTERNAL_REPORT_MARKERS):
             issues["role"].append("internal_report_content_in_parent_notice")
+    audience = str((action.metadata or {}).get("audience") or "").lower()
+    excluded = {
+        str(item).strip().lower()
+        for item in ((action.metadata or {}).get("excluded_data_concepts") or [])
+        if str(item).strip()
+    }
+    issues["policy"].extend(
+        school_policy_contract_issues(action, text, source_goal)
+    )
+    broad_privacy_contract = requires_broad_redaction(
+        source,
+        audience=audience,
+        role=role,
+        excluded_concepts=excluded,
+    )
+    if broad_privacy_contract:
+        source_identifier_values = source_identifiers(source)
+        source_mark_values = source_individual_mark_values(source)
+        source_pii_values = source_direct_pii_values(source)
+        leaked_identifiers = sorted(
+            item for item in source_identifier_values
+            if re.search(rf"(?<!\w){re.escape(item)}(?!\w)", text, re.IGNORECASE)
+        )
+        leaked_marks = sorted(
+            value for value in source_mark_values
+            if re.search(rf"(?<!\d){re.escape(value)}(?!\d)", text)
+        )
+        leaked_pii = sorted(
+            value for value in source_pii_values
+            if value.casefold() in text.casefold()
+        )
+        if leaked_identifiers:
+            issues["role"].append("broad_notice_contains_source_identifier")
+        if leaked_marks:
+            issues["role"].append("broad_notice_contains_individual_mark")
+        if leaked_pii:
+            issues["role"].append("broad_notice_contains_source_pii")
+
+    requested_languages = {
+        str(item).lower()
+        for item in ((action.metadata or {}).get("requested_languages") or [])
+    }
+    if len(requested_languages) > 1:
+        language_markers = {
+            "en": r"(?mi)^#{1,3}\s+(?:english|englis(?:h)? version)\s*$",
+            "ms": r"(?mi)^#{1,3}\s+(?:bahasa melayu|bahasa malaysia|malay)\s*$",
+            "zh": r"(?mi)^#{1,3}\s+(?:中文|华文|chinese)\s*$",
+        }
+        for language in sorted(requested_languages):
+            marker = language_markers.get(language)
+            if marker and not re.search(marker, text):
+                issues["hygiene"].append(f"missing_language_section:{language}")
     if (role == "internal_incident_report"
             and re.search(
                 r"(?mi)^(?:#{1,6}\s+recommendations?\s*|"
@@ -933,7 +1496,6 @@ def validate_school_markdown(
             )):
         issues["role"].append("unrequested_recommendations_section")
 
-    source = source_goal or ""
     for label, output_rx, source_rx in _GROUNDING_RULES:
         output_claims = _matched_positive_chunks(output_rx, text)
         if not output_claims:
@@ -993,6 +1555,34 @@ def validate_school_markdown(
 def artifact_similarity(a: str, b: str) -> float:
     def normalise(text: str) -> str:
         text = re.sub(r"(?m)^#{1,6}\s+.*$", " ", text or "")
+        # Shared case facts and mandatory governance boilerplate are expected
+        # to repeat across a response pack.  They are not evidence that an
+        # incident report, a site checklist and a contact script are duplicate
+        # artifacts.  Remove those bounded wrapper lines before comparing the
+        # role-specific substance.  Exact or near-exact duplicated bodies
+        # still normalise to the same text and therefore remain a hard fail.
+        text = re.sub(r"(?m)^>.*$", " ", text)
+        text = re.sub(
+            r"(?mi)^(?:ringkasan\s+perkara|事项摘要|事項摘要|"
+            r"user-reported\s+case|reported\s+(?:matter|event|case|request)|"
+            r"case\s+context)\s*:\s*.*$",
+            " ", text,
+        )
+        text = re.sub(
+            r"(?mi)^-\s*(?:maklumat\s+kes\s+yang\s+disahkan\s+untuk\s+draf\s+ini|"
+            r"本草稿可用的已核实资料|本草稿可用的已核實資料)\s*:\s*TBC\s*$",
+            " ", text,
+        )
+        text = re.sub(
+            r"Dokumen ini masih berstatus DRAF - BELUM DIHANTAR\..*?"
+            r"Tiada mesej telah dihantar atau diterbitkan oleh sistem ini\.",
+            " ", text, flags=re.IGNORECASE | re.DOTALL,
+        )
+        text = re.sub(
+            r"本文件是尚未发送或发布的草稿。.*?系统没有发送或发布任何内容。|"
+            r"本文件是尚未發送或發布的草稿。.*?系統沒有發送或發布任何內容。",
+            " ", text, flags=re.DOTALL,
+        )
         text = re.sub(r"(?i)\b(?:draft|not sent|tbc|internal|private|review)\b", " ", text)
         return re.sub(r"\s+", " ", text).strip().lower()
     left, right = normalise(a), normalise(b)
@@ -1113,6 +1703,7 @@ def school_artifact_verification_checks(
     hygiene: dict[str, list[str]] = {}
     roles: dict[str, list[str]] = {}
     grounding: dict[str, list[str]] = {}
+    policy: dict[str, list[str]] = {}
     for action in artifacts:
         issues = validate_school_markdown(
             action, contents.get(action.action_id, str(action.metadata.get("content") or "")),
@@ -1124,6 +1715,8 @@ def school_artifact_verification_checks(
             roles[action.action_id] = issues["role"]
         if issues["grounding"]:
             grounding[action.action_id] = issues["grounding"]
+        if issues["policy"]:
+            policy[action.action_id] = issues["policy"]
 
     checks.extend([
         {
@@ -1143,6 +1736,12 @@ def school_artifact_verification_checks(
             "pass": not grounding,
             "reason": "ok" if not grounding else next(iter(grounding.values()))[0],
             "details": {"issues_by_action": grounding},
+        },
+        {
+            "name": "school.policy_contract",
+            "pass": not policy,
+            "reason": "ok" if not policy else next(iter(policy.values()))[0],
+            "details": {"issues_by_action": policy},
         },
     ])
 

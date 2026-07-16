@@ -134,6 +134,21 @@ _SAFE_ALT_STUDENT_PUBLIC = (
 )
 
 
+# Product-wide alternatives. These intentionally replace the earlier Route-B
+# example copy so an arbitrary discipline, health or learning case never leaks
+# athletics-specific wording into its governance explanation.
+_SAFE_ALT_SOCIO = (
+    "Use relevant observed conduct or performance, verified evidence, applicable "
+    "school rules and proportionate support instead; exclude social title, family "
+    "background, household income and unrelated social or financial status."
+)
+_SAFE_ALT_STUDENT_PUBLIC = (
+    "Use anonymous or aggregate school-community wording; keep person-level "
+    "difficulty, marks, conduct and support details inside authorised internal "
+    "records or a separate one-to-one guardian communication."
+)
+
+
 def _norm_list(values: Any) -> str:
     if isinstance(values, (list, tuple, set)):
         return " ".join(str(v) for v in values).lower()
@@ -258,14 +273,20 @@ class DataUseGuard:
         # Inspect the agent's intended data use: the action itself PLUS the
         # task intent threaded into metadata (so a planner that produced a
         # generic action still surfaces the goal's data-use intent to 101D).
+        contract_scoped = bool(
+            md.get("coverage_source") == "school_response_pack"
+            or md.get("action_data_contract") is True
+        )
+        shared_user_intent = "" if contract_scoped else str(md.get("user_intent", ""))
         text = _normalize(" ".join((
             str(getattr(action, "purpose", "")),
             str(getattr(action, "expected_effect", "")),
             str(getattr(action, "target", "")),
             str(md.get("data_use_purpose", "")),
-            str(md.get("user_intent", "")),
+            shared_user_intent,
             _norm_list(md.get("data_categories")),
             _norm_list(md.get("allowed_data")),
+            _norm_list(md.get("uses_fields")),
         )))
         # The student-sensitive-in-public check keys on the STEP's OWN data use
         # (its purpose, declared data-use, and allowed fields) — NOT the shared
@@ -281,6 +302,7 @@ class DataUseGuard:
             str(md.get("body", "")),
             _norm_list(md.get("data_categories")),
             _norm_list(md.get("allowed_data")),
+            _norm_list(md.get("uses_fields")),
         )))
         # The DECLARED allowed fields alone (no goal prose) — used by the
         # "unclear sensitive → GREEN" fail-safe so it fires on what a step
@@ -374,6 +396,9 @@ class DataUseGuard:
             "private_recipient", "parent", "guardian", "family",
             "named_recipient", "individual_recipient",
         }
+        broad_school_audience = audience in {
+            "school_community", "all_parents", "all_staff", "class_group",
+        } or scope == "community_draft"
         operation_public = "publish" in op or tool == "publish"
         operation_external = (
             operation_public
@@ -417,6 +442,7 @@ class DataUseGuard:
             "is_public": is_public,
             "is_external": is_external,
             "is_private_recipient": is_private_recipient,
+            "is_broad_school_audience": broad_school_audience,
             # Backward-compatible audit field; new decisions use the split
             # fields above.
             "is_public_or_external": is_public or is_external,
@@ -473,7 +499,7 @@ class DataUseGuard:
             }
 
         # ── RED 2: publish personal identifiers to a public/external surface ─
-        if has_pii and is_public:
+        if has_pii and (is_public or broad_school_audience):
             return {"decision": "RED",
                     "reasons": ["Personal identifiers (IC/MyKid/passport/phone/"
                                 "home address) cannot be published to a public "
@@ -483,7 +509,7 @@ class DataUseGuard:
                     "features": features}
 
         # ── RED 3: health / discipline / special-needs in public content ──
-        if has_health and is_public:
+        if has_health and (is_public or broad_school_audience):
             return {"decision": "RED",
                     "reasons": ["Health, discipline, or special-needs details "
                                 "cannot be placed in public content.",
@@ -496,7 +522,9 @@ class DataUseGuard:
         # notice; never named or disclosed publicly. `public_draft` counts —
         # the exposure is going INTO a public post — while a public-draft that
         # carries only safe achievement fields never trips this. ──
-        if has_student_sensitive and (is_public or scope == "public_draft"):
+        if has_student_sensitive and (
+            is_public or broad_school_audience or scope == "public_draft"
+        ):
             return {"decision": "RED",
                     "reasons": [_RED_REASON_STUDENT_PUBLIC,
                                 f"safe_alternative: {step_safe_alt or _SAFE_ALT_STUDENT_PUBLIC}"],

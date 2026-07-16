@@ -1,4 +1,4 @@
-"""GovGuard MY runtime orchestrator — TEOW-AGL Governance Runtime 10.7.4."""
+"""GovGuard MY runtime orchestrator — TEOW-AGL Governance Runtime 10.8.0."""
 from __future__ import annotations
 
 import json
@@ -27,6 +27,9 @@ from .modules.module_school_artifact_guard import (
 from .modules.module_school_situation import (
     govern_school_research_actions,
     reconcile_school_response_pack,
+)
+from .modules.module_school_release_intent import (
+    infer_explicit_external_recipients,
 )
 from .modules.module_102r_refusal_recovery import RefusalRecoveryModule
 from .modules.module_101d_data_use_guard import DataUseGuard
@@ -129,6 +132,34 @@ _capability_card_default: dict | None = None
 # cached replay yields an empty draft (the "Sorry — I couldn't generate…"
 # fallback). These must always run the planner, never be served from cache.
 _NO_PLAN_CACHE_CATEGORIES = frozenset({"parent_message_draft_edit"})
+
+
+def _verified_deterministic_school_fallback(
+    actions: list[CandidateAction],
+) -> bool:
+    """True only when every governed school artifact is a verified code fallback.
+
+    This is intentionally narrower than ``planner == smart_mock``.  Mixed
+    bundles or any live-authored artifact return False and still require the
+    semantic LLM judge after the mechanical verifier passes.
+    """
+    artifacts = [
+        action for action in actions
+        if (action.metadata or {}).get("school_output_contract")
+        and (action.metadata or {}).get("school_content_role") == "artifact"
+    ]
+    if not artifacts:
+        return False
+    for action in artifacts:
+        validation = (action.metadata or {}).get(
+            "school_generation_validation"
+        ) or {}
+        mode = str(validation.get("mode") or "")
+        if validation.get("pass") is not True or not mode.startswith(
+            "deterministic_"
+        ):
+            return False
+    return True
 
 
 def _demo_mode_active() -> bool:
@@ -1101,7 +1132,50 @@ class Runtime:
                 details={"domain_context": self.domain_context},
             )
 
-        pre = self.pre_gov.assess(envelope, self.profile)
+        school_semantics = (envelope.metadata or {}).get("school_semantics") or {}
+        # Authorisation floor: an explicit external release must never become
+        # a harmless chat action merely because semantic intake is unavailable
+        # (offline mock, provider outage) or omits a field.  The shared parser
+        # distinguishes actual release commands from draft-only or negated
+        # wording; it only tightens the configured planning category.
+        explicit_release_recipients = infer_explicit_external_recipients(
+            envelope.raw_goal,
+        )
+        if (
+            (envelope.metadata or {}).get("school_semantics_checked")
+            and school_semantics.get("school_domain") is True
+        ):
+            requested = str(school_semantics.get("requested_action") or "").lower()
+            audience = str(school_semantics.get("audience") or "").lower()
+            if requested in {"send", "submit", "message", "contact", "email"}:
+                school_category = "external_email"
+            elif requested in {"publish", "post", "release"}:
+                school_category = "external_publish"
+            elif audience in {"school_community", "private_recipient"}:
+                school_category = "school_notice_draft"
+            else:
+                school_category = "report_generation"
+            pre = self.pre_gov.assess(
+                envelope, self.profile,
+                category_override=school_category,
+                override_reason="school_situation_contract",
+                # School input hazards are split into an input boundary and
+                # independently governed safe actions by the Situation Contract.
+                defer_contextual_data_use=True,
+            )
+        elif explicit_release_recipients:
+            school_category = (
+                "external_publish"
+                if "public_media" in explicit_release_recipients
+                else "external_email"
+            )
+            pre = self.pre_gov.assess(
+                envelope, self.profile,
+                category_override=school_category,
+                override_reason="deterministic_external_release_floor",
+            )
+        else:
+            pre = self.pre_gov.assess(envelope, self.profile)
         self._emit("101A", "pre_governance_assessment", envelope.task_id, envelope.session_id,
                    summary=f"category={pre.task_category} mode={pre.planning_mode} hard_block={pre.hard_block}",
                    details=pre.model_dump())
@@ -1222,7 +1296,14 @@ class Runtime:
         workflow_plan: CandidatePlan | None = None
         if (self.workflow_resolver is not None
                 and semantic_clarify_plan is None
-                and not envelope.metadata.get("_is_subgoal")):
+                and not envelope.metadata.get("_is_subgoal")
+                # A compiled open-school Response Pack owns arbitrary typed
+                # input. Configured workflows remain available only when the
+                # UI/API explicitly marks a scripted demo prompt.
+                and (
+                    envelope.metadata.get("forced_workflow_id")
+                    or not envelope.metadata.get("school_response_pack")
+                )):
             workflow_resolution = self.workflow_resolver.resolve(
                 envelope, pre, self.domain_context)
             if workflow_resolution:
@@ -2225,6 +2306,7 @@ class Runtime:
                 task_category=result.pre_assessment.task_category,
                 used_adapted_skill=result.used_adapted_skill,
                 adapted_target_tool=result.adapted_target_tool,
+                governance_decisions=result.decisions,
             )
         except Exception as exc:
             self._emit(
@@ -2251,20 +2333,43 @@ class Runtime:
         if (verification.get("pass", True)
                 and not verification_skipped
                 and self.verifier is not None):
-            try:
-                judge = self.verifier.llm_judge(
-                    envelope=envelope,
-                    plan_actions=(plan.actions if plan else []),
-                    executions=result.executions,
-                    final_route=self._provisional_final_route(result),
-                    task_category=result.pre_assessment.task_category,
+            deterministic_school_fallback = (
+                _verified_deterministic_school_fallback(
+                    plan.actions if plan else []
                 )
-            except Exception as exc:
-                judge = {"enabled": True, "pass": None, "score": 0,
-                         "threshold": 0, "issues": [], "suggestions": [],
-                         "rubric_used": "default",
-                         "summary": f"judge_error:{exc}",
-                         "skipped_reason": "exception"}
+            )
+            if deterministic_school_fallback:
+                # The safe fallback is authored by bounded code and has just
+                # passed every mechanical artifact, grounding, privacy and
+                # policy check.  A second LLM opinion adds no authority here;
+                # if the provider is down it must not turn a verified outage
+                # fallback into VERIFY-FAIL.  Live-authored prose remains
+                # subject to the semantic judge below.
+                judge = {
+                    "enabled": True, "pass": None, "score": 0,
+                    "threshold": 0, "issues": [], "suggestions": [],
+                    "rubric_used": "deterministic_school_fallback",
+                    "summary": (
+                        "llm_judge_skipped:verified_deterministic_fallback"
+                    ),
+                    "skipped_reason": "verified_deterministic_fallback",
+                }
+            else:
+                try:
+                    judge = self.verifier.llm_judge(
+                        envelope=envelope,
+                        plan_actions=(plan.actions if plan else []),
+                        executions=result.executions,
+                        final_route=self._provisional_final_route(result),
+                        task_category=result.pre_assessment.task_category,
+                        governance_decisions=result.decisions,
+                    )
+                except Exception as exc:
+                    judge = {"enabled": True, "pass": None, "score": 0,
+                             "threshold": 0, "issues": [], "suggestions": [],
+                             "rubric_used": "default",
+                             "summary": f"judge_error:{exc}",
+                             "skipped_reason": "exception"}
             verification["judge"] = judge
             # If the judge ran AND failed, flip the overall pass. For an open
             # school artifact contract, an unavailable/malformed judge is also
@@ -2273,7 +2378,10 @@ class Runtime:
             school_contract = is_school_output_contract(
                 plan.actions if plan else [])
             intentional_school_judge_skip = (
-                judge.get("skipped_reason") == "school_response_pack_delta"
+                judge.get("skipped_reason") in {
+                    "school_response_pack_delta",
+                    "verified_deterministic_fallback",
+                }
             )
             if (judge.get("pass") is False
                     or (
@@ -2282,6 +2390,7 @@ class Runtime:
                         and not intentional_school_judge_skip
                     )):
                 verification["pass"] = False
+                verification["verification_status"] = "failed"
                 verification["summary"] = (
                     (verification.get("summary") or "")
                     + " | " + (
@@ -2769,6 +2878,23 @@ class Runtime:
     # the LLM doesn't get to claim "this was BLUE / verified" if the
     # runtime knows otherwise. Used as a governance gate on skill writes.
     # ------------------------------------------------------------------
+    @staticmethod
+    def _non_substantive_action_ids(
+        plan: CandidatePlan | None,
+    ) -> set[str]:
+        """Actions that are UI/audit companions, not completed user work."""
+        action_ids = {"verifier_synthetic"}
+        if plan is None:
+            return action_ids
+        action_ids.update(
+            action.action_id for action in plan.actions
+            if str((action.metadata or {}).get("school_content_role") or "")
+            == "chat_companion"
+            or str((action.metadata or {}).get("artifact_role") or "")
+            == "chat_companion"
+        )
+        return action_ids
+
     def _current_task_quality(
         self, envelope: TaskEnvelope, result: TaskRunResult,
     ) -> dict:
@@ -2783,7 +2909,7 @@ class Runtime:
         )
         execution_success_count = sum(
             1 for e in result.executions if e.status == "success"
-            and e.action_id != "verifier_synthetic"
+            and e.action_id not in self._non_substantive_action_ids(result.plan)
         )
         return {
             "task_id": envelope.task_id,
@@ -2812,7 +2938,11 @@ class Runtime:
         )
         if not all_info:
             return False
-        any_success = any(e.status == "success" for e in executions)
+        non_substantive = self._non_substantive_action_ids(plan)
+        any_success = any(
+            e.status == "success" and e.action_id not in non_substantive
+            for e in executions
+        )
         return any_success
 
     def _build_followup_brief(
@@ -3561,10 +3691,16 @@ class Runtime:
 
             leaf.spawned_task_id = sub_result.envelope.task_id
             leaf.final_route = sub_result.final_route
-            any_success = any(e.status == "success"
-                              for e in sub_result.executions)
-            any_failure = any(e.status in ("failed", "denied")
-                              for e in sub_result.executions)
+            non_substantive = self._non_substantive_action_ids(sub_result.plan)
+            any_success = any(
+                e.status == "success" and e.action_id not in non_substantive
+                for e in sub_result.executions
+            )
+            any_failure = any(
+                e.status in ("failed", "denied")
+                and e.action_id not in non_substantive
+                for e in sub_result.executions
+            )
             if any_success and not any_failure:
                 leaf.status = "done"
             else:
@@ -3657,8 +3793,17 @@ class Runtime:
         has_red = any(d.route == "RED" for d in result.decisions)
         has_infeasible = any(d.route == "INFEASIBLE" for d in result.decisions)
         has_rejection = any(a.status == "rejected" for a in result.approvals)
-        any_success = any(e.status == "success" for e in result.executions)
-        any_failed = any(e.status in ("failed", "denied") for e in result.executions)
+        non_substantive = self._non_substantive_action_ids(plan)
+        substantive_executions = [
+            execution for execution in result.executions
+            if execution.action_id not in non_substantive
+        ]
+        any_success = any(
+            e.status == "success" for e in substantive_executions
+        )
+        any_failed = any(
+            e.status in ("failed", "denied") for e in substantive_executions
+        )
 
         # Phase 1A failure isolation: verifier verdict overrides
         # execution-only success. If the verifier ran AND rejected the

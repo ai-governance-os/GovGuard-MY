@@ -7,6 +7,7 @@ literals, or route literals.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..models import PreGovernanceAssessment, TaskEnvelope
@@ -40,9 +41,15 @@ class PreGovernanceModule:
         *,
         category_override: str | None = None,
         override_reason: str | None = None,
+        defer_contextual_data_use: bool = False,
     ) -> PreGovernanceAssessment:
         text = envelope.normalized_goal
         category = self._classify(text)
+        lexical_category = category
+        hard_block_categories = set(
+            self.classifier.get("hard_block_categories", [])
+        )
+        override_rejected = False
         # Semantic override (101C). Only labels the data layer already
         # knows are accepted — the override changes WHICH configured
         # category applies, never what the configuration says about it.
@@ -52,7 +59,14 @@ class PreGovernanceModule:
             known = set(self.classifier.get("default_planning_mode_by_category", {})) \
                 | set(self.classifier.get("category_keywords", {}))
             if category_override in known:
-                category = category_override
+                # A broad school-output override must never erase a lexical
+                # credential/destructive hard category. Semantic context may
+                # tighten or organise safe work; it cannot weaken an existing
+                # deterministic hard stop.
+                if lexical_category in hard_block_categories:
+                    override_rejected = True
+                else:
+                    category = category_override
         red_pat = hs.detect_red_pattern(text, self.hard_safety_cfg)
 
         hard_block = False
@@ -60,6 +74,10 @@ class PreGovernanceModule:
         reasons: list[str] = []
         if category_override and category == category_override:
             reasons.append(f"category_override:{override_reason or 'semantic_intake'}")
+        if override_rejected:
+            reasons.append(
+                f"category_override_rejected:hard_block:{lexical_category}"
+            )
 
         if red_pat is not None:
             hard_block = True
@@ -71,7 +89,7 @@ class PreGovernanceModule:
         # groups (sensitive entity × risky intent), so rewording does not slip
         # past — it matches CONCEPTS, not exact sentences. Fully offline; the
         # LLM is never consulted for these hard-safety decisions.
-        if not hard_block:
+        if not hard_block and not defer_contextual_data_use:
             risk_rule = self._match_risk_rule(text)
             if risk_rule is not None:
                 category = risk_rule.get("category", category)
@@ -87,7 +105,7 @@ class PreGovernanceModule:
                 if alt:
                     reasons.append(f"safe_alternative: {alt}")
 
-        for blocking_category in self.classifier.get("hard_block_categories", []):
+        for blocking_category in hard_block_categories:
             if category == blocking_category:
                 hard_block = True
                 hard_block_code = blocking_category
@@ -97,7 +115,7 @@ class PreGovernanceModule:
         # Infeasibility patterns (capability/resource limits) — distinct from
         # hard-RED safety violations. Pre-flags hard_block_code with an
         # "infeasible_" prefix so 103 routes INFEASIBLE not RED.
-        if not hard_block:
+        if not hard_block and not defer_contextual_data_use:
             infeasibility_patterns = self.classifier.get("infeasibility_patterns", [])
             lowered_for_inf = text.lower()
             for pat in infeasibility_patterns:
@@ -156,7 +174,16 @@ class PreGovernanceModule:
                 k = kw.lower()
                 if not k:
                     continue
-                pos = lowered.find(k)
+                # ASCII command fragments must begin/end at a token boundary.
+                # A plain substring search made `rm ` match the tail of
+                # `inform ` and misclassified a parent notice as file deletion.
+                pattern = re.escape(k)
+                if k[0].isascii() and (k[0].isalnum() or k[0] == "_"):
+                    pattern = r"(?<![A-Za-z0-9_])" + pattern
+                if k[-1].isascii() and (k[-1].isalnum() or k[-1] == "_"):
+                    pattern = pattern + r"(?![A-Za-z0-9_])"
+                match = re.search(pattern, lowered)
+                pos = match.start() if match else -1
                 if pos != -1 and pos < best_pos:
                     best_pos = pos
                     best_category = cat
