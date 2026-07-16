@@ -14,6 +14,30 @@ from unittest.mock import patch
 import pytest
 
 from teow_agl.adapters import openai_provider as opi
+
+
+def test_dotenv_fills_missing_values_without_overriding_current_shell(
+    tmp_path, monkeypatch,
+):
+    project = tmp_path / "project"
+    adapter_dir = project / "teow_agl" / "adapters"
+    adapter_dir.mkdir(parents=True)
+    fake_module = adapter_dir / "openai_provider.py"
+    fake_module.write_text("# test path\n", encoding="utf-8")
+    (project / ".env").write_text(
+        "OPENAI_MODEL=stale-file-model\n"
+        "OPENAI_API_KEY=file-only-key\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(opi, "__file__", str(fake_module))
+    monkeypatch.setattr(opi, "_DOTENV_LOADED", False)
+    monkeypatch.setenv("OPENAI_MODEL", "current-shell-model")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    opi._load_dotenv_once()
+
+    assert opi.os.environ["OPENAI_MODEL"] == "current-shell-model"
+    assert opi.os.environ["OPENAI_API_KEY"] == "file-only-key"
 from teow_agl.adapters.chat_llm import ChatLLM
 
 

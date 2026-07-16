@@ -76,6 +76,24 @@ def test_bazaar_detected(isolated_workspace: Path):
     assert res["confidence"] >= 0.7
 
 
+def test_scripted_button_can_force_exact_workflow_without_text_guessing(
+    isolated_workspace: Path,
+):
+    envelope = _envelope("Continue the prepared judge demo.")
+    envelope.metadata["forced_workflow_id"] = "school_charity_bazaar"
+    res = _resolver(isolated_workspace).resolve(envelope, None)
+    assert res is not None
+    assert res["workflow_id"] == "school_charity_bazaar"
+    assert res["confidence"] == 1.0
+    assert res["matched_trigger"] == "explicit_scripted_demo"
+
+
+def test_unknown_forced_workflow_fails_closed(isolated_workspace: Path):
+    envelope = _envelope("Continue the prepared judge demo.")
+    envelope.metadata["forced_workflow_id"] = "not_a_real_workflow"
+    assert _resolver(isolated_workspace).resolve(envelope, None) is None
+
+
 def test_bazaar_does_not_steal_national(isolated_workspace: Path):
     res = _resolver(isolated_workspace).resolve(_envelope(NAT_GOAL), None)
     assert res is not None and res["workflow_id"] == "national_athletics_reporting"

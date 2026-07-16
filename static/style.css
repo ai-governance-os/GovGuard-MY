@@ -251,7 +251,7 @@ body {
 .demo-dock-body .example { padding: 9px 12px; font-size: 13px; }
 
 /* ---------- Chat messages ---------- */
-.msg { width: 100%; max-width: 760px; padding: 16px 24px; }
+.msg { width: 100%; max-width: 760px; min-width: 0; padding: 16px 24px; }
 .msg .who {
   font-size: 12px; color: var(--text-mute); letter-spacing: .5px;
   text-transform: uppercase; margin-bottom: 6px;
@@ -259,6 +259,7 @@ body {
 .msg .bubble {
   padding: 14px 16px; border-radius: var(--radius); line-height: 1.5;
   box-shadow: var(--bubble-shadow); border: 1px solid var(--border-soft);
+  min-width: 0; max-width: 100%;
 }
 .msg.user .bubble { background: var(--bg-bubble-user); border-color: transparent; }
 .msg.agent .bubble { background: var(--bg-bubble-agent); }
@@ -376,6 +377,12 @@ body {
 .chip.REFLECT    { background: rgba(124,58,237,.08);  color: var(--purple); border-color: rgba(124,58,237,.25); font-style: italic; }
 .chip.VERIFIED   { background: rgba(31,158,84,.10);   color: var(--green); border-color: rgba(31,158,84,.30); }
 .chip.VERIFY-FAIL{ background: rgba(211,58,58,.10);   color: var(--red);   border-color: rgba(211,58,58,.30); }
+.chip.SAFE-STOP  { background: rgba(217,119,6,.10);   color: var(--orange); border-color: rgba(217,119,6,.30); }
+.chip.NEEDS-REPAIR { background: rgba(211,58,58,.10); color: var(--red); border-color: rgba(211,58,58,.30); }
+.chip.PARTIAL    { background: rgba(13,148,136,.12); color: #0d9488; border-color: rgba(13,148,136,.32); }
+.chip.USER-BOUNDARY { background: var(--bg-soft); color: var(--text-soft); border-color: var(--border); }
+.chip.USER-BOUNDARY.RED { color: var(--red); border-color: rgba(211,58,58,.30); }
+.chip.USER-BOUNDARY.INFEASIBLE { color: var(--orange); border-color: rgba(217,119,6,.30); }
 .chip.SELF-FIX-OK   { background: rgba(31,158,84,.10);  color: var(--green);  border-color: rgba(31,158,84,.30); font-style: italic; }
 .chip.SELF-FIX-FAIL { background: rgba(217,119,6,.10);  color: var(--orange); border-color: rgba(217,119,6,.30); font-style: italic; }
 .chip.TREE       { background: rgba(124,58,237,.10);  color: var(--purple); border-color: rgba(124,58,237,.30); }
@@ -388,21 +395,34 @@ body {
   border-radius: 10px;
   padding: 10px 12px;
   background: var(--bg-soft, rgba(127,127,127,.04));
+  min-width: 0; max-width: 100%;
+  /* A verifier may return human-readable prose, Chinese text, URLs or a
+     machine identifier with no natural break point.  The governance record
+     must stay visible rather than forcing the entire chat card wider. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .gov-pipeline .gp-title {
   font-size: 12px; font-weight: 700; letter-spacing: .2px;
   color: var(--text-soft); margin-bottom: 8px; text-transform: uppercase;
+  min-width: 0; max-width: 100%;
+  overflow-wrap: anywhere; word-break: break-word;
 }
 .gov-pipeline .gp-step {
   display: flex; align-items: baseline; gap: 10px;
   padding: 3px 0; font-size: 13px; line-height: 1.45;
+  min-width: 0; max-width: 100%;
 }
+.gov-pipeline .gp-step > * { min-width: 0; max-width: 100%; }
 .gov-pipeline .gp-mod {
   flex: 0 0 42px; font-family: ui-monospace, Menlo, monospace;
   font-size: 11px; font-weight: 700; color: var(--text-mute); text-align: right;
 }
 .gov-pipeline .gp-lab { flex: 0 0 104px; font-weight: 600; color: var(--text); }
-.gov-pipeline .gp-det { flex: 1 1 auto; color: var(--text-soft); }
+.gov-pipeline .gp-det {
+  flex: 1 1 auto; min-width: 0; color: var(--text-soft);
+  white-space: normal; overflow-wrap: anywhere; word-break: break-word;
+}
 .gov-pipeline .gp-det em { color: var(--text-mute); font-style: italic; }
 .gov-pipeline .gp-decision {
   margin: 4px -6px; padding: 5px 6px; border-radius: 7px;
@@ -411,6 +431,27 @@ body {
 .gov-pipeline .gp-note {
   margin-top: 4px; font-size: 11.5px; font-style: italic;
   color: var(--text-mute); line-height: 1.4;
+  overflow-wrap: anywhere; word-break: break-word;
+}
+.gov-pipeline .gp-needs-repair { color: var(--red); }
+.gov-pipeline .gp-issues {
+  margin: 5px 0 0; padding: 0 0 0 18px; color: var(--text-soft);
+  min-width: 0; max-width: 100%;
+  overflow-wrap: anywhere; word-break: break-word;
+}
+.gov-pipeline .gp-issues li {
+  margin: 2px 0; min-width: 0; max-width: 100%;
+  overflow-wrap: anywhere; word-break: break-word;
+}
+/* Preserve all verifier evidence while making preformatted identifiers and
+   links responsive.  No line clamp, ellipsis or hidden overflow is used. */
+.gov-pipeline .gp-det code,
+.gov-pipeline .gp-det pre,
+.gov-pipeline .gp-det a {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .gov-pipeline .gp-route { font-weight: 800; letter-spacing: .3px; }
 .gov-pipeline .gp-route.BLUE       { color: var(--accent); }
@@ -418,6 +459,7 @@ body {
 .gov-pipeline .gp-route.RED        { color: var(--red); }
 .gov-pipeline .gp-route.INFEASIBLE { color: var(--orange); }
 .gov-pipeline .gp-route.COMPOSITE  { color: #0d9488; }
+.gov-pipeline .gp-route.PARTIAL    { color: #0d9488; }
 .chip.NONE       { background: rgba(154,160,166,.10); color: var(--text-mute); border-color: rgba(154,160,166,.30); }
 .chip.WORKFLOW   { background: rgba(13,148,136,.12);  color: #0d9488; border-color: rgba(13,148,136,.32); font-weight: 700; }
 
@@ -527,6 +569,47 @@ body {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 560px; }
 .response-pack-severity { font-size: 11px; text-transform: uppercase;
   letter-spacing: .5px; font-weight: 700; color: var(--orange); }
+.request-boundary, .gp-request-boundary {
+  min-width: 0; margin: 8px 0 12px; padding: 10px 12px;
+  border: 1px solid var(--border); border-left: 4px solid var(--text-mute);
+  border-radius: var(--radius-sm); background: var(--bg-elev);
+  font-size: 12px; color: var(--text-soft);
+  overflow-wrap: anywhere; word-break: break-word;
+}
+.request-boundary.boundary-RED, .gp-request-boundary.boundary-RED {
+  border-left-color: var(--red); background: rgba(211,58,58,.045);
+}
+.request-boundary.boundary-INFEASIBLE, .gp-request-boundary.boundary-INFEASIBLE {
+  border-left-color: var(--orange); background: rgba(217,119,6,.045);
+}
+.request-boundary.boundary-BLUE, .gp-request-boundary.boundary-BLUE {
+  border-left-color: var(--accent); background: rgba(31,111,235,.04);
+}
+.request-boundary.boundary-GREEN, .gp-request-boundary.boundary-GREEN {
+  border-left-color: var(--green); background: rgba(31,158,84,.04);
+}
+.request-boundary-head, .gp-boundary-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 5px; color: var(--text);
+}
+.boundary-chip {
+  display: inline-block; flex: 0 0 auto; padding: 1px 8px;
+  border: 1px solid var(--border); border-radius: 999px;
+  font-size: 10px; font-weight: 800; letter-spacing: .35px;
+}
+.boundary-chip-RED { color: var(--red); border-color: rgba(211,58,58,.35); }
+.boundary-chip-INFEASIBLE { color: var(--orange); border-color: rgba(217,119,6,.35); }
+.boundary-chip-BLUE { color: var(--accent); border-color: rgba(31,111,235,.35); }
+.boundary-chip-GREEN { color: var(--green); border-color: rgba(31,158,84,.35); }
+.request-boundary p, .request-boundary ul,
+.gp-request-boundary ul { margin: 4px 0 0 18px; padding: 0; }
+.request-boundary-blocked, .gp-boundary-blocked { color: var(--text); }
+.request-boundary-safe, .gp-boundary-safe {
+  margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border-soft);
+  color: var(--green);
+}
+.request-boundary-safe ul, .gp-boundary-safe ul { color: var(--text-soft); }
+.gp-request-boundary { margin-top: 0; }
 .response-pack-list, .response-pack-question { border: 0; padding: 0; margin: 0; }
 .response-pack-list legend, .response-pack-question legend {
   color: var(--text-soft); font-size: 11px; text-transform: uppercase;
@@ -967,3 +1050,37 @@ body {
 }
 .curator-card.cur-compact .cur-head { margin: 0; }
 .curator-card.cur-compact .cur-apply-note { margin-left: 4px; }
+
+/* Responsive outcome cards. Do not hide overflow: every governance reason must
+   remain readable at judge-laptop, tablet and phone widths. */
+@media (max-width: 900px) {
+  .app, .app.with-audit { grid-template-columns: minmax(0, 1fr); }
+  .audit-drawer {
+    position: fixed; z-index: 30; top: 56px; right: 0; bottom: 0;
+    width: min(360px, 100vw); box-shadow: -8px 0 24px rgba(15,23,42,.16);
+  }
+}
+
+@media (max-width: 560px) {
+  .topbar { padding: 10px 12px; }
+  .brand .tag { display: none; }
+  .ghost-btn { padding: 6px 9px; }
+  .chat { padding-left: 0; padding-right: 0; }
+  .msg { padding: 12px 8px; }
+  .msg .bubble { padding: 12px 10px; }
+  .response-pack { padding: 10px; }
+  .gov-pipeline { padding: 9px 8px; }
+  .gov-pipeline .gp-step {
+    display: grid; grid-template-columns: 36px minmax(0, 1fr);
+    column-gap: 8px; row-gap: 1px; align-items: start; padding: 5px 0;
+  }
+  .gov-pipeline .gp-mod {
+    grid-column: 1; grid-row: 1 / span 2; width: auto; text-align: right;
+  }
+  .gov-pipeline .gp-lab { grid-column: 2; grid-row: 1; width: auto; }
+  .gov-pipeline .gp-det { grid-column: 2; grid-row: 2; }
+  .gov-pipeline .gp-decision { margin-left: 0; margin-right: 0; }
+  .request-boundary-head, .gp-boundary-head { align-items: flex-start; }
+  .approval-card .actions { flex-direction: column; align-items: stretch; }
+  .approval-card .actions input[type=text], .approval-card .actions button { width: 100%; }
+}

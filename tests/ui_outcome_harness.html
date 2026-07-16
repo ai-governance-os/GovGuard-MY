@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="../static/style.css">
+  <title>GovGuard outcome overflow harness</title>
+</head>
+<body>
+  <div id="test-viewport">
+  <div class="topbar">
+    <div class="brand"><div class="brand-mark">GG</div><div class="brand-text"><span class="logo">GovGuard MY</span><span class="tag">governed school administration</span></div></div>
+    <button class="ghost-btn">Audit</button>
+  </div>
+  <div class="app with-audit">
+    <main class="chat-col">
+      <div class="chat">
+        <div class="msg agent">
+          <div class="bubble status-done">
+            <section class="request-boundary boundary-RED">
+              <div class="request-boundary-head"><strong>User request boundary</strong><span class="boundary-chip boundary-chip-RED">RED</span></div>
+              <p class="request-boundary-blocked">The unsafe public disclosure was blocked.</p>
+              <div class="request-boundary-safe"><strong>Safe transformation</strong><ul><li>Prepare one private notice per authorised guardian.</li></ul></div>
+            </section>
+            <div class="route-row"><span class="chip PARTIAL">PARTIAL GOVERNED</span><span class="chip NEEDS-REPAIR">NEEDS REPAIR</span></div>
+            <div class="gov-pipeline">
+              <div class="gp-title">Agent action governance — the planner proposes, governance decides</div>
+              <div class="gp-step"><span class="gp-mod">101A</span><span class="gp-lab">Pre-governance</span><span class="gp-det">A deliberately long readable sentence must remain inside the card at every supported viewport width.</span></div>
+              <div class="gp-step gp-decision"><span class="gp-mod">103</span><span class="gp-lab">Decision</span><span class="gp-det"><b class="gp-route PARTIAL">PARTIAL GOVERNED</b> — 2 BLUE · 1 GREEN · 1 RED</span></div>
+              <div class="gp-step"><span class="gp-mod">110</span><span class="gp-lab">Verification</span><span class="gp-det"><b class="gp-needs-repair">NEEDS REPAIR — 3 issues found</b><ul class="gp-issues"><li>ThisSuperLongUnbrokenValueMustWrapWithoutEscapingTheGovernanceCardAtAnyViewportWidth0123456789</li><li>The output does not match the requested audience.</li></ul></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <aside class="audit-drawer"><div class="drawer-section"><h3>Audit</h3><div class="stats-panel">Technical detail remains in the drawer.</div></div></aside>
+  </div>
+  </div>
+  <script>
+    window.addEventListener("load", () => {
+      const requested = Number(new URLSearchParams(location.search).get("testWidth")) || window.innerWidth;
+      const viewport = document.getElementById("test-viewport");
+      viewport.style.width = `${requested}px`;
+      viewport.style.maxWidth = "100%";
+      const targets = [viewport,
+        ...document.querySelectorAll(".msg,.bubble,.request-boundary,.gov-pipeline,.gp-step,.gp-det")];
+      const overflow = targets.filter(node => node.scrollWidth > node.clientWidth + 1);
+      document.body.dataset.overflowCount = String(overflow.length);
+      document.body.dataset.viewportWidth = String(requested);
+    });
+  </script>
+</body>
+</html>

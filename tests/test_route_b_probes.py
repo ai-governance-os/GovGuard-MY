@@ -106,6 +106,15 @@ def test_probe_auto_send_needs_approval(isolated_workspace: Path):
     assert r == "GREEN", r
 
 
+def test_probe_do_not_send_remains_draft_only(isolated_workspace: Path):
+    r = _route(
+        isolated_workspace,
+        "Prepare the parent notices, but do not send them to any parents.",
+        gate="approve_all",
+    )
+    assert r == "BLUE", r
+
+
 # ── over-fire guards: legitimate requests are NOT blocked ───────────────────
 
 def test_legit_public_post_request_not_blocked(isolated_workspace: Path):

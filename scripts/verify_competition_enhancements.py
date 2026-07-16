@@ -1,7 +1,7 @@
 """Focused, offline verification for the MAIC Mixed-Live hardening.
 
-Kept outside pytest so the submission's independently documented 1080-test
-count remains comparable with the original evidence. Run from the project root:
+Kept outside pytest as a focused competition-hardening smoke check. Run from
+the project root:
 
     python scripts/verify_competition_enhancements.py
 """
@@ -158,24 +158,39 @@ def verify_mixed_live_selection() -> None:
         os.environ["TEOW_AGL_LIVE_WORKFLOWS"] = "ad_hoc_school_event_reporting"
         os.environ["TEOW_AGL_LIVE_SCHOOL_INPUTS"] = "1"
         os.environ["TEOW_AGL_PLANNER"] = "smart_mock"
+        # Scripted buttons carry an explicit workflow id. Free text that merely
+        # resembles Route A/B must not steal that workflow.
+        assert appmod._goal_runs_live(
+            "Prepare the scripted speech-competition package.",
+            scripted_workflow_id="ad_hoc_school_event_reporting",
+        ) is True
         assert appmod._goal_runs_live(
             "The pupils still cannot deliver the speech. What should we change?",
             active_workflow_id="ad_hoc_school_event_reporting",
             school_semantics={
-                "school_domain": True, "case_relation": "follow_up"
+                "checked": True,
+                "school_domain": True,
+                "case_relation": "follow_up",
+                "source": "openai",
             },
         ) is True
         assert appmod._goal_runs_live(
             "Draft an investigation report for a student conduct incident.",
             school_semantics={
-                "school_domain": True, "case_relation": "new_case"
+                "checked": True,
+                "school_domain": True,
+                "case_relation": "new_case",
+                "source": "openai",
             },
         ) is True
         assert appmod._goal_runs_live(
             "Prepare a World Cup report.",
             active_workflow_id="ad_hoc_school_event_reporting",
             school_semantics={
-                "school_domain": False, "case_relation": "unrelated"
+                "checked": True,
+                "school_domain": False,
+                "case_relation": "unrelated",
+                "source": "openai",
             },
         ) is False
     finally:

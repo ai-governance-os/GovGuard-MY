@@ -121,7 +121,7 @@ async function loadConfig() {
     // run (workflow listed AND a key present); "live" only when the whole
     // server planner is live.
     const liveList = c.live_workflows || [];
-    const liveOn = !!c.live_ready;
+    const liveOn = !!(c.live_configured ?? c.live_ready);
     state.liveWorkflows = liveList;
     state.liveSchoolInputs = !!c.live_school_inputs;
     state.liveReady = !!c.live_ready || c.planner === "openai";
@@ -129,8 +129,8 @@ async function loadConfig() {
     if (modePill) {
       // Short, judge-readable badge (Brief 8 Issue 2); the full explanation
       // lives in the tooltip.
-      if (c.planner === "openai") modePill.textContent = "Mode: live API";
-      else if (liveOn) modePill.textContent = "Mode: mixed live";
+      if (c.planner === "openai") modePill.textContent = "Mode: API configured";
+      else if (liveOn) modePill.textContent = "Mode: mixed API configured";
       else modePill.textContent = "Mode: deterministic demo";
       const detail = (liveOn && c.planner !== "openai")
         ? "Core governance demo is deterministic; live workflows: "
@@ -149,8 +149,8 @@ async function loadConfig() {
       const genLive = c.planner === "openai"
         || (liveOn && liveList.includes("ad_hoc_school_event_reporting"));
       genBadge.textContent = genLive
-        ? "Live API · governed"
-        : "Deterministic demo (live-ready)";
+        ? "API configured · use shown per task"
+        : "Deterministic demo";
     }
   } catch (e) { const cm = $("#cfg-mini"); if (cm) cm.textContent = ""; }
 }
@@ -189,6 +189,7 @@ async function startTask(options = {}) {
       body: JSON.stringify({
         raw_goal: goal,
         active_workflow_id: state.activeWorkflowId,
+        scripted_workflow_id: options.scriptedWorkflowId || null,
         parent_task_id: state.activeCaseTaskId,
         interaction_mode: (
           options.direct === true || !state.liveSchoolInputs || !state.liveReady
@@ -277,6 +278,275 @@ function prettyReason(raw) {
   return raw;
 }
 
+// ---------------- Judge-facing outcome view model ----------------
+// Keep the four different things in a task separate:
+//   1. the user's original request boundary,
+//   2. the agent's per-action governance decisions,
+//   3. actual business executions, and
+//   4. output verification.
+// This prevents a blocked request from reading as a broken task, and prevents
+// an internal verifier record from being counted as a failed business action.
+function isVerifierSyntheticExecution(execution) {
+  return String((execution || {}).action_id || "") === "verifier_synthetic";
+}
+
+function isSchoolCoverSummary(text) {
+  const value = String(text || "").trim();
+  return /^I prepared \d+ governed Markdown drafts?:/i.test(value)
+    || /^我已准备\s*\d+\s*份受治理的\s*Markdown\s*草稿/.test(value);
+}
+
+function governedBusinessExecutions(d) {
+  return (d && Array.isArray(d.executions) ? d.executions : [])
+    .filter(execution => !isVerifierSyntheticExecution(execution));
+}
+
+function governedVisibleExecutions(d) {
+  // The school cover is a conversational companion, not a deliverable/action.
+  // It must never inflate the execution counter.
+  return governedBusinessExecutions(d).filter(execution =>
+    !isSchoolCoverSummary(execution.output_summary));
+}
+
+function governedArtifactFiles(d) {
+  const files = [];
+  governedBusinessExecutions(d).forEach(execution => {
+    if (execution.status !== "success") return;
+    (execution.affected_resources || []).forEach(path => {
+      const value = String(path || "").trim();
+      if (value && !files.includes(value)) files.push(value);
+    });
+  });
+  return files;
+}
+
+function routeHistogram(decisions) {
+  const counts = { BLUE: 0, GREEN: 0, RED: 0, INFEASIBLE: 0 };
+  (decisions || []).forEach(decision => {
+    const route = String(decision.route || "").toUpperCase();
+    if (Object.prototype.hasOwnProperty.call(counts, route)) counts[route] += 1;
+  });
+  return counts;
+}
+
+function inputGovernanceFor(d) {
+  const pack = d && d.response_pack;
+  const boundary = pack && pack.input_governance;
+  return boundary && typeof boundary === "object" ? boundary : null;
+}
+
+function safeTransformationTexts(boundary) {
+  if (!boundary || !Array.isArray(boundary.safe_transformations)) return [];
+  return boundary.safe_transformations.map(item => {
+    if (typeof item === "string") return item.trim();
+    if (!item || typeof item !== "object") return "";
+    return String(item.label || item.description || item.safe_request
+      || item.transformation || item.summary || "").trim();
+  }).filter(Boolean);
+}
+
+function humanizeBoundaryReason(raw) {
+  const source = raw && typeof raw === "object"
+    ? (raw.message || raw.reason || raw.description || raw.code || "") : raw;
+  const original = String(source || "").trim();
+  if (!original) return "The original request crosses a configured governance boundary.";
+  const pretty = String(prettyReason(original) || "").trim();
+  // Opaque policy identifiers belong in Pipeline detail, not in the main card.
+  if (pretty === original && /^[a-z0-9_.:-]+$/i.test(original)) {
+    return "The original request crosses a configured data, evidence, or authority boundary.";
+  }
+  return pretty || "The original request crosses a configured governance boundary.";
+}
+
+function humanizeDecisionReason(decision, route) {
+  const reasons = decision && Array.isArray(decision.reasons) ? decision.reasons : [];
+  for (const item of reasons) {
+    const raw = String(item || "").trim();
+    if (!raw || /^(risk_recommended|policy_floor|data_use_guard)[:_]/i.test(raw)
+        || /^safe_alternative:/i.test(raw)) continue;
+    const pretty = String(prettyReason(raw) || "").trim();
+    if (pretty && !/^[a-z0-9_.:-]+$/i.test(pretty)) return pretty;
+  }
+  if (route === "BLUE") return "safe — within policy";
+  if (route === "GREEN") return "human approval is required before release or official write";
+  if (route === "RED") return "blocked by the configured data-use or authority boundary";
+  if (route === "INFEASIBLE") return "required evidence is missing; the system will not invent it";
+  return "governance decision recorded";
+}
+
+const VERIFICATION_ISSUE_COPY = {
+  "refusal_sniff": "The response contains refusal or generation-failure text instead of the requested work.",
+  "artifact_failure_sniff": "A generated file contains internal generation-failure text.",
+  "school.execution_completeness": "One or more governed outputs were not completed.",
+  "school.artifact_contract": "A file does not match its intended school-document role.",
+  "school.chat_companion_scope": "The reply does not accurately match the generated files.",
+  "school.markdown_hygiene": "A Markdown file needs formatting or encoding cleanup.",
+  "school.role_isolation": "Content from different document roles was mixed together.",
+  "school.fact_grounding": "A draft contains unsupported facts or lost supplied facts.",
+  "school.cross_artifact_similarity": "Two outputs are duplicated or insufficiently distinct.",
+};
+
+function humanizeVerificationIssues(verification) {
+  if (!verification || verification.pass !== false) return [];
+  const issues = [];
+  const judge = verification.judge || null;
+  if (judge && judge.pass === false && Array.isArray(judge.issues)) {
+    judge.issues.forEach(issue => {
+      const text = String(issue || "").trim();
+      if (text && !issues.includes(text)) issues.push(text);
+    });
+  }
+  (verification.checks || []).filter(check => check && check.pass === false)
+    .forEach(check => {
+      const name = String(check.name || "");
+      const copy = VERIFICATION_ISSUE_COPY[name]
+        || "A generated output did not pass the required quality checks.";
+      if (!issues.includes(copy)) issues.push(copy);
+    });
+  if (!issues.length) issues.push("The generated output needs repair before it can be used.");
+  return issues;
+}
+
+function greenActionState(d) {
+  const decisions = (d && d.decisions) || [];
+  const green = decisions.filter(decision =>
+    String(decision.route || "").toUpperCase() === "GREEN");
+  if (!green.length) return null;
+  if (d.status === "awaiting_approval" || (d.pending_approvals || []).length) return "pending";
+  const executions = governedBusinessExecutions(d);
+  const approved = green.some(decision => executions.some(execution =>
+    execution.action_id === decision.action_id && execution.status === "success"));
+  return approved ? "approved" : "rejected";
+}
+
+function buildOutcomeView(d) {
+  const route = String((d && d.final_route) || "").toUpperCase();
+  const decisions = (d && d.decisions) || [];
+  const routes = routeHistogram(decisions);
+  const files = governedArtifactFiles(d);
+  const executions = governedVisibleExecutions(d);
+  const verification = d && d.verification;
+  const verificationSkipped = !!(verification
+    && typeof verification.summary === "string"
+    && verification.summary.startsWith("skipped:"));
+  const issues = humanizeVerificationIssues(verification);
+  const boundary = inputGovernanceFor(d);
+  const boundaryDecision = String((boundary && boundary.decision) || "").toUpperCase();
+  const boundaryBlocks = boundaryDecision === "RED" || boundaryDecision === "INFEASIBLE";
+  const transformations = safeTransformationTexts(boundary);
+  const hasSafeAction = files.length > 0 || executions.some(execution =>
+    execution.status === "success");
+  const safeStop = (route === "RED" || route === "INFEASIBLE")
+    && files.length === 0 && !hasSafeAction && transformations.length === 0;
+  const partial = (boundaryBlocks && (transformations.length > 0 || hasSafeAction))
+    || (files.length > 0
+      && Object.values(routes).filter(count => count > 0).length > 1);
+  const needsRepair = !!(verification && verification.enabled !== false
+    && verification.pass === false && !safeStop);
+  const verified = !!(verification && verification.enabled !== false
+    && verification.pass === true && !verificationSkipped
+    && ((verification.checks || []).length || verification.judge));
+
+  let quality = "NONE";
+  if (safeStop) quality = "SAFE_STOP";
+  else if (needsRepair) quality = "NEEDS_REPAIR";
+  else if (verified) quality = "VERIFIED";
+  else if (partial) quality = "PARTIAL_GOVERNED";
+
+  return {
+    route, routes, files, executions, verification, verificationSkipped,
+    issues, boundary, boundaryDecision, boundaryBlocks, transformations,
+    safeStop, partial, needsRepair, verified, quality,
+    greenState: greenActionState(d),
+  };
+}
+
+function governedPrimaryAnswer(rawChatText, d, view) {
+  const raw = String(rawChatText || "").trim();
+  const replaceCover = isSchoolCoverSummary(raw);
+  if (!replaceCover && !view.safeStop && !view.needsRepair) return raw;
+  if (view.safeStop) {
+    return view.route === "RED"
+      ? "Governance stopped the unsafe request. No deliverable was generated and no action was taken. A safe alternative can be prepared without using the blocked data or disclosure."
+      : "The requested result cannot be produced reliably from the available evidence. No deliverable was generated and no action was taken; missing facts will not be invented.";
+  }
+  if (view.needsRepair) {
+    const noun = view.files.length === 1 ? "draft was" : "drafts were";
+    return `${view.files.length} governed ${noun} created, but verification found `
+      + `${view.issues.length} issue${view.issues.length === 1 ? "" : "s"}. `
+      + "The output is held for repair and is not ready for external use.";
+  }
+  if (replaceCover && view.files.length) {
+    const noun = view.files.length === 1 ? "draft" : "drafts";
+    const prefix = view.partial
+      ? "The safe parts of the request were completed; unsafe parts remained blocked. "
+      : "";
+    return `${prefix}I prepared ${view.files.length} governed Markdown ${noun}. `
+      + (view.verified ? "Verification passed. " : "")
+      + "Nothing was sent or published.";
+  }
+  return raw;
+}
+
+function appendUserRequestBoundary(parent, boundary, compact) {
+  if (!parent || !boundary) return;
+  const decision = String(boundary.decision || "REVIEW").toUpperCase();
+  const box = document.createElement("section");
+  box.className = `request-boundary boundary-${decision}`
+    + (compact ? " request-boundary-compact" : "");
+
+  const head = document.createElement("div");
+  head.className = "request-boundary-head";
+  const title = document.createElement("strong");
+  title.textContent = "User request boundary";
+  const chip = document.createElement("span");
+  chip.className = `boundary-chip boundary-chip-${decision}`;
+  chip.textContent = decision;
+  head.appendChild(title);
+  head.appendChild(chip);
+  box.appendChild(head);
+
+  const blocked = boundary.blocked_request;
+  if (blocked) {
+    const line = document.createElement("p");
+    line.className = "request-boundary-blocked";
+    line.textContent = typeof blocked === "string"
+      ? `Blocked from the original request: ${blocked}`
+      : "The unsafe part of the original request was blocked.";
+    box.appendChild(line);
+  }
+
+  const reasons = Array.isArray(boundary.reasons) ? boundary.reasons : [];
+  if (reasons.length) {
+    const list = document.createElement("ul");
+    list.className = "request-boundary-reasons";
+    reasons.slice(0, compact ? 2 : 3).forEach(reason => {
+      const item = document.createElement("li");
+      item.textContent = humanizeBoundaryReason(reason);
+      list.appendChild(item);
+    });
+    box.appendChild(list);
+  }
+
+  const transformations = safeTransformationTexts(boundary);
+  if (transformations.length) {
+    const safe = document.createElement("div");
+    safe.className = "request-boundary-safe";
+    const label = document.createElement("strong");
+    label.textContent = "Safe transformation";
+    safe.appendChild(label);
+    const list = document.createElement("ul");
+    transformations.slice(0, compact ? 2 : 3).forEach(transformation => {
+      const item = document.createElement("li");
+      item.textContent = transformation;
+      list.appendChild(item);
+    });
+    safe.appendChild(list);
+    box.appendChild(safe);
+  }
+  parent.appendChild(box);
+}
+
 // Governance pipeline card — a judge-visible, plain-language view of the
 // 106 -> 101A -> 102 -> 101B -> 103 -> 105 -> 107 -> 110 path for THIS task,
 // built from the same audit events the runtime emits. The point it makes:
@@ -317,7 +587,7 @@ function renderExtraCard(bubble, d) {
   el.hidden = true; el.innerHTML = "";
 }
 
-function renderGovPipeline(bubble, d) {
+function renderGovPipeline(bubble, d, providedView) {
   const el = bubble.querySelector(".gov-pipeline");
   if (!el) return;
   const decisions = d.decisions || [];
@@ -326,6 +596,7 @@ function renderGovPipeline(bubble, d) {
   }
   const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g,
     c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const view = providedView || buildOutcomeView(d);
   const events = d.events || [];
   const rank = { BLUE: 0, GREEN: 1, INFEASIBLE: 2, RED: 3 };
   const route = d.final_route
@@ -380,19 +651,24 @@ function renderGovPipeline(bubble, d) {
   if (sig.length) riskDet = sig.slice(0, 4).join(", ");
   else if (showCleared) riskDet = "reversible · non-destructive · no external send · no system-level change — low risk";
   else if (route === "RED") riskDet = "blocked before execution — risk came from pre-governance/data-use";
-  else if (route === "INFEASIBLE") riskDet = "stopped before execution — missing required policy data";
+  else if (route === "INFEASIBLE") riskDet = "stopped before execution — required evidence or authority is missing";
   else if (route === "GREEN") riskDet = "action checked — approval required by release/official-write policy";
   else riskDet = "scored — no high-risk action signals";
 
   let reason = "";
   const dec = decisions.find(de => de.route === route) || decisions[0];
-  if (dec && (dec.reasons || []).length) reason = prettyReason(dec.reasons.join(" ; "));
+  if (dec) reason = humanizeDecisionReason(dec, route);
 
   const needApproval = decisions.some(de => de.approval_required);
-  const execs = d.executions || [];
-  const anyOk = execs.some(e => e.status === "success");
-  let approvalDet = needApproval ? (anyOk ? "approved by a human" : "approval required") :
-                                   "not required (within policy)";
+  const execs = view.executions;
+  let approvalDet = "not required (within policy)";
+  if (needApproval) {
+    if (view.greenState === "pending") approvalDet = "approval required — external action remains paused";
+    else if (view.greenState === "approved") approvalDet = view.needsRepair
+      ? "approval recorded — release held until output repair"
+      : "approved by a human";
+    else approvalDet = "not approved — nothing released";
+  }
   let execDet;
   const okCount = execs.filter(e => e.status === "success").length;
   const gs = wfDetected ? greenGateState(d) : null;
@@ -407,10 +683,20 @@ function renderGovPipeline(bubble, d) {
     execDet = `${sm.auto || 0} steps done`
       + (sm.self_blocked ? ` · ${sm.self_blocked} self-blocked` : "")
       + (sm.approval ? ` · ${sm.approval} ${greenGateTag(gs)}` : "");
-  } else if (route === "RED") { approvalDet = "—"; execDet = "blocked — nothing executed"; }
-  else if (route === "INFEASIBLE") { approvalDet = "—"; execDet = "not run — honest limitation"; }
+  } else if (view.safeStop && route === "RED") {
+    approvalDet = "—"; execDet = "safe stop — no deliverable executed";
+  }
+  else if (view.safeStop && route === "INFEASIBLE") {
+    approvalDet = "—"; execDet = "safe stop — unsupported result not produced";
+  }
+  else if (view.partial) {
+    execDet = okCount
+      ? `${okCount} safe action(s) completed · unsafe/unsupported action(s) held`
+      : "safe transformation proposed · no action executed yet";
+  }
   else {
     execDet = okCount ? `${okCount} action(s) executed` : "not run";
+    if (view.needsRepair && okCount) execDet += " · outputs held for repair";
   }
   // Verification (110) — honest, route-aware text. Never a bare "not run":
   // a blocked or infeasible route has nothing to verify; a workflow awaiting
@@ -418,8 +704,14 @@ function renderGovPipeline(bubble, d) {
   const ver = d.verification;
   const verChecks = (ver && ver.checks) ? ver.checks.length : 0;
   const passLbl = `passed (${verChecks} check${verChecks === 1 ? "" : "s"})`;
-  let verDet, verFail = false;
-  if (wfDetected) {
+  let verDet, verFail = false, verIssues = [];
+  if (view.safeStop) {
+    verDet = "not applicable — governance stopped the task before a deliverable was produced";
+  } else if (view.needsRepair) {
+    verFail = true;
+    verIssues = view.issues.slice(0, 3);
+    verDet = `NEEDS REPAIR — ${view.issues.length} issue${view.issues.length === 1 ? "" : "s"} found`;
+  } else if (wfDetected) {
     if (gs === "pending") {
       verDet = "deferred — runs after you verify the high-impact step";
     } else if (gs === "approved") {
@@ -428,7 +720,11 @@ function renderGovPipeline(bubble, d) {
       verDet = "n/a — high-impact write was rejected";
     } else if (verChecks) {
       verFail = !ver.pass;
-      verDet = ver.pass ? passLbl : ("FAILED: " + (ver.summary || ""));
+      if (ver.pass) verDet = passLbl;
+      else {
+        verIssues = humanizeVerificationIssues(ver).slice(0, 3);
+        verDet = `NEEDS REPAIR — ${verIssues.length || 1} issue${verIssues.length === 1 ? "" : "s"} found`;
+      }
     } else {
       verDet = "low-risk drafts — verified inline";
     }
@@ -438,7 +734,11 @@ function renderGovPipeline(bubble, d) {
     verDet = "n/a — no action was taken";
   } else if (ver && ver.enabled !== false && verChecks) {
     verFail = !ver.pass;
-    verDet = ver.pass ? passLbl : ("FAILED: " + (ver.summary || ""));
+    if (ver.pass) verDet = passLbl;
+    else {
+      verIssues = humanizeVerificationIssues(ver).slice(0, 3);
+      verDet = `NEEDS REPAIR — ${verIssues.length || 1} issue${verIssues.length === 1 ? "" : "s"} found`;
+    }
   } else {
     verDet = "no automated checks for this output type";
   }
@@ -446,33 +746,63 @@ function renderGovPipeline(bubble, d) {
   const step = (mod, lab, det, extra) =>
     `<div class="gp-step ${extra || ""}"><span class="gp-mod">${esc(mod)}</span>`
     + `<span class="gp-lab">${esc(lab)}</span><span class="gp-det">${det}</span></div>`;
+  const boundary = view.boundary;
+  const boundaryReasons = boundary && Array.isArray(boundary.reasons)
+    ? boundary.reasons.slice(0, 2).map(humanizeBoundaryReason) : [];
+  const boundarySafe = view.transformations.slice(0, 2);
+  const boundaryHtml = boundary
+    ? `<div class="gp-request-boundary boundary-${esc(view.boundaryDecision || "REVIEW")}">`
+      + `<div class="gp-boundary-head"><b>User request boundary</b>`
+      + `<span class="boundary-chip boundary-chip-${esc(view.boundaryDecision || "REVIEW")}">`
+      + `${esc(view.boundaryDecision || "REVIEW")}</span></div>`
+      + (boundary.blocked_request
+          ? `<div class="gp-boundary-blocked">${esc(typeof boundary.blocked_request === "string"
+              ? boundary.blocked_request : "The unsafe part of the original request was blocked.")}</div>`
+          : "")
+      + (boundaryReasons.length
+          ? `<ul>${boundaryReasons.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : "")
+      + (boundarySafe.length
+          ? `<div class="gp-boundary-safe"><b>Safe transformation</b><ul>`
+            + `${boundarySafe.map(item => `<li>${esc(item)}</li>`).join("")}</ul></div>` : "")
+      + `</div>`
+    : "";
+  const verificationHtml = verFail
+    ? `<b class="gp-needs-repair">${esc(verDet)}</b>`
+      + (verIssues.length
+          ? `<ul class="gp-issues">${verIssues.map(issue => `<li>${esc(issue)}</li>`).join("")}</ul>`
+          : "")
+    : esc(verDet);
+  const decisionHtml = wfDetected
+    ? `<b class="gp-route COMPOSITE">COMPOSITE</b> — governed workflow: `
+      + `${sm.auto || 0} BLUE · ${sm.self_blocked || 0} RED self-blocked · `
+      + `${sm.approval || 0} GREEN`
+      + (sm.self_blocked
+          ? `<div class="gp-note">RED self-block: ${esc(redReason
+              || "status/income-based softening of a parent message")}. `
+            + `The low-risk steps ran; `
+            + (gs === "approved"
+                 ? "the high-impact write was human-verified and simulated in demo mode"
+                 : gs === "rejected"
+                 ? "the high-impact write was rejected and the protected record remains unchanged"
+                 : "the high-impact write is paused for educator verification")
+            + ` — this is a composite governed workflow, not a single failed decision.</div>`
+          : "")
+    : view.partial
+    ? `<b class="gp-route PARTIAL">PARTIAL GOVERNED</b> — `
+      + `${view.routes.BLUE || 0} BLUE · ${view.routes.GREEN || 0} GREEN · `
+      + `${view.routes.RED || 0} RED · ${view.routes.INFEASIBLE || 0} INFEASIBLE`
+    : `<b class="gp-route ${esc(route)}">${esc(route)}</b>${reason ? " — " + esc(reason) : ""}`;
   el.innerHTML =
-    `<div class="gp-title">Governance pipeline — the planner proposes, governance decides</div>`
+    boundaryHtml
+    + `<div class="gp-title">Agent action governance — the planner proposes, governance decides</div>`
     + step("106", "Intake", "request received &amp; normalized")
     + step("101A", "Pre-governance", esc(preDet))
     + step("102", "Planner", esc(plannerDet) + " — <em>cannot self-authorise</em>")
     + step("101B", "Action risk", esc(riskDet))
-    + step("103", "Decision",
-        wfDetected
-          ? `<b class="gp-route COMPOSITE">COMPOSITE</b> — governed workflow: `
-            + `${sm.auto || 0} BLUE · ${sm.self_blocked || 0} RED self-blocked · `
-            + `${sm.approval || 0} GREEN`
-            + (sm.self_blocked
-                ? `<div class="gp-note">RED self-block: ${esc(redReason
-                    || "status/income-based softening of a parent message")}. `
-                  + `The low-risk steps ran; `
-                  + (gs === "approved"
-                       ? "the high-impact write was human-verified and simulated in demo mode"
-                       : gs === "rejected"
-                       ? "the high-impact write was rejected and the protected record remains unchanged"
-                       : "the high-impact write is paused for educator verification")
-                  + ` — this is a composite governed workflow, not a single failed decision.</div>`
-                : "")
-          : `<b class="gp-route ${esc(route)}">${esc(route)}</b>${reason ? " — " + esc(reason) : ""}`,
-        "gp-decision")
+    + step("103", "Decision", decisionHtml, "gp-decision")
     + step("105", "Human gate", esc(approvalDet))
     + step("107", "Execution", esc(execDet))
-    + step("110", "Verification", verFail ? `<b>${esc(verDet)}</b>` : esc(verDet));
+    + step("110", "Verification", verificationHtml);
   el.hidden = false;
 }
 
@@ -629,6 +959,10 @@ function renderResponsePack(node, d) {
     + `<span class="response-pack-sub">${escapeHtml(pack.case_summary || "School case")}</span></div>`
     + `<span class="response-pack-severity">${escapeHtml(pack.severity || "unknown")}</span>`;
   el.appendChild(head);
+
+  // Layer 1 — govern the user's original request. This is deliberately
+  // separate from the per-deliverable/action governance shown below.
+  appendUserRequestBoundary(el, pack.input_governance, false);
 
   const fieldset = document.createElement("fieldset");
   fieldset.className = "response-pack-list";
@@ -934,6 +1268,7 @@ function renderAgentMessage(node, d) {
   else bubble.classList.add("status-running");
 
   renderResponsePack(node, d);
+  const outcomeView = buildOutcomeView(d);
 
   // "🔍 Searched the web" indicator. We surface this BEFORE the answer
   // so the user knows the reply is grounded in live results, not just
@@ -979,7 +1314,8 @@ function renderAgentMessage(node, d) {
   // panel + the outcome line, so we don't surface a raw step body as the chat
   // answer — otherwise the GREEN step's "awaiting verification" notice would
   // still show as the reply AFTER the human has already approved/rejected.
-  const chatText = (d.workflow && d.workflow.detected) ? "" : extractChatAnswer(d);
+  const rawChatText = (d.workflow && d.workflow.detected) ? "" : extractChatAnswer(d);
+  const chatText = governedPrimaryAnswer(rawChatText, d, outcomeView);
   if (chatText) {
     answer.innerHTML = linkifyCitations(escapeHtml(chatText), webHits);
     answer.style.display = "";
@@ -1038,6 +1374,14 @@ function renderAgentMessage(node, d) {
   // route chips
   const routes = bubble.querySelector(".route-row");
   routes.innerHTML = "";
+  if (outcomeView.boundary) {
+    const boundaryChip = document.createElement("span");
+    boundaryChip.className = "chip USER-BOUNDARY "
+      + (outcomeView.boundaryDecision || "REVIEW");
+    boundaryChip.textContent = `USER REQUEST ${outcomeView.boundaryDecision || "REVIEW"}`;
+    boundaryChip.title = "Layer 1: governance boundary applied to the original user request.";
+    routes.appendChild(boundaryChip);
+  }
   if (d.final_route) {
     const wf = d.workflow;
     if (wf && wf.detected) {
@@ -1057,6 +1401,12 @@ function renderAgentMessage(node, d) {
         + (sm.self_blocked
             ? "\nOne step was self-blocked by the agent's own data-use guard (see panel)."
             : "");
+      routes.appendChild(chip);
+    } else if (outcomeView.partial) {
+      const chip = document.createElement("span");
+      chip.className = "chip PARTIAL";
+      chip.textContent = "PARTIAL GOVERNED";
+      chip.title = "Unsafe or unsupported parts were held; safe actions remained independently governed.";
       routes.appendChild(chip);
     } else {
       const chip = document.createElement("span");
@@ -1123,40 +1473,53 @@ function renderAgentMessage(node, d) {
   // verifier saw nothing to check (e.g. all executions failed) — in
   // that case do NOT show a green VERIFIED chip; it would be misleading
   // since the task itself failed.
-  const verSkipped = ver && typeof ver.summary === "string"
-                     && ver.summary.startsWith("skipped:");
-  if (ver && ver.enabled !== false && !verSkipped
-      && ((ver.checks || []).length > 0 || ver.judge)) {
+  const verSkipped = outcomeView.verificationSkipped;
+  if (outcomeView.safeStop) {
+    const chip = document.createElement("span");
+    chip.className = "chip SAFE-STOP";
+    chip.textContent = "SAFE STOP";
+    chip.title = "Governance stopped the task before a deliverable or external action was produced.";
+    routes.appendChild(chip);
+  } else if (outcomeView.needsRepair) {
+    const chip = document.createElement("span");
+    chip.className = "chip NEEDS-REPAIR";
+    chip.textContent = "NEEDS REPAIR";
+    chip.title = outcomeView.issues.slice(0, 3).join("\n")
+      || "The output is held for repair before use.";
+    routes.appendChild(chip);
+  } else if (ver && ver.enabled !== false && !verSkipped
+      && outcomeView.verified) {
     const chip = document.createElement("span");
     const judge = ver.judge || null;
     const judgeRan = judge && typeof judge.pass === "boolean";
-    const judgeBit = judgeRan
-      ? `\nLLM judge: ${judge.pass ? "PASS" : "FAIL"} `
-        + `(score ${judge.score}/${judge.threshold}, rubric=${judge.rubric_used})`
-        + (judge.issues && judge.issues.length
-            ? "\nIssues:\n  - " + judge.issues.join("\n  - ")
-            : "")
-      : (judge && judge.skipped_reason
-          ? `\nLLM judge: not applicable (${judge.skipped_reason})`
-          : "");
-    if (ver.pass) {
-      chip.className = "chip VERIFIED";
-      chip.textContent = judgeRan && judge.pass
-        ? `VERIFIED ${judge.score}`
-        : "VERIFIED";
-      chip.title = (ver.summary || "all checks passed") + judgeBit;
-    } else {
-      chip.className = "chip VERIFY-FAIL";
-      chip.textContent = "VERIFY-FAIL";
-      chip.title = (ver.summary || "verification failed") + judgeBit;
-    }
+    chip.className = "chip VERIFIED";
+    chip.textContent = judgeRan && judge.pass
+      ? `VERIFIED ${judge.score}`
+      : "VERIFIED";
+    chip.title = judgeRan && judge.pass
+      ? `Output verification passed (score ${judge.score}/${judge.threshold}).`
+      : "Output verification passed.";
+    routes.appendChild(chip);
+  }
+  const generationLabels = {
+    live_api_verified: ["LIVE API USED", "The provider output passed grounding and artifact verification."],
+    hybrid_live_with_deterministic_repair: ["LIVE + SAFE FALLBACK", "Some provider output was retained; failed artifacts used verified deterministic repair."],
+    deterministic_fallback: ["DETERMINISTIC FALLBACK", "The API output was unavailable or rejected; governed deterministic artifacts were used."],
+    failed_closed: ["GENERATION HELD", "Artifact generation did not meet the output contract and was held."],
+  };
+  if (generationLabels[d.generation_mode]) {
+    const [label, title] = generationLabels[d.generation_mode];
+    const chip = document.createElement("span");
+    chip.className = "chip GENERATION-MODE";
+    chip.textContent = label;
+    chip.title = title;
     routes.appendChild(chip);
   }
 
   // Governance pipeline card (judge-visible). Makes clear the LLM is not the
   // authority: planner proposes -> governance decides -> human approves ->
   // execution -> verification, with the route + reason in plain view.
-  renderGovPipeline(bubble, d);
+  renderGovPipeline(bubble, d, outcomeView);
   renderExtraCard(bubble, d);
   // Workflow Autonomy panel (102W/101D) — beside the governance card.
   renderWorkflowPanel(bubble, d);
@@ -1348,6 +1711,7 @@ function greenLearningState(d) {
 }
 
 function describeOutcome(d) {
+  const view = buildOutcomeView(d);
   // Workflow tasks: a self-blocked internal step must NOT read as a failed
   // task. Summarise the governed workflow (display only — the route stays RED).
   const wf = d.workflow;
@@ -1431,15 +1795,17 @@ function describeOutcome(d) {
       + String(alt).replace(/^safe_alternative:\s*/i, "");
     return msg;
   }
-  if (!d.executions || !d.executions.length) {
+  const visibleExecutions = view.executions;
+  if (!visibleExecutions.length) {
     if (route === "GREEN") return "Approved and ran.";
     return "Done.";
   }
-  const oks = d.executions.filter(e => e.status === "success");
-  const fails = d.executions.filter(e => e.status !== "success");
+  const oks = visibleExecutions.filter(e => e.status === "success");
+  const fails = visibleExecutions.filter(e => e.status !== "success");
   const parts = [];
   if (oks.length) parts.push(`${oks.length} step${oks.length>1?"s":""} succeeded`);
   if (fails.length) parts.push(`${fails.length} failed/denied`);
+  if (view.needsRepair) parts.push("output held for repair");
   return parts.join(" · ") || "Done.";
 }
 
@@ -2447,6 +2813,20 @@ async function decidePatch(patch_id, status) {
 }
 
 // ---------------- Boot ----------------
+// Pure view-model exports for the Node-based UI contract tests. Browsers do
+// not define CommonJS `module`, so this has no effect on the shipped page.
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    buildOutcomeView,
+    governedPrimaryAnswer,
+    governedBusinessExecutions,
+    governedVisibleExecutions,
+    governedArtifactFiles,
+    humanizeVerificationIssues,
+    humanizeBoundaryReason,
+  };
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initTheme();
   loadConfig();
@@ -2477,7 +2857,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if ($("#run-btn").disabled) return;
     $("#goal").value = b.dataset.prompt;
     autoSizeTextarea($("#goal"));
-    startTask({direct: true});
+    startTask({
+      direct: true,
+      scriptedWorkflowId: b.dataset.workflowId || null,
+    });
   });
   const dockToggle = $("#demo-dock-toggle");
   if (dockToggle) dockToggle.addEventListener("click", () => {

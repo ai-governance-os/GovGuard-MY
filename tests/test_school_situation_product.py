@@ -95,6 +95,104 @@ def test_unseen_active_hazard_builds_complete_non_authorising_pack():
     assert "route" not in str(pack).lower()
 
 
+def test_live_style_prepare_action_does_not_add_generic_incident_document():
+    semantics = _semantics({
+        "family": "safety_emergency",
+        "phase": "ongoing",
+        "severity": "critical",
+        "signals": ["active_danger", "injury_or_illness", "minor_involved"],
+        "affected_people_types": ["student"],
+    })
+    semantics["requested_action"] = "prepare"
+    compiled = SchoolSituationCompiler(POLICY).compile(
+        "A snake bit a Year 4 student and may still be loose on campus.",
+        semantics,
+    )
+    roles = {
+        item["artifact_role"]
+        for item in compiled["response_pack"]["deliverables"]
+        if item.get("selected") and item.get("kind") == "artifact"
+    }
+    assert "school_document" not in roles
+    assert {
+        "internal_incident_report", "private_parent_notice",
+        "medical_handover_script", "site_safety_checklist",
+        "emergency_contact_script", "student_accountability_checklist",
+    }.issubset(roles)
+
+
+def test_response_pack_prunes_uncontracted_chat_release_proposal(tmp_path: Path):
+    compiled = SchoolSituationCompiler(POLICY).compile(
+        "Please draft this school incident report; do not send it.",
+        {
+            "checked": False,
+            "school_domain": True,
+            "case_relation": "new_case",
+            "requested_action": "",
+            "audience": "unknown",
+            "data_use_concepts": [],
+            "situation": {},
+            "source": "fallback",
+        },
+    )
+    envelope = _envelope(tmp_path, compiled)
+    external = CandidateAction(
+        tool="chat",
+        operation="answer",
+        target="external recipient",
+        purpose="request human approval before external release",
+        expected_effect="send the report after approval",
+        reversibility="high",
+        uncertainty="low",
+        requires_governance=True,
+        metadata={},
+    )
+    plan = CandidatePlan(
+        task_id=envelope.task_id,
+        planner_id="fallback_planner",
+        planning_mode="direct",
+        actions=[external],
+    )
+    result = reconcile_school_response_pack(plan, envelope)
+    assert external.action_id in result["superseded"]
+    assert external not in plan.actions
+
+
+def test_draft_only_clarification_cannot_regrow_release_gate(tmp_path: Path):
+    goal = "Please send this school incident report now."
+    compiled = SchoolSituationCompiler(POLICY).compile(
+        goal,
+        {
+            "checked": False,
+            "school_domain": True,
+            "case_relation": "new_case",
+            "requested_action": "",
+            "audience": "unknown",
+            "data_use_concepts": [],
+            "situation": {},
+            "source": "fallback",
+        },
+        clarification_answers={
+            "external_recipient": "Draft only - do not send",
+        },
+    )
+    envelope = _envelope(tmp_path, compiled)
+    envelope.raw_goal = envelope.normalized_goal = goal
+    plan = CandidatePlan(
+        task_id=envelope.task_id,
+        planner_id="fallback_planner",
+        planning_mode="direct",
+        actions=[],
+    )
+    reconcile_school_response_pack(plan, envelope)
+    result = normalize_school_markdown_plan(plan, envelope)
+    assert result["release_gate_action_ids"] == []
+    assert not any(
+        action.metadata.get("external_release_action") is True
+        for action in plan.actions
+    )
+
+
 def test_rejected_live_bundle_gets_complete_valid_safe_markdown_pack(tmp_path: Path):
     class BrokenBundleLLM:
         def __init__(self):
@@ -195,6 +293,23 @@ def test_only_life_safety_unknown_causes_one_clarification():
         clarification_answers={"immediate_danger": "Unknown"},
     )
     assert resumed["response_pack"]["critical_question"] is None
+
+
+def test_vehicle_strike_with_unknown_current_danger_asks_once():
+    semantics = _semantics({
+        "family": "health_medical", "phase": "unknown", "severity": "high",
+        "signals": ["injury_or_illness", "minor_involved"],
+        "affected_people_types": ["student"],
+        "unknowns": [{"fact_id": "danger_still_present", "impact": "life_safety"}],
+    })
+    compiled = SchoolSituationCompiler(POLICY).compile(
+        "A student was hit by a car at the school gate; current danger is unknown.",
+        semantics,
+    )
+    assert compiled["situation"]["severity"] == "high"
+    assert compiled["response_pack"]["critical_question"]["question_id"] == (
+        "immediate_danger"
+    )
 
 
 def test_coverage_reconciler_inserts_planner_omissions_as_markdown(tmp_path: Path):
@@ -502,10 +617,15 @@ def test_response_pack_api_pauses_once_and_uses_revision_lock(monkeypatch):
     assert duplicate.status_code == 409
 
 
-def test_cross_domain_signals_add_required_coverage_without_event_keywords():
+def test_cross_domain_source_facts_add_required_coverage():
     compiler = SchoolSituationCompiler(POLICY)
     compiled = compiler.compile(
-        "Handle this multi-domain school situation.",
+        (
+            "The school bus stopped after several students became ill from "
+            "canteen food. Students were evacuated to the assembly point. "
+            "A student-data file was emailed to the wrong vendor, and the "
+            "event organiser must be updated."
+        ),
         _semantics({
             "family": "health_medical",
             "secondary_families": [],

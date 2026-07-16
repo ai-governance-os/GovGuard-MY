@@ -359,6 +359,23 @@ def test_active_case_cannot_capture_unrelated_world_cup_request():
     assert new_school_case["school_domain"] is True
 
 
+def test_provider_fallback_keeps_plural_pupils_in_school_and_bounds_world_cup():
+    semantics = SchoolInputSemantics(None)
+    school = semantics.classify(
+        "Prepare a tutoring plan for pupils from low-income households."
+    )
+    unrelated = semantics.classify(
+        "Prepare a World Cup report for Brazil and Argentina."
+    )
+    assert school["school_domain"] is True
+    assert school["checked"] is False
+    assert school["case_relation"] == "new_case"
+    assert unrelated["school_domain"] is False
+    assert unrelated["checked"] is True
+    assert unrelated["case_relation"] == "unrelated"
+    assert "source_domain_boundary" in unrelated["source"]
+
+
 def test_private_send_runs_cover_and_md_before_one_green_gate(tmp_path: Path):
     envelope = _envelope(tmp_path)
     envelope.raw_goal = envelope.normalized_goal = (
@@ -671,14 +688,18 @@ def test_runtime_route_exempt_does_not_call_judge_or_inject_verify_failure(
         planning_mode="direct",
     )
     result = TaskRunResult(envelope=envelope, pre_assessment=pre, plan=plan)
-    result.decisions.append(GovernanceDecision(
-        task_id=envelope.task_id,
-        action_id=plan.actions[1].action_id,
-        route=route,
-        reasons=["governed route"],
-        ticket_required=False,
-        approval_required=False,
-    ))
+    # Every substantive action must have an explicit governance decision.
+    # Route-exempt means the complete plan was safely stopped, not that the
+    # verifier may silently ignore undecided sibling actions.
+    for action in plan.actions:
+        result.decisions.append(GovernanceDecision(
+            task_id=envelope.task_id,
+            action_id=action.action_id,
+            route=route,
+            reasons=["governed route"],
+            ticket_required=False,
+            approval_required=False,
+        ))
 
     runtime._run_verification(envelope, plan, result)
 

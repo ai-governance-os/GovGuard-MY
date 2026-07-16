@@ -57,6 +57,8 @@ def test_live_list_with_key_selects_only_listed_workflow(monkeypatch):
     # Once Route B is active, a semantic school follow-up inherits its live
     # tier even though the wording does not match the prepared workflow.
     followup = {
+        "checked": True,
+        "source": "school_semantic_llm+boundary_guard",
         "school_domain": True,
         "case_relation": "follow_up",
         "school_area": "student_support",
@@ -123,14 +125,35 @@ def test_config_exposes_live_fields(monkeypatch):
     body = c.get("/api/config").json()
     assert body["live_workflows"] == ["ad_hoc_school_event_reporting"]
     assert body["live_ready"] is False          # no key → never claim live
+    assert body["live_configured"] is False
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
     monkeypatch.setenv("TEOW_AGL_LIVE_SCHOOL_INPUTS", "1")
     body = c.get("/api/config").json()
     assert body["live_ready"] is True
+    assert body["live_configured"] is True
     assert body["live_school_inputs"] is True
     # With the opt-in switch, a semantically-classified NEW school case may
     # use the live drafting tier without weakening deterministic governance.
     assert appmod._goal_runs_live(
         "Draft an investigation report for a student conduct incident.",
-        school_semantics={"school_domain": True, "case_relation": "new_case"},
+        school_semantics={
+            "checked": True,
+            "source": "school_semantic_llm+boundary_guard",
+            "school_domain": True,
+            "case_relation": "new_case",
+        },
     ) is True
+
+
+def test_failed_semantic_preflight_never_stacks_more_live_timeouts(monkeypatch):
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("TEOW_AGL_LIVE_SCHOOL_INPUTS", "1")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
+    fallback = {
+        "checked": False, "source": "fallback",
+        "school_domain": True, "case_relation": "new_case",
+    }
+    assert appmod._goal_runs_live(
+        "A snake bit a student. Prepare the school response pack.",
+        school_semantics=fallback,
+    ) is False

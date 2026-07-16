@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="../static/style.css">
+  <title>GovGuard governance overflow stress harness</title>
+</head>
+<body>
+  <div id="test-viewport">
+    <div class="app">
+      <main class="chat-col">
+        <div class="chat">
+          <div class="msg agent">
+            <div class="who">Agent</div>
+            <div class="bubble status-done">
+              <div class="summary">Governance details remain readable in English and 中文。</div>
+              <div class="route-row">
+                <span class="chip PARTIAL">PARTIAL GOVERNED</span>
+                <span class="chip NEEDS-REPAIR">NEEDS REPAIR</span>
+              </div>
+              <section class="gov-pipeline" aria-label="Governance pipeline">
+                <div class="gp-title">Governance pipeline — the planner proposes, governance decides</div>
+                <div class="gp-step">
+                  <span class="gp-mod">101A</span>
+                  <span class="gp-lab">Pre-governance</span>
+                  <span class="gp-det">The request was normalised without changing the user's intended school-administration outcome.</span>
+                </div>
+                <div class="gp-step gp-decision">
+                  <span class="gp-mod">103</span>
+                  <span class="gp-lab">Decision</span>
+                  <span class="gp-det"><b class="gp-route PARTIAL">PARTIAL GOVERNED</b> — safe work may continue while unsafe disclosure remains blocked.</span>
+                </div>
+                <div class="gp-step">
+                  <span class="gp-mod">110</span>
+                  <span class="gp-lab">Verification</span>
+                  <span class="gp-det">
+                    <b class="gp-needs-repair">NEEDS REPAIR — full reasons follow</b>
+                    <ul class="gp-issues">
+                      <li data-marker="english">The generated documents do not yet address the requested district-level expansion support, and every external release must remain pending until an authorised human confirms the recipient and channel.</li>
+                      <li data-marker="token" data-must-wrap>missing_governance_decision_for_external_release_action_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_NO_BREAK_POINT_END</li>
+                      <li data-marker="chinese" data-must-wrap>验证未通过：文件仍缺少教育局接收人、联络渠道及授权记录；这些治理理由必须完整显示，不能隐藏、截断或跑出卡片范围。</li>
+                      <li data-marker="mixed"><code data-must-wrap>school.execution_completeness/refusal_sniff/治理验证/very-long-audit-identifier-without-a-safe-natural-break-point-0123456789-END</code></li>
+                    </ul>
+                    <p class="gp-note" data-marker="note">Nothing has been sent or published. 修复后仍须再次验证，并保留完整审计理由。</p>
+                  </span>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+  <script>
+    window.addEventListener("load", () => {
+      const requested = Number(new URLSearchParams(location.search).get("testWidth")) || window.innerWidth;
+      const viewport = document.getElementById("test-viewport");
+      viewport.style.width = `${requested}px`;
+      viewport.style.maxWidth = "100%";
+
+      requestAnimationFrame(() => {
+        const pipeline = document.querySelector(".gov-pipeline");
+        const pipelineRect = pipeline.getBoundingClientRect();
+        const targets = [
+          viewport,
+          document.querySelector(".msg"),
+          document.querySelector(".bubble"),
+          pipeline,
+          ...pipeline.querySelectorAll(".gp-title,.gp-step,.gp-det,.gp-note,.gp-issues,.gp-issues li,code")
+        ];
+        const overflow = targets.filter((node) => {
+          if (!node) return false;
+          const rect = node.getBoundingClientRect();
+          const parentRect = pipeline.contains(node) && node !== pipeline
+            ? pipelineRect
+            : viewport.getBoundingClientRect();
+          return node.scrollWidth > node.clientWidth + 1 || rect.right > parentRect.right + 1;
+        });
+        const clipped = [...pipeline.querySelectorAll(".gp-det,.gp-note,.gp-issues,.gp-issues li,code")]
+          .filter((node) => {
+            const style = getComputedStyle(node);
+            const hidden = ["hidden", "clip"].includes(style.overflowX)
+              || ["hidden", "clip"].includes(style.overflowY);
+            const ellipsis = style.textOverflow === "ellipsis";
+            const clamped = style.webkitLineClamp && style.webkitLineClamp !== "none";
+            return hidden || ellipsis || clamped;
+          });
+        const wrapped = [...pipeline.querySelectorAll("[data-must-wrap]")]
+          .filter((node) => {
+            const style = getComputedStyle(node);
+            const lineHeight = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.2;
+            return node.getBoundingClientRect().height > lineHeight * 1.45;
+          });
+        const markers = ["english", "token", "chinese", "mixed", "note"];
+        const missing = markers.filter((name) => !pipeline.querySelector(`[data-marker="${name}"]`)?.innerText.trim());
+
+        document.body.dataset.overflowCount = String(overflow.length);
+        document.body.dataset.overflowElements = overflow
+          .map((node) => node.className || node.tagName).join("|");
+        document.body.dataset.clippedCount = String(clipped.length);
+        document.body.dataset.wrappedCount = String(wrapped.length);
+        document.body.dataset.missingCount = String(missing.length);
+        document.body.dataset.viewportWidth = String(requested);
+        document.body.dataset.ready = "true";
+      });
+    });
+  </script>
+</body>
+</html>
