@@ -11,7 +11,7 @@ Teow Koon Heng, and is the subject of filed IP (see
 named after the founder (Teow Koon Heng), not a third-party product or library.
 Its architecture is the subject of filed patent PI2025005198 / PCT/IB2026/055476.
 GovGuard MY is the product; TEOW-AGL is the founder's underlying governance
-engine. The internal package/version identifiers (`teow_agl`, `10.7.x`) reflect
+engine. The internal package/version identifiers (`teow_agl`, `10.8.x`) reflect
 this lineage; they are the founder's own and are kept for technical honesty.
 
 **AI coding assistants — used for implementation.** AI coding assistants were
@@ -27,32 +27,32 @@ variables only and are not required for any claim in this repository.
 
 **Workflow content vs governance — who does what.** The Workflow Autonomy layer
 (modules 102W workflow resolver, 101D data-use guard) is **deterministic and
-offline**: workflow detection, routing (BLUE/GREEN/RED/INFEASIBLE), the human
-gate, and the guardian-income self-block are decided by the governance layer, not
-by any LLM. A real provider (the owner uses **GPT-4o** for the live demo) only
-changes **who drafts the text** inside a step — the internal report and the
-bilingual Facebook post read more richly. It never changes **who routes,
-approves, or blocks**. The public reproducible build runs the same workflow on
-`smart_mock` with no key (plainer content, identical governance); switching
-`TEOW_AGL_PLANNER=smart_mock` is the one-key fallback if the live API is slow or
-offline. Even with a real key, `MAIC_DEMO_MODE=1` keeps every external publish or
-send **simulated** — no real Facebook post, email, or message is ever sent.
+offline**: routing (BLUE/GREEN/RED/INFEASIBLE), the human gate, privacy floors,
+and the guardian-income self-block are decided by the governance layer, not by
+any LLM. In Mixed Live, a provider may propose closed-schema semantic labels,
+Response Pack coverage, and document prose. It never changes **who routes,
+approves, or blocks**. The public reproducible build runs on `smart_mock` with
+no key (more conservative content, identical governance). If the live provider
+is unavailable or its output breaks the contract, the system returns a complete
+role-scoped Markdown fallback. Even with a real key, `MAIC_DEMO_MODE=1` keeps
+every external publish or send **simulated** — no real Facebook post, email, or
+message is ever sent.
 
 **Understanding free-form input vs deciding the route.** For open-ended requests,
-*understanding* and *deciding* are separated. Understanding may use an LLM: with a
-key, GPT-4o **labels** a request with closed-vocabulary data-use concepts
-(socioeconomic data, differential treatment, public PII, health/discipline); with
-no key, a deterministic concept lexicon does the same offline. **Deciding** the
-route is always the deterministic governance core (101D + 103) — it maps the
-concepts to BLUE/GREEN/RED by fixed rules. The LLM can mislabel or be jailbroken
-and still cannot authorise a forbidden data use, and anything the understanding
-layer is unsure of fails safe to human approval (GREEN), never to silent action.
-The LLM understanding call is gated (only when the offline lexicon is uncertain)
-and runs at most once per task.
+*understanding* and *deciding* are separated. Understanding may use an LLM to
+propose closed-vocabulary data-use concepts (socioeconomic data, differential
+treatment, public PII, health/discipline); with no key, a deterministic compiler
+produces a conservative interpretation. **Deciding** the route is always the
+deterministic governance core (101D + 103), which maps the concepts and requested
+actions to fixed rules. The LLM cannot authorise a forbidden data use.
+Uncertainty can result in one critical clarification, TBC fields, INFEASIBLE,
+GREEN approval, or a domain-boundary answer; it never becomes a silent external
+action.
 
-**Data — synthetic only; student data excluded from learning.** All sample
-circulars, policies, and evaluation cases in this repository are **synthetic**.
-They contain no real student, parent, or staff personal data. By design, the
+**Data — person-level samples synthetic; student data excluded from learning.**
+All person-level sample records in this repository are **synthetic or redacted**.
+Route A may use a real-case-derived event/process structure under acknowledgement,
+but it contains no real student, parent, donor, or staff personal data. By design, the
 governance↔learning boundary keeps student/guardian identifiers, IC/MyKid
 numbers, addresses, phone numbers, attendance, discipline, and health records
 out of any reusable learning store (demonstrated by demo Flow D and the

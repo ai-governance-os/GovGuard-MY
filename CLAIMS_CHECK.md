@@ -53,8 +53,9 @@ cannot reproduce.
 
 Command: `python -X utf8 -m pytest -q`
 
-- **1121** collected — **1120 passed**, **1 skipped**, **0 failed**.
-- Reproduced green on a fresh venv on a clean (non-CJK) path.
+- **1,421** collected across **97** test files — **1,413 passed**,
+  **8 intentional/environment-dependent skipped**, **0 failed** in the ordinary grouped run.
+- Conditional browser UI suite: **25 / 25 passed** when enabled.
 
 ## Claim 9 — Evaluation status
 
@@ -81,15 +82,19 @@ appropriate (provided separately, not in this repository). See
 ## Note on the live LLM path
 
 The competition Mixed Live path keeps the core scripted demo deterministic and
-can run Route A/B, their continued questions, and new school-domain cases on the
-OpenAI API. `scripts/verify_competition_enhancements.py` independently checks
+can attempt Route A/B, their continued questions, and new school-domain cases on
+the OpenAI API. `scripts/verify_competition_enhancements.py` independently checks
 the closed semantic schema, deterministic concept policy, mandatory learning
 floor, live-tier selection, out-of-domain boundary, and browser continuity
-wire. The LLM is never the route authority. On **2026-07-12**, the private-key smoke test passed six live
-semantic probes plus a complete `openai_gpt_4o_mini` follow-up run through
-planner → governance → execution → verification (BLUE, one governed action,
-one successful execution, verification passed, zero cache hits). The key and
-runtime trace are not included in the clean public package. Re-run
+wire. The LLM is never the route authority. A private-key smoke test on
+**2026-07-12** passed six live semantic probes on an earlier live checkpoint.
+The current repository claim rests on reproducible offline unit, integration,
+UI, and evaluation evidence; provider availability is not assumed.
+`tests/test_provider_outage_circuit.py`,
+`tests/test_generation_mode_truth.py`, and
+`tests/test_open_school_regression_matrix.py` cover truthful source reporting,
+failure containment, and complete governed fallback. The key and runtime trace
+are not included in the clean public package. Re-run
 `python -X utf8 scripts/verify_openai_school_inputs.py --full` with the event
 key before presenting; the offline `smart_mock` path remains the reproducible
 fallback.

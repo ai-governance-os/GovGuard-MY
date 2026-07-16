@@ -28,9 +28,9 @@ administration domain pack, where the stakes are concrete: children, parents,
 records, public messages, approvals, and community trust. It produces genuinely
 useful administrative outputs — reports, parent notices, public posts, donor
 outreach — while enforcing data-use limits, privacy boundaries, human approval
-for consequential actions, and a full audit trail. The governance runtime is
-domain-agnostic (swap the domain pack by config alone, `TEOW_AGL_DOMAIN_PACK`);
-school administration is the first shipped pack, not the product limit.
+for consequential actions, and a full audit trail. The governance core is
+designed for additive, configured domain packs (`TEOW_AGL_DOMAIN_PACK`);
+`public_school` is the domain pack shipped and verified in this submission.
 
 ## Why it matters
 
@@ -57,7 +57,9 @@ evidence** (collapsed case study):
    becomes a selectable, governed Markdown Response Pack. Route B remains the
    reproducible speech-competition example; typed cases can range across safety,
    welfare, events, transport, food, cyber/data, finance, learning support, and
-   general administration.
+   general administration. The zero-key path uses conservative deterministic
+   compilation; an optional provider can add richer semantic interpretation and
+   prose without gaining authority.
 4. **④ Route A — real-case-derived school charity bazaar** — a realistic
    administrative deployment over a *synthetic* stakeholder/donor database.
 
@@ -85,11 +87,13 @@ governed procedure, not private data.
 
 ## School-ready open input
 
-Mixed Live adds a closed-schema **Situation Compiler** in front of the same
-governance runtime. The LLM labels meaning — family, phase, severity, affected
-people, stakeholders, known facts and unknowns — but it cannot authorise an
-action. Config-driven policy compiles those labels into a role-scoped Response
-Pack. Every selected draft, official-source lookup and external action is then
+Open school input uses a closed-schema **Situation Compiler** in front of the same
+governance runtime. A provider, when available, may label meaning — family,
+phase, severity, affected people, stakeholders, known facts and unknowns — but
+it cannot authorise an action. With no key or during a provider outage, a
+bounded deterministic compiler produces a conservative pack instead.
+Config-driven policy compiles the labels into a role-scoped Response Pack.
+Every selected draft, official-source lookup and external action is then
 governed independently.
 
 - All open-input text artifacts are `.md` and isolated by task.
@@ -97,9 +101,9 @@ governed independently.
   visible but unselected unless the operator chooses them.
 - One critical question is asked only when its answer changes life safety,
   coverage, recipient or governance boundary; otherwise missing facts remain TBC.
-- A failed or malformed content-generation call falls back to complete,
-  role-specific, fact-conservative Markdown instead of writing a partial or
-  unsupported file.
+- A failed, timed-out, rate-limited, or malformed content-generation call opens
+  a task-local outage circuit and falls back to complete, role-specific,
+  fact-conservative Markdown instead of writing a partial or unsupported file.
 - The operator can add a missing output after the first pack. The delta task
   inherits the case and risk level, but still passes through governance.
 - Public drafts exclude person-level case details. Real send/publish/contact
@@ -135,16 +139,18 @@ English).
 `TEOW_AGL_LIVE_WORKFLOWS=ad_hoc_school_event_reporting,school_charity_bazaar`
 and `TEOW_AGL_LIVE_SCHOOL_INPUTS=1` before starting. The core main demo remains
 deterministic; Route A/B, their free-form follow-ups, and new school-domain
-administration cases use the API in the same browser session. The active case
-is carried into follow-up turns, including while a GREEN approval is pending.
+administration cases attempt the API in the same browser session. The active
+case is carried into follow-up turns, including while a GREEN approval is pending.
 The LLM labels meaning and may draft content; deterministic coverage,
 data-use, governance, artifact and verification modules still own the package
 and decide BLUE/GREEN/RED/INFEASIBLE. If a live bundle is incomplete or
-ungrounded, role-specific safe Markdown replaces it as one governed unit. An
+ungrounded — or the provider is unavailable — role-specific safe Markdown
+replaces it as one governed unit. An
 unrelated request does not silently inherit the school case. Instead it receives
 a stable capability-boundary answer that states no student, parent, or
 school-case data was carried over; the generic planner is skipped. The UI mode
-badges state which tier is actually running.
+badge states what is configured; each task's generation badge and audit trace
+state whether the provider was actually used or a deterministic fallback ran.
 
 With a private key present, the optional live smoke test exercises semantic
 intake plus one complete OpenAI planner → governance → execution → verification
@@ -156,7 +162,10 @@ python -X utf8 scripts/verify_openai_school_inputs.py --full
 
 ## Test evidence
 
-- **1121** tests collected — **1120 passed**, **1 skipped**, **0 failed**
+- **1,421** tests collected across **97** test files — **1,413 passed**,
+  **8 intentional/environment-dependent skipped**, **0 failed** in the ordinary grouped run
+- Conditional browser UI suite: **25 / 25 passed** when enabled (covering the
+  seven browser-dependent skips from the ordinary run)
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**
 - Secret scan: **PASS** (no secrets, no blocked files in the public surface)
 

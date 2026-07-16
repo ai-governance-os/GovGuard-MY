@@ -15,7 +15,8 @@ surface is minimal.
 - `scripts/sanitize_build.py` removes runtime/state artifacts, key material, and
   obsolete internal manuscripts. `scripts/verify_no_secrets.py` fails on any
   blocked file or real-key-shaped value and is wired into CI.
-- The build runs fully with an **empty environment** (default `smart_mock`).
+- After dependencies are installed, the build needs **no API secret or runtime
+  configuration** (default `smart_mock`).
 
 ## Demo-sandbox boundary (Owner Rule 4)
 With `MAIC_DEMO_MODE=1` (default), **no real external action can fire** — no
@@ -25,10 +26,12 @@ while the audit trace and HMAC-signed ticket are **real**. This holds during
 judging at all times.
 
 ## Data handling (PDPA 2010)
-All sample data is synthetic. By design the governance↔learning boundary keeps
-student/guardian personal data (names, IC/MyKid, addresses, phones, attendance,
-discipline, health) out of reusable learning, logs intended for reuse, and the
-evaluation set. See demo Flow D and `configs/domain_packs/public_school/`.
+All person-level sample records are synthetic or redacted; only Route A's
+event/process structure is real-case-derived under acknowledgement. By design
+the governance↔learning boundary keeps student/guardian personal data (names,
+IC/MyKid, addresses, phones, attendance, discipline, health) out of reusable
+learning, logs intended for reuse, and the evaluation set. See demo Flow D and
+`configs/domain_packs/public_school/`.
 
 ## Intellectual property
 The governance architecture and methods demonstrated here are the subject of:

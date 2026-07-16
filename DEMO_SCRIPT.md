@@ -5,9 +5,9 @@ first in school administration. The model proposes; governance decides; a human
 approves; everything is traced.**
 
 **GovGuard MY** · Powered by the TEOW-AGL Governance Runtime. Domain pack
-`public_school`, `MAIC_DEMO_MODE=1`. The zero-key `smart_mock` default runs every
-route and emits the deterministic curated deliverables — the **recommended** mode
-for a clean, instant, hallucination-free recording. Start:
+`public_school`, `MAIC_DEMO_MODE=1`. The zero-key `smart_mock` default runs all
+scripted routes plus a conservative open-school fallback — the **recommended**
+mode for a clean, instant, reproducible and fact-conservative recording. Start:
 `python -X utf8 -m server.app` → <http://127.0.0.1:8765>.
 
 > **Clean rehearsal (optional):** stop the server, run
@@ -41,9 +41,10 @@ database* — the case is built from the prompt. The user gives only facts and
 intent ("prepare the school follow-up"); the agent infers the whole governed
 output package itself, marks missing details as TBC (does not invent them),
 keeps the struggling pupils out of the public post, and gates every send/publish.
-In Mixed Live, the same section accepts unfamiliar school situations and shows
-a selectable Markdown Response Pack: semantic understanding proposes coverage;
-deterministic governance owns every action and unknown fact.
+The same section accepts unfamiliar school situations in zero-key mode and shows
+a selectable Markdown Response Pack. Mixed Live can enrich semantic
+interpretation and prose; deterministic governance owns every action and
+unknown fact in either mode.
 
 **Primary (short) prompt — the generalisation proof:**
 
@@ -97,14 +98,14 @@ the GREEN human gate when a release IS requested.
 **Mixed mode (recommended for a finals stage):** with a valid, rotated key, set
 `TEOW_AGL_LIVE_WORKFLOWS=ad_hoc_school_event_reporting` and
 `TEOW_AGL_LIVE_SCHOOL_INPUTS=1` before starting — ONE
-server where Parts 1–2 stay deterministic (instant, reproducible) and Part 3
-drafts on the live API, with no restart between parts. The UI badges switch to
-`Mode: mixed live` only when the live tier can actually run (the badge tooltip
-lists which workflows are live; the core demo stays deterministic). Add
+server where Parts 1–2 stay deterministic (instant, reproducible) and Part 3 is
+eligible to attempt the live API, with no restart between parts. The top badge
+shows that Mixed Live is configured; the task generation badge and audit trace
+show whether the provider was actually used or deterministic fallback ran. Add
 `school_charity_bazaar` to take Part 4 live too.
 
-Alternatively `TEOW_AGL_PLANNER=openai`, `OPENAI_MODEL=gpt-4o` runs everything
-live. Either way governance is identical; only the prose source differs, and a
-deterministic faithfulness check falls back to the curated draft on any drift.
-*(The live path is built and unit-tested but should be validated with a rotated
-key before use.)*
+Governance is identical in both tiers. If the provider is unavailable,
+rate-limited, times out, or drifts from the output contract, the task falls back
+to complete role-specific safe Markdown; it does not leave a partial pack.
+*(Re-run the live smoke test with a usable, rotated event key immediately before
+any live presentation.)*

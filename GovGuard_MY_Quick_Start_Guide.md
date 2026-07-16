@@ -2,6 +2,8 @@
 
 Offline, no API keys required (default planner `smart_mock`, `MAIC_DEMO_MODE=1`).
 On Windows keep the `-X utf8` flag — the demo mixes 中文, Bahasa Melayu, and English.
+The zero-key path runs all scripted demos and conservatively compiles unfamiliar
+school-admin input into complete governed Markdown packs.
 
 ## 1. Install once
 
@@ -34,18 +36,21 @@ top-bar pills show the honest session state (Governance / External / Mode).
 ## 5. Optional — competition Mixed Live
 
 ```powershell
+$env:TEOW_AGL_PLANNER = "smart_mock"
+$env:MAIC_DEMO_MODE = "1"
 $env:TEOW_AGL_LIVE_WORKFLOWS = "ad_hoc_school_event_reporting,school_charity_bazaar"
 $env:TEOW_AGL_LIVE_SCHOOL_INPUTS = "1"
-$env:TEOW_AGL_CHAT_LLM = "openai"
 $env:OPENAI_API_KEY = "<private key; never commit it>"
 $env:OPENAI_MODEL = "gpt-4o"
 python -X utf8 -m server.app
 ```
 
 The core demo stays deterministic. Route A/B, their typed follow-ups, and new
-school-admin cases use the live API; deterministic governance still owns every
-route, artifact and approval decision. Open-input files are Markdown, unknowns
-remain TBC, and a failed live bundle falls back to safe role-specific drafts. A
+school-admin cases attempt the live API; deterministic governance still owns
+every route, artifact and approval decision. Open-input files are Markdown,
+unknowns remain TBC, and a failed or unavailable live bundle falls back to safe
+role-specific drafts. The top badge reports configuration; each task reports
+whether live generation or deterministic fallback actually ran. A
 confirmed unrelated request receives a stable capability-boundary response and
 does not inherit any school-case data.
 
@@ -70,7 +75,9 @@ first-run → approve → reuse lifecycle. Restart the server afterwards.
 python -X utf8 -m pytest -q
 ```
 
-Expected: **1120 passed / 1 skipped / 0 failed** (1121 collected).
+Validated baseline: **1,421 collected across 97 files; 1,413 passed /
+8 intentional/environment-dependent skipped / 0 failed** in the ordinary grouped run.
+The conditional browser UI suite passes **25 / 25** when enabled.
 
 ## 8. Run the enhancement checks
 

@@ -26,10 +26,12 @@ generalised, and real-case-derived scenarios, not limited to one curated case.
 - **Open-input generalisation.** Route B remains the reproducible short-prompt
   example, while Mixed Live accepts unfamiliar school situations across safety,
   welfare, transport, food, events, cyber/data, finance, learning support, and
-  general administration. A semantic Situation Compiler proposes a selectable
+  general administration. A closed-schema Situation Compiler proposes a selectable
   Markdown Response Pack; deterministic policy owns coverage, TBC, privacy,
-  approval and memory boundaries. A malformed live draft cannot remove a
-  required file: the governed role receives a fact-conservative safe fallback.
+  approval and memory boundaries. It has a conservative zero-key compiler; an
+  optional provider adds richer interpretation and prose but no authority. A
+  malformed or unavailable live draft cannot remove a required file: the
+  governed role receives a fact-conservative safe fallback.
 
 ## What judges should notice
 
@@ -40,8 +42,9 @@ generalised, and real-case-derived scenarios, not limited to one curated case.
 5. Missing facts are marked **TBC** instead of invented.
 6. Learning is **bounded**: open case facts remain task-local; only a
    non-personal workflow SOP can enter the separate owner-gated learning path.
-7. In Mixed Live, free-form Route A/B follow-ups and new school-admin cases are
-   understood semantically, while deterministic governance still owns the route.
+7. Free-form Route A/B follow-ups and new school-admin cases work in conservative
+   zero-key mode; when a provider is usable, Mixed Live can enrich their semantic
+   interpretation and prose while deterministic governance still owns the route.
 8. Approved learning may reduce repeated friction, but it cannot downgrade a
    mandatory GREEN human gate imposed by policy or the data-use guard.
 
@@ -57,10 +60,13 @@ The landing console groups the four demo parts into a three-tier narrative
 
 ## Evidence
 
-- pytest: **1121** collected — **1120 passed / 1 skipped / 0 failed**.
+- pytest: **1,421** collected across **97** files — **1,413 passed /
+  8 intentional/environment-dependent skipped / 0 failed** in the ordinary grouped run.
+- Conditional browser UI suite: **25 / 25 passed** when enabled.
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**.
 - Secret scan: **PASS**.
-- All offline / keyless (`smart_mock`, `MAIC_DEMO_MODE=1`).
+- Published regression evidence is offline / keyless
+  (`smart_mock`, `MAIC_DEMO_MODE=1`); live generation is optional.
 
 ## Privacy note
 
