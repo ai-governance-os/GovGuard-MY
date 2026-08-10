@@ -17,6 +17,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 import re
 from typing import Iterable
+from urllib.parse import urlparse
 
 from ..models import CandidateAction, CandidatePlan, ExecutionResult, TaskEnvelope
 from .module_school_release_intent import (
@@ -36,6 +37,177 @@ from .module_school_privacy import (
 
 _TEXT_FILE_TOOLS = {"docx", "report", "fs"}
 _GENERIC_STEMS = {"doc", "document", "report", "draft", "output", "file"}
+
+# Pseudonymous initials are deliberately not treated as ordinary names by the
+# general privacy extractor.  For broad outputs they are identifiers all the
+# same, and exact medication/result literals must not survive an anonymous
+# transformation.  Keep this small literal backstop beside post-generation
+# verification so a provider cannot reintroduce what compilation removed.
+_PSEUDONYMOUS_INITIALS = re.compile(
+    r"(?<!\w)((?:[A-Za-z]\.){2,5})(?!\w)"
+)
+_FRACTIONAL_RESULT = re.compile(r"(?<!\d)(\d{1,3}\s*/\s*\d{1,3})(?!\d)")
+_SENSITIVE_MEDICATION = re.compile(
+    r"\b(ritalin|methylphenidate)\b", re.IGNORECASE,
+)
+_SENSITIVE_DIAGNOSIS_LITERAL = re.compile(
+    r"\b(adhd|autis(?:m|tic)|dyslex(?:ia|ic)|dyscalculia|dysgraphia|"
+    r"asperger(?:'s)?|down(?:'s)?\s+syndrome|cerebral\s+palsy|"
+    r"epilep(?:sy|tic)|diabet(?:es|ic)|asthma(?:tic)?|"
+    r"anxiety|depression|bipolar|schizophrenia|"
+    r"hearing\s+impairment|visual\s+impairment)\b",
+    re.IGNORECASE,
+)
+
+
+_HARD_VALIDATION_MARKERS = (
+    "broad_notice_contains_",
+    "restricted_staff_boundary",
+    "excluded_",
+    "source_identifier",
+    "source_pii",
+    "source_medication",
+    "source_health_detail",
+    "individual_mark",
+    "policy:",
+    "provider_unavailable",
+    "semantic_grounding_audit_unavailable",
+    "goal_alignment_audit_unavailable",
+)
+
+_EXTERNAL_DRAFT_ROLES = {
+    "private_parent_notice",
+    "school_parent_notice",
+    "public_communication_draft",
+    "external_stakeholder_message",
+    "education_authority_request",
+    "education_authority_report",
+}
+_INTERNAL_RELEASE_SECTION = re.compile(
+    r"(?ims)^\s*#{1,6}\s+(?:proposed\s+arrangements\s*[-—:]\s*"
+    r"subject\s+to\s+(?:school\s+)?approval|approval\s+request|"
+    r"release\s+(?:approval|control)|internal\s+(?:approval|review))"
+    r"\s*\n.*?(?=^\s*#{1,6}\s+|^\s*---\s*$|\Z)"
+)
+_INTERNAL_RELEASE_PARAGRAPH = re.compile(
+    r"(?ims)^\s*(?:\*\*)?(?:approval\s+request|release\s+approval)"
+    r"(?:\*\*)?\s*:.*?(?=\n\s*\n|\Z)"
+)
+_INTERNAL_RELEASE_SENTENCE = re.compile(
+    r"(?is)(?:we|i)\s+(?:request|seek|require|need)\s+"
+    r"(?:human\s+)?(?:approval|authorisation|authorization)"
+    r"[^.!?\n]{0,180}\b(?:send|email|publish|share|release|post)\b"
+)
+
+
+def strip_internal_release_control(
+    action: CandidateAction,
+    content: str,
+) -> str:
+    """Keep governance workflow instructions out of recipient-facing prose.
+
+    A release request belongs in the separate governed action/gate.  Some live
+    models append an internal ``Approval request`` to the email or notice that
+    will eventually be sent to the recipient.  Removing that control block is
+    a presentation-boundary repair; it does not approve or execute anything.
+    """
+    role = str((action.metadata or {}).get("artifact_role") or "").lower()
+    text = str(content or "")
+    if role not in _EXTERNAL_DRAFT_ROLES or not text:
+        return text
+    text = _INTERNAL_RELEASE_SECTION.sub("", text)
+    text = _INTERNAL_RELEASE_PARAGRAPH.sub("", text)
+    paragraphs = re.split(r"(\n\s*\n)", text)
+    for index in range(0, len(paragraphs), 2):
+        paragraph = paragraphs[index]
+        if _INTERNAL_RELEASE_SENTENCE.search(paragraph):
+            paragraphs[index] = ""
+    text = "".join(paragraphs)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def classify_school_validation_issues(
+    action: CandidateAction,
+    issues: dict[str, list[str]] | Iterable[str],
+) -> dict[str, list[str]]:
+    """Classify generation checks without weakening the governance boundary.
+
+    ``hard_block`` is reserved for privacy, data-use, authorisation and
+    unavailable-auditor failures. ``repair_once`` covers quality or grounding
+    defects that may be regenerated under the same policy. ``review_note`` is
+    deliberately narrow: only non-safety similarity warnings may survive, and
+    only after the independent semantic audit has accepted both artifacts.
+
+    The classifier changes what happens *after* a check; it never changes the
+    check itself or promotes a failed privacy/policy result to a warning.
+    """
+    if isinstance(issues, dict):
+        flat = [
+            f"{layer}:{item}"
+            for layer, values in issues.items()
+            for item in values
+        ]
+    else:
+        flat = [str(item) for item in issues if str(item)]
+
+    result = {"hard_block": [], "repair_once": [], "review_note": []}
+    for issue in flat:
+        value = issue.casefold()
+        # Action ids may prefix a grouped issue. Inspect the whole string so
+        # the policy-layer marker and privacy suffix both remain visible.
+        if any(marker in value for marker in _HARD_VALIDATION_MARKERS):
+            result["hard_block"].append(issue)
+        elif value.startswith("cross_artifact_similarity:"):
+            result["review_note"].append(issue)
+        else:
+            result["repair_once"].append(issue)
+    return result
+
+_OFFICIAL_SAFETY_DOMAINS = (
+    "moh.gov.my",
+    "moe.gov.my",
+    "bomba.gov.my",
+    "malaysia.gov.my",
+    "rmp.gov.my",
+    "nadma.gov.my",
+)
+_URL_CANDIDATE = re.compile(r"https?://[^\s<>\[\]]+", re.IGNORECASE)
+_CLINICAL_CEILING_ROLES = {
+    "medical_handover_script",
+    "emergency_contact_script",
+    "fire_rescue_contact_script",
+    "site_safety_checklist",
+    "food_safety_response",
+    "internal_incident_report",
+    "school_document",
+    # Parent and external-facing drafts can cause direct harm if a model adds
+    # treatment technique from general knowledge. They obey the same ceiling
+    # as operational safety artifacts.
+    "private_parent_notice",
+    "school_parent_notice",
+    "public_communication_draft",
+    "external_stakeholder_message",
+    "education_authority_report",
+    "education_authority_request",
+    "regulatory_notification_assessment",
+}
+_UNSOURCED_CLINICAL_INSTRUCTION = re.compile(
+    r"\b(?:remove|scrape)\s+(?:the\s+)?stinger\b|"
+    r"\bapply\s+(?:an?\s+)?(?:cold|ice)\s+(?:pack|compress)\b|"
+    r"\bmonitor\b[^\n]{0,45}\b\d+\s*(?:minutes?|mins?|hours?|hrs?)\b|"
+    r"\b(?:administer|give|take)\b[^\n]{0,35}\b(?:epinephrine|adrenaline|"
+    r"antihistamine|medication|medicine|painkiller)\b|"
+    r"\b(?:induce\s+vomiting|apply\s+(?:a\s+)?tourniquet|suck\s+(?:out\s+)?"
+    r"(?:the\s+)?venom|immobili[sz]e\s+the\s+limb)\b",
+    re.IGNORECASE,
+)
+_CLINICAL_INSTRUCTION_NEGATION = re.compile(
+    r"\b(?:do\s+not|don't|must\s+not|never|only\s+by\s+(?:a\s+)?qualified|"
+    r"only\s+if\s+directed|as\s+directed\s+by|follow\s+(?:the\s+)?"
+    r"(?:verified|approved|official)\s+(?:sop|protocol|guidance))\b",
+    re.IGNORECASE,
+)
 
 _ROLE_FILENAMES = {
     "internal_incident_report": "internal_incident_report.md",
@@ -65,6 +237,12 @@ _ROLE_FILENAMES = {
     "post_incident_review": "post_incident_review.md",
     "evidence_status_report": "evidence_status_report.md",
     "measurement_plan": "outcome_measurement_plan.md",
+    "speech_or_address": "speech_or_address_draft.md",
+    "meeting_minutes": "meeting_minutes_draft.md",
+    "duty_roster": "duty_roster_draft.md",
+    "timetable_or_schedule": "timetable_or_schedule_draft.md",
+    "curriculum_continuity_plan": "curriculum_continuity_plan.md",
+    "user_titled_document": "requested_school_document.md",
     "school_document": "school_document_draft.md",
 }
 
@@ -96,14 +274,29 @@ _ROLE_AUDIENCE = {
     "post_incident_review": "internal",
     "evidence_status_report": "internal",
     "measurement_plan": "internal",
+    "speech_or_address": "school_community",
+    "meeting_minutes": "internal",
+    "duty_roster": "internal",
+    "timetable_or_schedule": "internal",
+    "curriculum_continuity_plan": "internal",
+    "user_titled_document": "internal",
     "school_document": "internal",
 }
 
-_PARENT_LETTER_MARKERS = (
+_PARENT_AUDIENCE_MARKERS = (
     re.compile(r"(?mi)^#\s+.*(?:parent|guardian).*(?:notice|notification|letter)"),
-    re.compile(r"(?mi)^dear\s+(?:parent|guardian|mr\.?|mrs\.?|ms\.?|family|\[)"),
+    re.compile(r"(?mi)^dear\s+(?:parent|guardian|family|\[)"),
+)
+
+_FORMAL_LETTER_MARKERS = (
+    re.compile(r"(?mi)^dear\s+(?:mr\.?|mrs\.?|ms\.?)"),
     re.compile(r"(?mi)^sincerely,?\s*$"),
     re.compile(r"(?mi)^yours\s+(?:faithfully|sincerely),?\s*$"),
+)
+
+_PARENT_LETTER_MARKERS = (
+    *_PARENT_AUDIENCE_MARKERS,
+    *_FORMAL_LETTER_MARKERS,
 )
 
 _INTERNAL_REPORT_MARKERS = (
@@ -123,6 +316,75 @@ _NEGATIVE_QUALIFIER = re.compile(
     r"not\s+provided|not\s+available|not\s+known|whether|"
     r"to\s+be\s+confirmed|proposed|recommended|"
     r"should|must\s+be\s+verified)\b",
+    re.IGNORECASE,
+)
+
+# Epistemic-status boundary for operational planning. A draft may contain
+# useful options, but details that the user did not supply must never read as
+# already-decided school arrangements. These patterns are deliberately about
+# evidence-bearing specificity (times, deadlines, channels and quantities),
+# not about school scenarios or prompt keywords.
+_PROPOSAL_QUALIFIER = re.compile(
+    r"\b(?:tbc|unknown|unverified|not\s+(?:yet\s+)?confirmed|"
+    r"to\s+be\s+confirmed|proposed|proposal|recommended|recommendation|"
+    r"subject\s+to\s+(?:school\s+)?(?:approval|confirmation|review)|"
+    r"pending\s+(?:approval|confirmation|review)|optional|option|"
+    r"if\s+(?:approved|required|needed|available)|may|could|consider)\b|"
+    r"(?:cadangan|dicadangkan|tertakluk\s+kepada\s+kelulusan|"
+    r"menunggu\s+pengesahan|akan\s+disahkan)|"
+    r"(?:\u5efa\u8bae|\u5efa\u8b70|\u62df\u8bae|\u64ec\u8b70|\u5f85\u6279\u51c6|\u5f85\u78ba\u8a8d|\u5f85\u786e\u8ba4|\u6709\u5f85\u786e\u8ba4|\u6709\u5f85\u78ba\u8a8d)",
+    re.IGNORECASE,
+)
+_PROPOSAL_SECTION = re.compile(
+    r"\b(?:proposed|proposal|recommended|recommendation|options?|"
+    r"subject\s+to\s+approval|pending\s+approval)\b|"
+    r"(?:cadangan|pilihan|tertakluk\s+kepada\s+kelulusan)|"
+    r"(?:\u5efa\u8bae|\u5efa\u8b70|\u62df\u8bae|\u64ec\u8b70|\u5f85\u6279\u51c6)",
+    re.IGNORECASE,
+)
+_CLOCK_TIME = re.compile(
+    r"(?<!\w)(?:(?:[01]?\d|2[0-3]):\d{2}"
+    r"(?:\s*(?:a\.?m\.?|p\.?m\.?))?|"
+    r"(?:[01]?\d|2[0-3])\.\d{2}\s*(?:a\.?m\.?|p\.?m\.?)|"
+    r"(?:0?[1-9]|1[0-2])\s*(?:a\.?m\.?|p\.?m\.?))(?!\w)",
+    re.IGNORECASE,
+)
+_OPERATIONAL_DEADLINE = re.compile(
+    r"\bwithin\s+(?:one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+"
+    r"(?:(?:working|school|calendar)\s+)?(?:hours?|days?|weeks?)\b|"
+    r"\bno\s+later\s+than\s+[^.;\n]{1,45}|"
+    r"\b(?:dalam\s+tempoh)\s+(?:satu|dua|tiga|\d+)\s+(?:jam|hari|minggu)\b|"
+    r"(?:\u5728|\u65bc|\u4e8e)(?:\u4e00|\u4e8c|\u4e09|\u56db|\u4e94|\u516d|\u4e03|\u516b|\u4e5d|\u5341|\d+)(?:\u4e2a|\u500b)?(?:\u5c0f\u65f6|\u5c0f\u6642|\u5929|\u5468|\u9031)\u5185",
+    re.IGNORECASE,
+)
+_OPERATIONAL_CHANNEL = re.compile(
+    r"\b(?:whats\s*app|telegram|walkie[-\s]?talk(?:ie|y)s?|two[-\s]?way\s+radio|"
+    r"direct\s+(?:phone\s+)?line|sms|text\s+message|email\s+(?:group|list)|"
+    r"public[-\s]address\s+system|pa\s+system)\b",
+    re.IGNORECASE,
+)
+_OPERATIONAL_QUANTITY = re.compile(
+    r"\b(?:one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+"
+    r"(?:tables?|chairs?|sessions?|teams?|groups?|coordinators?|marshals?|"
+    r"volunteers?|staff\s+members?|copies|devices?|radios?|rooms?)\b",
+    re.IGNORECASE,
+)
+_OPERATIONAL_ASSIGNMENT = re.compile(
+    r"\b(?:the\s+)?(?:principal|headteacher|headmaster|senior\s+assistant|"
+    r"coordinator|class\s+teacher|teacher|staff\s+member|security\s+officer|"
+    r"marshal)\s+(?:will|shall|must|is\s+to|has\s+to)\s+"
+    r"(?:lead|chair|manage|supervise|coordinate|report|brief|contact|notify|"
+    r"inspect|approve|record|monitor)\b|"
+    r"\bappoint\s+(?:the\s+)?(?:principal|headteacher|headmaster|"
+    r"senior\s+assistant|coordinator|teacher|staff\s+member|"
+    r"security\s+officer|marshal)\b",
+    re.IGNORECASE,
+)
+_OPERATIONAL_FACILITY = re.compile(
+    r"\b(?:use|reserve|allocate|open|close|set\s+up|designate)\s+"
+    r"(?:the\s+)?(?:school\s+hall|assembly\s+hall|canteen|library|"
+    r"computer\s+lab|science\s+lab|meeting\s+room|prayer\s+room|"
+    r"main\s+gate|rear\s+gate|gate\s+\d+|room\s+\d+)\b",
     re.IGNORECASE,
 )
 
@@ -322,7 +584,7 @@ def _generated_person_identifiers(text: str) -> set[str]:
         match.group(1)
         for match in re.finditer(
             r"(?i:\b(?:student|pupil|child|murid|pelajar)(?:\s+name)?)\s*"
-            r"(?:is|:|-)?\s*([A-Z][A-Za-z'’-]{1,40})\b",
+            r"(?:is|named|:|-)\s*([A-Z][A-Za-z'’-]{1,40})\b",
             value,
         )
     }
@@ -631,6 +893,9 @@ _GROUNDING_RULES = (
             r"\b(?:(?:we|the school) will (?:keep (?:you|the family) updated|"
             r"provide (?:you|the family) with (?:further|more|additional) "
             r"(?:information|details|updates)|share (?:further )?updates)|"
+            r"(?:further|more|additional)\s+(?:information|details|updates)"
+            r"(?:\s*,\s*if\s+needed\s*,)?\s+will be provided"
+            r"(?:\s+by\s+(?:the\s+)?school(?:\s+office)?)?|"
             r"updates will be provided)\b",
             re.IGNORECASE,
         ),
@@ -638,7 +903,25 @@ _GROUNDING_RULES = (
             r"\b(?:(?:we|the school) will (?:keep (?:you|the family) updated|"
             r"provide (?:you|the family) with (?:further|more|additional) "
             r"(?:information|details|updates)|share (?:further )?updates)|"
+            r"(?:further|more|additional)\s+(?:information|details|updates)"
+            r"(?:\s*,\s*if\s+needed\s*,)?\s+will be provided"
+            r"(?:\s+by\s+(?:the\s+)?school(?:\s+office)?)?|"
             r"updates will be provided)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "family_collection_instruction_added",
+        re.compile(
+            r"\b(?:please|parents?\s+(?:must|should)|you\s+(?:must|should))"
+            r"[^\n.!?]{0,80}\b(?:collect|pick\s*up)\b"
+            r"[^\n.!?]{0,60}\b(?:child|children|pupil|student)s?\b",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"\b(?:please|parents?\s+(?:must|should)|you\s+(?:must|should))?"
+            r"[^\n.!?]{0,80}\b(?:collect|pick\s*up)\b"
+            r"[^\n.!?]{0,60}\b(?:child|children|pupil|student)s?\b",
             re.IGNORECASE,
         ),
     ),
@@ -739,7 +1022,10 @@ def _contains_cjk(text: str) -> bool:
 def _looks_malay(text: str) -> bool:
     cues = re.findall(
         r"\b(?:sediakan|jangan|murid|pelajar|sekolah|kantin|berhampiran|"
-        r"ibu\s+bapa|penjaga|laporan|draf|hantar|masih|berlaku)\b",
+        r"ibu\s+bapa|penjaga|laporan|draf|hantar|masih|berlaku|"
+        r"serahkan|kemukakan|kelulusan|emel|hubungi|maklumkan|"
+        r"siarkan|kepada|pejabat\s+pendidikan|"
+        r"kementerian\s+pendidikan)\b",
         (text or "").casefold(),
     )
     return len(cues) >= 2
@@ -791,6 +1077,11 @@ def _school_cover_message_legacy(user_intent: str, filenames: list[str]) -> str:
 
 def _is_external_release_action(action: CandidateAction) -> bool:
     meta = action.metadata or {}
+    # A named internal repository update is a governed system-level change,
+    # not an external release.  Its operation may contain "publish", so this
+    # explicit contract must win before the generic verb backstop below.
+    if meta.get("system_level_change_action") is True:
+        return False
     tool = (action.tool or "").strip().lower()
     operation = (action.operation or "").strip().lower()
     purpose = " ".join((action.purpose or "", action.expected_effect or "")).lower()
@@ -966,6 +1257,31 @@ def normalize_school_markdown_plan(
                 else audience
             ),
         })
+        safe_public_replacement = bool(
+            meta.get("coverage_source") == "school_response_pack"
+            and audience in {"public", "school_community"}
+            and str(meta.get("safe_transformation") or "").strip()
+            and (meta.get("excluded_data_concepts") or [])
+            and not (meta.get("response_pack_data_use_concepts") or [])
+        )
+        if safe_public_replacement:
+            # The original request remains RED at the user-input layer. This
+            # action is a separate, compiler-authored safe replacement, so its
+            # own purpose must describe the transformed action rather than
+            # retain a planner phrase such as "name Amir and his diagnosis".
+            action.purpose = (
+                "Prepare the compiler-approved privacy-safe public "
+                "replacement draft."
+            )
+            action.expected_effect = (
+                "Create one anonymous, non-identifying draft for human "
+                "review; do not send or publish it."
+            )
+            meta["data_use_purpose"] = (
+                "Create only the privacy-safe replacement while excluding "
+                "the prohibited person-level concepts."
+            )
+            meta["safe_replacement_contract"] = True
         # A response pack carries an explicit per-action data-use contract.
         # Request-level hazards are shown by response_pack.input_governance;
         # copying them into every safe replacement artifact would collapse the
@@ -992,7 +1308,7 @@ def normalize_school_markdown_plan(
             task_concepts.discard("public_disclosure")
         elif (
             meta.get("coverage_source") == "school_response_pack"
-            and not fallback_public_sensitive
+            and (not fallback_public_sensitive or safe_public_replacement)
         ):
             # A privacy-safe public holding draft must be judged on its own
             # body, not contaminated by sensitive concepts needed by internal
@@ -1002,7 +1318,7 @@ def normalize_school_markdown_plan(
                 "public_pii", "health_or_discipline",
                 "student_sensitive_data", "student_sensitive_public",
             })
-        elif fallback_public_sensitive:
+        elif fallback_public_sensitive and not safe_public_replacement:
             task_concepts.update({
                 "health_or_discipline", "student_sensitive_data",
                 "public_disclosure",
@@ -1355,6 +1671,162 @@ def _matched_positive_chunks(pattern: re.Pattern, text: str) -> list[str]:
     return chunks
 
 
+def _normalise_operational_literal(value: str) -> str:
+    """Canonical form for exact source-evidence comparisons."""
+    text = (value or "").casefold()
+    text = re.sub(r"\ba\s*\.?\s*m\s*\.?\b", "am", text)
+    text = re.sub(r"\bp\s*\.?\s*m\s*\.?\b", "pm", text)
+    text = text.replace(".", ":")
+    return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", text)
+
+
+def _normalise_clock_literal(value: str) -> tuple[str, str]:
+    compact = re.sub(r"\s+", "", (value or "").casefold())
+    compact = re.sub(r"a\.?m\.?$", "am", compact)
+    compact = re.sub(r"p\.?m\.?$", "pm", compact)
+    match = re.search(r"(\d{1,2})(?:[:.](\d{2}))?(am|pm)?", compact)
+    if not match:
+        return "", ""
+    # ``7am`` and ``7:00 am`` are the same source fact.  Bare-hour source
+    # notation is common in school notices, so zero-fill the minutes before
+    # comparing the generated draft against its evidence.
+    base = f"{int(match.group(1)):02d}:{match.group(2) or '00'}"
+    return base, str(match.group(3) or "")
+
+
+def _operational_detail_grounding_issues(
+    content: str,
+    source_goal: str,
+) -> list[str]:
+    """Reject unsupported operational specifics stated as settled facts.
+
+    The user can ask for a useful plan without supplying every detail. The
+    system may propose those details, but the document must show their
+    epistemic status. Exact details already present in the user's source are
+    allowed; new details are allowed only when the line or its enclosing
+    section is visibly proposed/TBC/subject to approval.
+    """
+    source = source_goal or ""
+    source_norm = _normalise_operational_literal(source)
+    source_times = [
+        _normalise_clock_literal(match.group(0))
+        for match in _CLOCK_TIME.finditer(source)
+    ]
+    issues: list[str] = []
+    proposal_section_level: int | None = None
+    pattern_specs = (
+        ("unsupported_operational_time", _CLOCK_TIME),
+        ("unsupported_operational_deadline", _OPERATIONAL_DEADLINE),
+        ("unsupported_communication_channel", _OPERATIONAL_CHANNEL),
+        ("unsupported_operational_quantity", _OPERATIONAL_QUANTITY),
+        ("unsupported_operational_assignment", _OPERATIONAL_ASSIGNMENT),
+        ("unsupported_operational_facility", _OPERATIONAL_FACILITY),
+    )
+
+    for raw_line in (content or "").splitlines():
+        line = re.sub(r"^\s*(?:[-*+]|\d+[.)])\s*", "", raw_line).strip()
+        if not line:
+            continue
+        heading = re.match(r"^(#{1,6})\s+", line)
+        if heading:
+            level = len(heading.group(1))
+            if _PROPOSAL_SECTION.search(line):
+                proposal_section_level = level
+            elif (
+                proposal_section_level is None
+                or level <= proposal_section_level
+            ):
+                proposal_section_level = None
+            continue
+        if _PROPOSAL_QUALIFIER.search(line) or proposal_section_level is not None:
+            continue
+
+        for label, pattern in pattern_specs:
+            for match in pattern.finditer(line):
+                literal = match.group(0)
+                canonical = _normalise_operational_literal(literal)
+                if not canonical:
+                    continue
+                if label == "unsupported_operational_time":
+                    output_base, output_period = _normalise_clock_literal(literal)
+                    supported = any(
+                        output_base == source_base
+                        and (
+                            not output_period
+                            or not source_period
+                            or output_period == source_period
+                        )
+                        for source_base, source_period in source_times
+                    )
+                else:
+                    supported = canonical in source_norm
+                if not supported:
+                    value = re.sub(r"\s+", "_", literal.strip().casefold())
+                    value = re.sub(r"[^a-z0-9_:-]+", "", value)[:48]
+                    issue = f"{label}:{value or 'detail'}"
+                    if issue not in issues:
+                        issues.append(issue)
+    return issues
+
+
+def _has_official_safety_source(source_goal: str) -> bool:
+    """Accept only URLs whose parsed host is an approved government domain.
+
+    Substring checks are unsafe here: an attacker-controlled URL can put an
+    official-looking domain in its path, user-info or a longer hostname. The
+    hostname must be the official domain itself or one of its subdomains.
+    """
+    for match in _URL_CANDIDATE.finditer(source_goal or ""):
+        candidate = match.group(0).rstrip(".,;:!?)]}")
+        candidate = candidate.rstrip(chr(34) + chr(39))
+        try:
+            host = (urlparse(candidate).hostname or "").rstrip(".").casefold()
+        except ValueError:
+            continue
+        if any(
+            host == domain or host.endswith("." + domain)
+            for domain in _OFFICIAL_SAFETY_DOMAINS
+        ):
+            return True
+    return False
+
+
+def _unsourced_clinical_instruction_issues(
+    action: CandidateAction,
+    content: str,
+    source_goal: str,
+) -> list[str]:
+    """Enforce an official-source ceiling for operational medical advice.
+
+    The agent may record observed symptoms and recommend contacting a trained
+    first aider or emergency service. It must not invent treatment technique,
+    medication or timed clinical observation from general model knowledge.
+    """
+    role = str((action.metadata or {}).get("artifact_role") or "")
+    safety_context = bool(
+        role in _CLINICAL_CEILING_ROLES
+        and re.search(
+            r"\b(?:injur(?:y|ed)|ill(?:ness)?|medical|allerg|anaphyla|"
+            r"bite|bitten|sting|stung|poison|bleed|unconscious|seizure)\b",
+            source_goal or "",
+            re.IGNORECASE,
+        )
+    )
+    if not safety_context or _has_official_safety_source(source_goal):
+        return []
+    findings: list[str] = []
+    for raw_line in (content or "").splitlines():
+        line = re.sub(r"^\s*(?:[-*+]|\d+[.)])\s*", "", raw_line).strip()
+        match = _UNSOURCED_CLINICAL_INSTRUCTION.search(line)
+        if not match:
+            continue
+        if _CLINICAL_INSTRUCTION_NEGATION.search(line):
+            continue
+        label = re.sub(r"\s+", "_", match.group(0).casefold())[:70]
+        findings.append(f"unsourced_clinical_instruction:{label}")
+    return list(dict.fromkeys(findings))
+
+
 def validate_school_markdown(
     action: CandidateAction,
     content: str,
@@ -1426,11 +1898,28 @@ def validate_school_markdown(
 
     parent_roles = {"private_parent_notice", "school_parent_notice"}
     if role not in parent_roles:
-        if any(rx.search(text) for rx in _PARENT_LETTER_MARKERS):
+        formal_external_letter_roles = {
+            "external_stakeholder_message",
+            "education_authority_request",
+            "education_authority_report",
+        }
+        markers = (
+            _PARENT_AUDIENCE_MARKERS
+            if role in formal_external_letter_roles
+            else _PARENT_LETTER_MARKERS
+        )
+        if any(rx.search(text) for rx in markers):
             issues["role"].append("parent_letter_content_in_non_parent_artifact")
     if role in parent_roles:
         if any(rx.search(text) for rx in _INTERNAL_REPORT_MARKERS):
             issues["role"].append("internal_report_content_in_parent_notice")
+    if (
+        role in _EXTERNAL_DRAFT_ROLES
+        and strip_internal_release_control(action, text) != text
+    ):
+        issues["policy"].append(
+            "external_draft_contains_internal_release_control"
+        )
     audience = str((action.metadata or {}).get("audience") or "").lower()
     excluded = {
         str(item).strip().lower()
@@ -1439,6 +1928,9 @@ def validate_school_markdown(
     }
     issues["policy"].extend(
         school_policy_contract_issues(action, text, source_goal)
+    )
+    issues["policy"].extend(
+        _unsourced_clinical_instruction_issues(action, text, source_goal)
     )
     broad_privacy_contract = requires_broad_redaction(
         source,
@@ -1450,24 +1942,59 @@ def validate_school_markdown(
         source_identifier_values = source_identifiers(source)
         source_mark_values = source_individual_mark_values(source)
         source_pii_values = source_direct_pii_values(source)
+        source_pseudonyms = {
+            match.group(1) for match in _PSEUDONYMOUS_INITIALS.finditer(source)
+        }
+        source_fractional_results = {
+            re.sub(r"\s+", "", match.group(1))
+            for match in _FRACTIONAL_RESULT.finditer(source)
+        }
+        source_medications = {
+            match.group(1) for match in _SENSITIVE_MEDICATION.finditer(source)
+        }
+        source_diagnosis_literals = {
+            match.group(1)
+            for match in _SENSITIVE_DIAGNOSIS_LITERAL.finditer(source)
+        }
         leaked_identifiers = sorted(
             item for item in source_identifier_values
             if re.search(rf"(?<!\w){re.escape(item)}(?!\w)", text, re.IGNORECASE)
+        )
+        leaked_pseudonyms = sorted(
+            item for item in source_pseudonyms
+            if item.casefold() in text.casefold()
         )
         leaked_marks = sorted(
             value for value in source_mark_values
             if re.search(rf"(?<!\d){re.escape(value)}(?!\d)", text)
         )
+        compact_text = re.sub(r"\s+", "", text)
+        leaked_fractional_results = sorted(
+            value for value in source_fractional_results
+            if value in compact_text
+        )
         leaked_pii = sorted(
             value for value in source_pii_values
             if value.casefold() in text.casefold()
         )
-        if leaked_identifiers:
+        leaked_medications = sorted(
+            value for value in source_medications
+            if re.search(rf"\b{re.escape(value)}\b", text, re.IGNORECASE)
+        )
+        leaked_diagnosis_literals = sorted(
+            value for value in source_diagnosis_literals
+            if re.search(rf"\b{re.escape(value)}\b", text, re.IGNORECASE)
+        )
+        if leaked_identifiers or leaked_pseudonyms:
             issues["role"].append("broad_notice_contains_source_identifier")
-        if leaked_marks:
+        if leaked_marks or leaked_fractional_results:
             issues["role"].append("broad_notice_contains_individual_mark")
         if leaked_pii:
             issues["role"].append("broad_notice_contains_source_pii")
+        if leaked_medications:
+            issues["role"].append("broad_notice_contains_source_medication")
+        if leaked_diagnosis_literals:
+            issues["role"].append("broad_notice_contains_source_health_detail")
 
     requested_languages = {
         str(item).lower()
@@ -1510,12 +2037,25 @@ def validate_school_markdown(
         (r"\bhari ini\b", r"\bhari ini\b"),
         (r"今天", r"今天"),
     )
-    for output_term, source_term in temporal_terms:
-        if re.search(output_term, text, re.IGNORECASE) and not re.search(
-            source_term, source, re.IGNORECASE
-        ):
-            issues["grounding"].append("unsupported_relative_date")
-            break
+    metadata = action.metadata or {}
+    delivery_script = bool(re.search(
+        r"\b(?:speech|spoken\s+remarks?|address|emcee\s+script)\b|"
+        r"\b(?:ucapan|teks\s+ucapan|skrip\s+pengacara)\b|"
+        r"(?:演讲稿|演講稿|致辞|致辭|讲话稿|講話稿)",
+        " ".join((
+            str(action.purpose or ""),
+            str(metadata.get("requested_label") or ""),
+            str(metadata.get("purpose") or ""),
+        )),
+        re.IGNORECASE,
+    ))
+    if not delivery_script:
+        for output_term, source_term in temporal_terms:
+            if re.search(output_term, text, re.IGNORECASE) and not re.search(
+                source_term, source, re.IGNORECASE
+            ):
+                issues["grounding"].append("unsupported_relative_date")
+                break
     if re.search(
         r"\b(?:we|the school) will (?:continue to )?monitor\b|"
         r"\bmonitoring will continue\b",
@@ -1536,7 +2076,14 @@ def validate_school_markdown(
             continue
         value_tokens = {
             token for token in re.findall(r"[a-z0-9]+", value.casefold())
-            if token not in {"the", "a", "an", "school"}
+            if token not in {
+                "the", "a", "an", "school",
+                # Epistemic labels qualify the supplied location; they are
+                # not extra location facts and must not create a false
+                # unsupported-location failure.
+                "reported", "confirmed", "unconfirmed", "approximate",
+                "approximately",
+            }
         }
         source_tokens = set(re.findall(r"[a-z0-9]+", source.casefold()))
         if value_tokens and not value_tokens.issubset(source_tokens):
@@ -1548,6 +2095,10 @@ def validate_school_markdown(
         re.IGNORECASE,
     ) and not re.search(r"\b(?:promptly|immediately)\b", source, re.IGNORECASE):
         issues["grounding"].append("unsupported_response_timing_adverb")
+
+    issues["grounding"].extend(
+        _operational_detail_grounding_issues(text, source)
+    )
 
     return issues
 
@@ -1704,11 +2255,24 @@ def school_artifact_verification_checks(
     roles: dict[str, list[str]] = {}
     grounding: dict[str, list[str]] = {}
     policy: dict[str, list[str]] = {}
+    review_notes: dict[str, list[str]] = {}
     for action in artifacts:
         issues = validate_school_markdown(
             action, contents.get(action.action_id, str(action.metadata.get("content") or "")),
             envelope.normalized_goal or envelope.raw_goal,
         )
+        accepted_notes = {
+            str(item)
+            for item in (
+                (action.metadata or {}).get("school_generation_review_notes")
+                or []
+            )
+        }
+        # Review notes are never allowed to suppress policy/privacy findings.
+        # At present only the synthesizer's cross-artifact similarity warning
+        # can enter this set; grouped per-file guard failures remain blocking.
+        if accepted_notes:
+            review_notes[action.action_id] = sorted(accepted_notes)
         if issues["hygiene"]:
             hygiene[action.action_id] = issues["hygiene"]
         if issues["role"]:
@@ -1743,6 +2307,12 @@ def school_artifact_verification_checks(
             "reason": "ok" if not policy else next(iter(policy.values()))[0],
             "details": {"issues_by_action": policy},
         },
+        {
+            "name": "school.human_review_notes",
+            "pass": True,
+            "reason": "review_noted" if review_notes else "ok",
+            "details": {"notes_by_action": review_notes},
+        },
     ])
 
     similarity_errors: list[dict] = []
@@ -1751,6 +2321,20 @@ def school_artifact_verification_checks(
             score = artifact_similarity(
                 contents.get(left.action_id, ""), contents.get(right.action_id, ""))
             if score >= 0.72:
+                marker = (
+                    f"cross_artifact_similarity:{left.action_id}:"
+                    f"{right.action_id}:{score:.3f}"
+                )
+                left_notes = set(
+                    (left.metadata or {}).get("school_generation_review_notes")
+                    or []
+                )
+                right_notes = set(
+                    (right.metadata or {}).get("school_generation_review_notes")
+                    or []
+                )
+                if marker in left_notes and marker in right_notes:
+                    continue
                 similarity_errors.append({
                     "left": left.action_id, "right": right.action_id,
                     "ratio": round(score, 3),

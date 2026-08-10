@@ -155,6 +155,43 @@ def _norm_list(values: Any) -> str:
     return str(values or "").lower()
 
 
+def _contains_asserted_sensitive_term(text: str, terms: tuple[str, ...]) -> bool:
+    """True only when a sensitive term is asserted, not explicitly excluded.
+
+    Privacy-safe replacement drafts often state their boundary in plain text,
+    for example ``No pupil diagnosis is shared`` or ``exclude health data``.
+    Treating those negative controls as a disclosure makes the action guard
+    block the very anonymous alternative produced by the input-governance
+    layer.  This remains conservative: only a bounded, same-clause exclusion
+    suppresses the match; any positive or ambiguous mention still fires.
+    """
+    value = _normalize(text)
+    for clause in re.split(r"[.!?;\n]+", value):
+        for term in terms:
+            start = clause.find(term)
+            while start >= 0:
+                before = clause[max(0, start - 140):start]
+                after = clause[start + len(term):start + len(term) + 90]
+                excluded_before = bool(re.search(
+                    r"\b(?:no|without|exclude(?:s|d)?|excluding|omit(?:s|ted)?|"
+                    r"omitting|remove(?:s|d)?|removing|withhold(?:s|held)?|"
+                    r"do\s+not\s+(?:include|share|disclose)|must\s+not\s+"
+                    r"(?:include|share|disclose)|not\s+(?:include|share|disclose))\b"
+                    r"[^.!?;\n]{0,120}$",
+                    before,
+                ))
+                excluded_after = bool(re.match(
+                    r"[^.!?;\n]{0,60}\b(?:is|are|must\s+be)\s+"
+                    r"(?:not\s+(?:included|shared|disclosed)|excluded|omitted|"
+                    r"removed|withheld)\b",
+                    after,
+                ))
+                if not excluded_before and not excluded_after:
+                    return True
+                start = clause.find(term, start + len(term))
+    return False
+
+
 class DataUseGuard:
     """Deterministic guard over the agent's own intended data use."""
 
@@ -379,7 +416,7 @@ class DataUseGuard:
             or "public_pii" in concepts
         )
         has_health = (
-            any(f in own_text for f in _HEALTH_FIELDS)
+            _contains_asserted_sensitive_term(own_text, _HEALTH_FIELDS)
             or "health_or_discipline" in concepts
         )
         has_student_sensitive = (

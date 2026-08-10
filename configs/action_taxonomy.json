@@ -18,6 +18,7 @@
     "legal_content_draft":         ["legal_content"],
     "parent_notice_broadcast":     ["parent_notice"],
     "student_record_modification": ["student_record_change"],
-    "student_attendance_update":   ["student_record_change"]
+    "student_attendance_update":   ["student_record_change"],
+    "internal_school_repository_publish": ["system_level_change"]
   }
 }

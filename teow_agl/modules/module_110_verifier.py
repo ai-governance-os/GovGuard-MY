@@ -38,6 +38,7 @@ from .module_school_artifact_guard import (
     is_school_output_contract,
     school_artifact_verification_checks,
 )
+from .module_deliverable_mentions import is_requested_output_mention
 
 
 # Tools whose output is conversational prose (counted by words against
@@ -146,6 +147,10 @@ class VerifierModule:
             # compatibility; `verification_status` distinguishes a useful
             # partial result and an intentional governed safe stop.
             "verification_status": "pending",
+            # A mechanical pass proves policy/format safety, not that the
+            # user's goal was semantically completed. Runtime promotes this
+            # to ``goal_complete`` only after the semantic judge passes.
+            "verification_grade": "safe_format_only",
             "fail_outcome": self.rules.get("fail_outcome", "failure"),
         }
         if not out["enabled"]:
@@ -160,6 +165,36 @@ class VerifierModule:
         )
         scoped_actions = scope["plan_actions"]
         scoped_executions = scope["executions"]
+
+        # Canonical response-pack coverage is evaluated from the whole plan,
+        # including deliberately excluded GREEN/RED actions. Without this
+        # ledger a selected deliverable can disappear before Module 110 sees
+        # it and a correct sibling can make the whole task look complete.
+        coverage = self._response_pack_coverage(
+            envelope=envelope,
+            plan_actions=plan_actions,
+            executions=executions,
+            governance_decisions=governance_decisions,
+        )
+        if coverage["active"]:
+            out["coverage_ledger"] = coverage["items"]
+            out["coverage_summary"] = coverage["summary"]
+            out["checks"].append({
+                "name": "school.goal_coverage",
+                "pass": coverage["complete"],
+                "reason": (
+                    "all_selected_deliverables_have_governed_dispositions"
+                    if coverage["complete"]
+                    else "missing_or_failed_selected_deliverables:"
+                         + ",".join(coverage["incomplete_deliverable_ids"])
+                ),
+                "details": {
+                    "incomplete_deliverable_ids": (
+                        coverage["incomplete_deliverable_ids"]
+                    ),
+                    "status_counts": coverage["status_counts"],
+                },
+            })
         out["scope"] = {
             "verified_action_ids": scope["verified_action_ids"],
             "excluded_action_ids": scope["excluded_action_ids"],
@@ -170,6 +205,9 @@ class VerifierModule:
             ),
             "execution_before_approval_action_ids": (
                 scope["execution_before_approval_action_ids"]
+            ),
+            "execution_of_blocked_action_ids": (
+                scope["execution_of_blocked_action_ids"]
             ),
         }
         governance_integrity_errors: list[str] = []
@@ -182,6 +220,11 @@ class VerifierModule:
             governance_integrity_errors.append(
                 "execution_before_approval:"
                 + ",".join(scope["execution_before_approval_action_ids"])
+            )
+        if scope["execution_of_blocked_action_ids"]:
+            governance_integrity_errors.append(
+                "execution_of_blocked_action:"
+                + ",".join(scope["execution_of_blocked_action_ids"])
             )
         if governance_integrity_errors:
             # This is an audit-integrity failure, not an artifact-quality
@@ -200,9 +243,13 @@ class VerifierModule:
                     "execution_before_approval_action_ids": (
                         scope["execution_before_approval_action_ids"]
                     ),
+                    "execution_of_blocked_action_ids": (
+                        scope["execution_of_blocked_action_ids"]
+                    ),
                 },
             })
             out["verification_status"] = "failed"
+            out["verification_grade"] = "failed"
             out["summary"] = (
                 "failed: governance.execution_authority="
                 + ";".join(governance_integrity_errors)
@@ -210,6 +257,19 @@ class VerifierModule:
             return out
         input_boundary = self._input_governance_boundary(envelope)
         partial = bool(scope["blocked_action_ids"] or input_boundary)
+
+        # Do not let a final RED/INFEASIBLE route conceal a response-pack
+        # compiler or execution gap. Policy-blocked external actions have a
+        # valid BLOCKED disposition; missing selected artifacts do not.
+        if coverage["active"] and not coverage["complete"]:
+            out["pass"] = False
+            out["verification_status"] = "failed"
+            out["verification_grade"] = "failed"
+            out["summary"] = (
+                "failed: school.goal_coverage="
+                + ",".join(coverage["incomplete_deliverable_ids"])
+            )
+            return out
 
         any_success = bool(scope["successful_substantive_action_ids"])
         expected_substantive = bool(scope["expected_substantive_action_ids"])
@@ -227,6 +287,7 @@ class VerifierModule:
                 )):
             out["summary"] = f"skipped:route_exempt:{final_route.upper()}"
             out["verification_status"] = "verified_safe_stop"
+            out["verification_grade"] = "safe_stop"
             return out
 
         # An unapproved GREEN action has not failed and is not yet eligible
@@ -236,6 +297,7 @@ class VerifierModule:
                 and scope["pending_green_action_ids"]):
             out["summary"] = "skipped:awaiting_human_approval"
             out["verification_status"] = "awaiting_approval"
+            out["verification_grade"] = "partial"
             return out
 
         # If nothing executed successfully, there's nothing to verify;
@@ -249,6 +311,7 @@ class VerifierModule:
                 out["checks"].extend(school_checks)
                 out["pass"] = False
                 out["verification_status"] = "failed"
+                out["verification_grade"] = "failed"
                 out["summary"] = (
                     "failed: school.execution_completeness="
                     "no_successful_executions"
@@ -257,6 +320,7 @@ class VerifierModule:
             out["pass"] = True
             out["summary"] = "skipped:no_successful_executions"
             out["verification_status"] = "skipped"
+            out["verification_grade"] = "safe_format_only"
             return out
 
         user_intent = (envelope.normalized_goal or "").strip()
@@ -318,12 +382,16 @@ class VerifierModule:
             out["verification_status"] = (
                 "verified_partial" if partial else "verified"
             )
+            out["verification_grade"] = (
+                "partial" if partial else "safe_format_only"
+            )
             ok_names = [c["name"] for c in out["checks"]]
             out["summary"] = (f"all checks passed ({len(ok_names)}: "
                               f"{','.join(ok_names) or 'none_applied'})"
                               if ok_names else "no_applicable_checks")
         else:
             out["verification_status"] = "failed"
+            out["verification_grade"] = "failed"
             reasons = [f"{c['name']}={c['reason']}" for c in failed_checks]
             out["summary"] = f"failed: {' ; '.join(reasons)[:300]}"
         return out
@@ -371,6 +439,7 @@ class VerifierModule:
         pending_green_ids: list[str] = []
         missing_governance_ids: list[str] = []
         execution_before_approval_ids: list[str] = []
+        execution_of_blocked_action_ids: list[str] = []
         expected_substantive_ids: list[str] = []
         included_routes: list[str] = []
 
@@ -413,6 +482,9 @@ class VerifierModule:
                 include = technical_failure
                 if not auxiliary and not technical_failure:
                     blocked_ids.append(action_id)
+                execution = execution_by_id.get(action_id)
+                if execution is not None and execution.status == "success":
+                    execution_of_blocked_action_ids.append(action_id)
             else:
                 # Auxiliary UI copy is still checked for scope/hygiene.  A
                 # substantive action without a governance decision is not
@@ -465,9 +537,213 @@ class VerifierModule:
             "execution_before_approval_action_ids": (
                 execution_before_approval_ids
             ),
+            "execution_of_blocked_action_ids": (
+                execution_of_blocked_action_ids
+            ),
             "expected_substantive_action_ids": expected_substantive_ids,
             "successful_substantive_action_ids": successful_substantive_ids,
             "effective_route": effective_route,
+        }
+
+    @classmethod
+    def _response_pack_coverage(
+        cls,
+        *,
+        envelope: TaskEnvelope,
+        plan_actions: list[CandidateAction],
+        executions: list[ExecutionResult],
+        governance_decisions: list[GovernanceDecision | dict] | None,
+    ) -> dict:
+        """Return one auditable disposition for every selected pack item.
+
+        Artifact creation, external release and official-system change are
+        deliberately different outcomes. A policy BLOCKED or approval-pending
+        external action is governed; a selected draft that never became a file
+        is incomplete. The distinction prevents siblings from hiding omissions.
+        """
+        pack = (envelope.metadata or {}).get("school_response_pack") or {}
+        intent_coverage = pack.get("intent_coverage") or {}
+        intent_contract_incomplete = bool(
+            isinstance(intent_coverage, dict)
+            and intent_coverage.get("pass") is False
+        )
+        selected = [
+            item for item in (pack.get("deliverables") or [])
+            if isinstance(item, dict) and item.get("selected") is True
+        ]
+        if not selected and not intent_contract_incomplete:
+            return {
+                "active": False, "complete": True, "items": [],
+                "incomplete_deliverable_ids": [], "status_counts": {},
+                "summary": "no_selected_response_pack",
+            }
+
+        actions_by_deliverable: dict[str, list[CandidateAction]] = {}
+        actions_by_role: dict[str, list[CandidateAction]] = {}
+        action_by_id = {action.action_id: action for action in plan_actions}
+        for action in plan_actions:
+            meta = action.metadata or {}
+            deliverable_id = str(meta.get("deliverable_id") or "")
+            role = str(meta.get("artifact_role") or "")
+            if deliverable_id:
+                actions_by_deliverable.setdefault(deliverable_id, []).append(action)
+            if role:
+                actions_by_role.setdefault(role, []).append(action)
+
+        execution_by_id: dict[str, ExecutionResult] = {}
+        for execution in executions:
+            if execution.action_id in _NON_SUBSTANTIVE_ACTION_IDS:
+                continue
+            previous = execution_by_id.get(execution.action_id)
+            if previous is None or execution.status == "success":
+                execution_by_id[execution.action_id] = execution
+
+        decision_by_id: dict[str, GovernanceDecision | dict] = {}
+        for decision in governance_decisions or []:
+            action_id = str(cls._decision_value(decision, "action_id") or "")
+            if action_id:
+                decision_by_id[action_id] = decision
+
+        items: list[dict] = []
+        incomplete: list[str] = []
+        status_counts: dict[str, int] = {}
+        for expected in selected:
+            deliverable_id = str(expected.get("deliverable_id") or "")
+            role = str(expected.get("artifact_role") or "")
+            kind = str(expected.get("kind") or "artifact").lower()
+            candidates = actions_by_deliverable.get(deliverable_id) or []
+            if not candidates and role:
+                role_candidates = actions_by_role.get(role) or []
+                # Legacy plans may predate deliverable_id. Only use a role when
+                # it identifies exactly one action; ambiguity is a coverage gap.
+                if len(role_candidates) == 1:
+                    candidates = role_candidates
+            action = candidates[0] if len(candidates) == 1 else None
+            decision = decision_by_id.get(action.action_id) if action else None
+            route = str(cls._decision_value(decision, "route") or "").upper()
+            decision_reasons = cls._decision_value(decision, "reasons") or []
+            technical_failure = any(
+                str(reason).startswith((
+                    "school_artifact_generation_not_verified",
+                    "linked_artifact_not_available",
+                    "artifact_generation_failure",
+                ))
+                for reason in decision_reasons
+            )
+            execution = execution_by_id.get(action.action_id) if action else None
+            approval = cls._decision_value(decision, "approval_request")
+            if isinstance(approval, dict):
+                approval_status = str(approval.get("status") or "").lower()
+            else:
+                approval_status = str(
+                    getattr(approval, "status", "") or ""
+                ).lower()
+
+            status = "MISSING"
+            detail = "no_unique_action_for_selected_deliverable"
+            if action is not None:
+                success = execution is not None and execution.status == "success"
+                if kind == "artifact":
+                    resources = [
+                        str(path) for path in (
+                            execution.affected_resources if execution else []
+                        ) if str(path)
+                    ]
+                    target_name = Path(str(action.target or "")).name.lower()
+                    matching_file = any(
+                        (not target_name or Path(path).name.lower() == target_name)
+                        for path in resources
+                    )
+                    if success and matching_file:
+                        status = "CREATED"
+                        detail = "artifact_execution_succeeded"
+                    elif execution is not None and execution.status == "failed":
+                        status = "FAILED"
+                        detail = execution.error or "artifact_execution_failed"
+                    elif technical_failure:
+                        status = "FAILED"
+                        detail = "technical_contract_failure"
+                    elif route in {"RED", "INFEASIBLE"}:
+                        status = "BLOCKED"
+                        detail = "artifact_blocked_without_safe_created_replacement"
+                    elif route == "GREEN" and approval_status != "approved":
+                        status = "AWAITING_APPROVAL"
+                        detail = "artifact_waiting_for_human_approval"
+                    else:
+                        detail = "artifact_file_not_created"
+                else:
+                    if technical_failure:
+                        status = "FAILED"
+                        detail = "technical_contract_failure"
+                    elif route in {"RED", "INFEASIBLE"} or approval_status == "rejected":
+                        status = "BLOCKED"
+                        detail = "governed_action_stopped"
+                    elif route == "GREEN" and approval_status != "approved":
+                        status = "AWAITING_APPROVAL"
+                        detail = "human_approval_required"
+                    elif success:
+                        status = "COMPLETED"
+                        detail = "governed_action_completed"
+                    elif execution is not None and execution.status == "failed":
+                        status = "FAILED"
+                        detail = execution.error or "governed_action_failed"
+                    else:
+                        detail = "selected_governed_action_not_completed"
+
+            # Drafts must exist. For external/system actions, BLOCKED and
+            # AWAITING_APPROVAL are complete governed dispositions, not errors.
+            complete = (
+                status == "CREATED" if kind == "artifact"
+                else status in {"COMPLETED", "BLOCKED", "AWAITING_APPROVAL"}
+            )
+            if not complete:
+                incomplete.append(deliverable_id or role or "unknown")
+            status_counts[status] = status_counts.get(status, 0) + 1
+            items.append({
+                "deliverable_id": deliverable_id,
+                "artifact_role": role,
+                "label": expected.get("label") or role or deliverable_id,
+                "kind": kind,
+                "requirement": expected.get("requirement"),
+                "action_id": action.action_id if action else "",
+                "route": route,
+                "status": status,
+                "complete": complete,
+                "detail": str(detail)[:240],
+            })
+
+        if intent_contract_incomplete:
+            identifier = "intent_contract_cardinality"
+            incomplete.append(identifier)
+            status_counts["MISSING"] = status_counts.get("MISSING", 0) + 1
+            items.append({
+                "deliverable_id": identifier,
+                "artifact_role": "intent_contract",
+                "label": "Explicit requested-output contract",
+                "kind": "intent_contract",
+                "requirement": "explicit_user_request",
+                "action_id": "",
+                "route": "",
+                "status": "MISSING",
+                "complete": False,
+                "detail": (
+                    "semantic intake did not preserve all explicitly declared "
+                    "output slots; cardinality_gap="
+                    + str(intent_coverage.get("cardinality_gap") or 0)
+                )[:240],
+            })
+
+        complete = not incomplete
+        return {
+            "active": True,
+            "complete": complete,
+            "items": items,
+            "incomplete_deliverable_ids": incomplete,
+            "status_counts": status_counts,
+            "summary": (
+                "coverage_complete" if complete
+                else "coverage_incomplete:" + ",".join(incomplete)
+            ),
         }
 
     @staticmethod
@@ -1030,8 +1306,12 @@ class VerifierModule:
             # A format word can describe source evidence rather than the
             # requested output (for example, "a spreadsheet was emailed to the
             # wrong vendor"). Require an output-making cue in the same clause.
-            if any(rx.search(clause) and output_request.search(clause)
-                   for clause in clauses):
+            if any(
+                is_requested_output_mention(
+                    clause, rx, request_pattern=output_request
+                )
+                for clause in clauses
+            ):
                 out.append(ext)
         # De-dup preserving order
         seen: set[str] = set()
@@ -1041,6 +1321,43 @@ class VerifierModule:
                 seen.add(e)
                 result.append(e)
         return result
+
+    @staticmethod
+    def _read_execution_text(
+        action: CandidateAction,
+        execution: ExecutionResult,
+    ) -> str:
+        """Read the actual text file produced for one action when available.
+
+        The planner metadata is an intent, not execution evidence. Prefer the
+        affected resource whose filename matches ``action.target``; only fall
+        back to metadata for legacy tests or binary office artifacts.
+        """
+        target = Path(str(action.target or ""))
+        target_name = target.name.lower()
+        resources = [Path(str(path)) for path in execution.affected_resources or []]
+        ordered = sorted(
+            resources,
+            key=lambda path: 0 if target_name and path.name.lower() == target_name else 1,
+        )
+        if target:
+            ordered.append(target)
+        seen: set[str] = set()
+        for path in ordered:
+            marker = str(path)
+            if not marker or marker.lower() in seen:
+                continue
+            seen.add(marker.lower())
+            if path.suffix.lower() not in {
+                ".md", ".txt", ".csv", ".json", ".html", ".htm", ".log",
+            }:
+                continue
+            try:
+                if path.is_file():
+                    return path.read_text(encoding="utf-8", errors="replace").strip()
+            except OSError:
+                continue
+        return ""
 
     @staticmethod
     def _collect_artifact_content(
@@ -1075,8 +1392,9 @@ class VerifierModule:
 
             elif tool in {"docx", "report", "fs"}:
                 title = str(meta.get("title") or "").strip()
-                body = str(meta.get("body") or meta.get("content")
-                           or e.output_summary or "").strip()
+                file_body = VerifierModule._read_execution_text(a, e)
+                body = file_body or str(meta.get("body") or meta.get("content")
+                                        or e.output_summary or "").strip()
                 if not (title or body):
                     continue
                 head = f"[{tool} document"
@@ -1086,11 +1404,13 @@ class VerifierModule:
                 if meta.get("school_output_contract"):
                     head = head[:-1] + (
                         f"; target={Path(a.target).name}; "
+                        f"action_id={a.action_id}; "
+                        f"deliverable_id={meta.get('deliverable_id')}; "
                         f"artifact_id={meta.get('artifact_id')}; "
                         f"role={meta.get('artifact_role')}; "
                         f"audience={meta.get('audience')}]"
                     )
-                parts.append(f"{head}\n{body[:4000]}")
+                parts.append(f"{head}\n{body}")
 
             elif tool == "pptx":
                 title = str(meta.get("title") or "").strip()
@@ -1154,7 +1474,15 @@ class VerifierModule:
                         f"  files: {', '.join(affected[:3])}"
                     )
 
-        return "\n\n".join(parts)
+        if not parts:
+            return ""
+        # Keep every produced artifact visible to the judge. A fair per-file
+        # budget prevents the first two long drafts from consuming the old
+        # 8,000-character global window and hiding later deliverables.
+        max_total = 30000
+        per_artifact = min(6000, max(900, max_total // len(parts)))
+        bounded = [part[:per_artifact] for part in parts]
+        return "\n\n".join(bounded)
 
     @staticmethod
     def _collect_prose_body(
@@ -1215,6 +1543,64 @@ class VerifierModule:
         return len(tokens)
 
     # ------------------------------------------------------------------
+    @staticmethod
+    def _normalise_judge_issues(raw_issues: Any) -> list[dict]:
+        """Normalise old string issues and the severity-aware judge schema."""
+        details: list[dict] = []
+        strong_failure = re.compile(
+            r"(?:core request|does not (?:address|contain|provide)|"
+            r"no actual|missing required|wrong (?:task|recipient|claim)|"
+            r"unsupported claim|fabricat|unsafe|privacy breach|gibberish|"
+            r"not bilingual|unrelated to the user)",
+            re.IGNORECASE,
+        )
+        # Sort by severity before applying the display cap. Previously the
+        # first 12 raw items were sliced before sorting, so a judge could emit
+        # many minor notes followed by a critical failure and the critical
+        # failure would disappear from both the audit and hard-failure gate.
+        if isinstance(raw_issues, (str, dict)):
+            issue_source = [raw_issues]
+        else:
+            issue_source = list(raw_issues or [])
+        for raw in issue_source:
+            if isinstance(raw, dict):
+                message = str(
+                    raw.get("message") or raw.get("issue")
+                    or raw.get("description") or raw.get("code") or ""
+                ).strip()[:300]
+                severity = str(raw.get("severity") or "minor").lower()
+                if severity not in {"critical", "major", "minor"}:
+                    severity = "minor"
+                code = str(raw.get("code") or "judge_issue")[:80]
+            else:
+                message = str(raw or "").strip()[:300]
+                severity = "major" if strong_failure.search(message) else "minor"
+                code = "judge_issue"
+            if message:
+                details.append({
+                    "severity": severity,
+                    "code": code,
+                    "message": message,
+                })
+        severity_rank = {"critical": 0, "major": 1, "minor": 2}
+        details.sort(key=lambda item: severity_rank[item["severity"]])
+        return details[:8]
+
+    @staticmethod
+    def _normalise_judge_dimensions(raw_dimensions: Any) -> dict[str, int]:
+        if not isinstance(raw_dimensions, dict):
+            return {}
+        dimensions: dict[str, int] = {}
+        for name in (
+            "relevance", "completeness", "factuality", "governance", "usability",
+        ):
+            try:
+                score = int(raw_dimensions.get(name))
+            except (TypeError, ValueError):
+                continue
+            dimensions[name] = max(0, min(100, score))
+        return dimensions
+
     # Phase 14 — LLM-as-judge. Catches semantic failures (agent wrote
     # 500 words but it's gibberish) that the three mechanical checks
     # above can't see. Returns a structured opinion the runtime uses
@@ -1267,6 +1653,8 @@ class VerifierModule:
         # Judge the same governed scope as the mechanical verifier.  This is
         # especially important for a mixed task: a safe BLUE replacement can
         # be judged even when a sibling request was correctly RED-blocked.
+        all_plan_actions = list(plan_actions)
+        all_executions = list(executions)
         scope = self.verification_scope(
             plan_actions=plan_actions,
             executions=executions,
@@ -1345,6 +1733,16 @@ class VerifierModule:
         out["rubric_used"] = rubric["_key"]
         threshold = int(rubric.get("pass_threshold", 60))
         out["threshold"] = threshold
+        successful_execution_ids = {
+            execution.action_id for execution in executions
+            if execution.status == "success"
+        }
+        required_artifact_result_ids = [
+            action.action_id for action in plan_actions
+            if action.action_id in successful_execution_ids
+            and (action.metadata or {}).get("school_output_contract")
+            and (action.metadata or {}).get("school_content_role") == "artifact"
+        ]
 
         # Build prompt for the judge LLM
         call_cfg = self.rubrics.get("judge_call") or {}
@@ -1389,9 +1787,27 @@ class VerifierModule:
                         "route": route,
                         "reasons": list(reasons)[:5],
                     })
+            coverage = self._response_pack_coverage(
+                envelope=envelope,
+                plan_actions=all_plan_actions,
+                executions=all_executions,
+                governance_decisions=governance_decisions,
+            )
+            selected_contracts = [
+                {
+                    "deliverable_id": item.get("deliverable_id"),
+                    "artifact_role": item.get("artifact_role"),
+                    "kind": item.get("kind"),
+                    "requirement": item.get("requirement"),
+                }
+                for item in (response_pack.get("deliverables") or [])
+                if isinstance(item, dict) and item.get("selected") is True
+            ]
             governance_context = {
                 "input_governance": response_pack.get("input_governance") or {},
                 "authorised_artifact_contracts": action_contracts,
+                "selected_response_pack_contracts": selected_contracts,
+                "coverage_dispositions": coverage["items"],
                 "governed_blocked_actions": blocked_routes,
                 "missing_fact_policy": (
                     "Use TBC for facts the user did not supply; never demand "
@@ -1422,20 +1838,152 @@ class VerifierModule:
             out["summary"] = out["skipped_reason"]
             return out
 
-        # Clamp + extract fields the judge sent
         try:
             score = int(decision.get("score", 0))
         except (ValueError, TypeError):
             score = 0
         score = max(0, min(100, score))
+
+        # A single total score cannot overrule a critical defect. Normalise the
+        # richer schema while retaining compatibility with older string issues.
+        decision_issues = decision.get("issues")
+        if isinstance(decision_issues, list):
+            raw_issues = list(decision_issues)
+        elif decision_issues in (None, ""):
+            raw_issues = []
+        else:
+            raw_issues = [decision_issues]
+        critical_values = decision.get("critical_failures")
+        if not isinstance(critical_values, list):
+            critical_values = [] if critical_values in (None, "") else [critical_values]
+        for critical in critical_values:
+            if isinstance(critical, dict):
+                raw_issues.append({**critical, "severity": "critical"})
+            else:
+                raw_issues.append({
+                    "severity": "critical", "code": "critical_failure",
+                    "message": str(critical),
+                })
+        issue_details = self._normalise_judge_issues(raw_issues)
+        dimensions = self._normalise_judge_dimensions(
+            decision.get("dimensions")
+        )
+        raw_artifact_results = decision.get("artifact_results") or []
+        if not isinstance(raw_artifact_results, list):
+            raw_artifact_results = []
+        deliverable_to_action = {
+            str((action.metadata or {}).get("deliverable_id")): action.action_id
+            for action in plan_actions
+            if (action.metadata or {}).get("deliverable_id")
+        }
+        required_result_set = set(required_artifact_result_ids)
+        artifact_results: list[dict] = []
+        seen_required_results: set[str] = set()
+        duplicate_artifact_results: list[str] = []
+        invalid_artifact_results: list[str] = []
+        artifact_failures: list[str] = []
+        for raw_result in raw_artifact_results[:64]:
+            if not isinstance(raw_result, dict):
+                continue
+            raw_id = str(
+                raw_result.get("action_id")
+                or raw_result.get("deliverable_id") or ""
+            ).strip()
+            action_id = (
+                raw_id if raw_id in required_result_set
+                else deliverable_to_action.get(raw_id, raw_id)
+            )
+            pass_value = raw_result.get("pass")
+            issues_value = raw_result.get("issues") or []
+            if isinstance(issues_value, str):
+                issues_value = [issues_value]
+            elif not isinstance(issues_value, list):
+                issues_value = [issues_value]
+            normalised_result = {
+                **raw_result,
+                "action_id": action_id,
+                "pass": pass_value if isinstance(pass_value, bool) else None,
+                "issues": [str(item)[:200] for item in issues_value[:8]],
+            }
+            artifact_results.append(normalised_result)
+            if pass_value is False:
+                artifact_failures.append(action_id or "artifact")
+            if action_id not in required_result_set:
+                continue
+            if action_id in seen_required_results:
+                duplicate_artifact_results.append(action_id)
+                continue
+            seen_required_results.add(action_id)
+            if not isinstance(pass_value, bool):
+                invalid_artifact_results.append(action_id)
+        missing_artifact_results = [
+            action_id for action_id in required_artifact_result_ids
+            if action_id not in seen_required_results
+        ]
+
+        floor_config = cfg.get("dimension_floors") or {}
+        try:
+            default_floor = int(
+                cfg.get("dimension_floor", max(60, threshold - 10))
+            )
+        except (TypeError, ValueError):
+            default_floor = max(60, threshold - 10)
+        dimension_failures: list[str] = []
+        dimension_floors: dict[str, int] = {}
+        for name in ("relevance", "completeness", "factuality", "governance"):
+            try:
+                floor = int(floor_config.get(name, default_floor))
+            except (TypeError, ValueError):
+                floor = default_floor
+            floor = max(0, min(100, floor))
+            dimension_floors[name] = floor
+            if name in dimensions and dimensions[name] < floor:
+                dimension_failures.append(
+                    f"{name}:{dimensions[name]}<{floor}"
+                )
+
+        severe_issues = [
+            item for item in issue_details
+            if item["severity"] in {"critical", "major"}
+        ]
+        hard_failures = [
+            f"{item['severity']}:{item['code']}" for item in severe_issues
+        ]
+        hard_failures.extend(
+            f"artifact_failed:{item}" for item in artifact_failures
+        )
+        hard_failures.extend(
+            f"artifact_result_missing:{item}" for item in missing_artifact_results
+        )
+        hard_failures.extend(
+            f"artifact_result_invalid:{item}" for item in invalid_artifact_results
+        )
+        hard_failures.extend(
+            f"artifact_result_duplicate:{item}" for item in duplicate_artifact_results
+        )
+        hard_failures.extend(
+            f"dimension_below_floor:{item}" for item in dimension_failures
+        )
+
         out["score"] = score
-        out["issues"] = [str(i)[:200] for i in (decision.get("issues") or [])][:8]
-        out["suggestions"] = [str(s)[:200] for s in (decision.get("suggestions") or [])][:8]
-        out["pass"] = score >= threshold
-        out["summary"] = (f"judge_pass:score={score}/{threshold}"
-                          if out["pass"] else
-                          f"judge_fail:score={score}/{threshold}:"
-                          + ";".join(out["issues"])[:200])
+        out["issue_details"] = issue_details
+        out["issues"] = [item["message"] for item in issue_details]
+        out["suggestions"] = [
+            str(item)[:200] for item in (decision.get("suggestions") or [])
+        ][:8]
+        out["dimensions"] = dimensions
+        out["dimension_floors"] = dimension_floors
+        out["artifact_results"] = artifact_results
+        out["required_artifact_result_ids"] = required_artifact_result_ids
+        out["missing_artifact_result_ids"] = missing_artifact_results
+        out["hard_failures"] = hard_failures
+        out["pass"] = score >= threshold and not hard_failures
+        out["summary"] = (
+            f"judge_pass:score={score}/{threshold}"
+            if out["pass"] else
+            f"judge_fail:score={score}/{threshold}:"
+            + ";".join(hard_failures or out["issues"])[:240]
+        )
         return out
 
     # ------------------------------------------------------------------
@@ -1472,12 +2020,15 @@ class VerifierModule:
             "- TBC is the correct professional control for a material fact the "
             "user did not supply. Never demand an invented student identity, date, "
             "time, location, diagnosis, endorsement, result or completed action.\n"
-            "- A RED/INFEASIBLE sibling intentionally excluded from verification "
-            "is a governed safe stop, not a missing deliverable. A pending GREEN "
-            "external action is correctly waiting for human approval.\n"
-            "- Judge relevance, usefulness and factual fidelity inside each "
-            "authorised artifact role; never reward literal compliance with an "
-            "unsafe or evidentially impossible instruction."
+            "- Use the coverage dispositions literally: BLOCKED is acceptable "
+            "for an unsafe external/system action, and AWAITING_APPROVAL is "
+            "acceptable for a GREEN external action. A selected draft is complete "
+            "only when its disposition is CREATED.\n"
+            "- A blocked literal instruction does not excuse a weak safe "
+            "transformation. Judge whether each safe artifact still addresses the "
+            "user's legitimate administrative objective.\n"
+            "- Judge every marked artifact separately for relevance, completeness, "
+            "factual fidelity and role fit; never let a good sibling hide a bad one."
             if governed_school else ""
         )
         return (
@@ -1487,11 +2038,21 @@ class VerifierModule:
             f"Scoring: integer 0-100. Pass threshold: {threshold}.\n"
             "Return ONE JSON object only:\n"
             "{\n"
-            '  "score":       <int 0-100>,\n'
-            '  "issues":      ["short bullet of what is wrong", ...],\n'
-            '  "suggestions": ["short bullet of how to fix it next try", ...],\n'
-            '  "reasoning":   "one sentence overall"\n'
+            '  "score": <int 0-100>,\n'
+            '  "dimensions": {"relevance": <0-100>, "completeness": <0-100>, '
+            '"factuality": <0-100>, "governance": <0-100>, "usability": <0-100>},\n'
+            '  "issues": [{"severity": "critical|major|minor", '
+            '"code": "short_code", "message": "what is wrong"}],\n'
+            '  "artifact_results": [{"action_id": "marker action id", '
+            '"pass": <bool>, "issues": ["artifact-specific issue"]}],\n'
+            '  "suggestions": ["short repair instruction", ...],\n'
+            '  "reasoning": "one sentence overall"\n'
             "}\n"
+            "Severity: critical = unsafe/fabricated/wrong task; major = a core "
+            "goal, required deliverable or safe transformation is not addressed; "
+            "minor = polish only. A critical or major issue is a hard failure "
+            "even when the total score reaches the threshold. Return one "
+            "artifact_results entry for every marked artifact.\n"
             "Be fair: a reasonable answer for the question deserves a "
             "pass even if not perfect. Be strict: gibberish or refusals "
             "that should have answered get a fail."
@@ -1565,7 +2126,7 @@ class VerifierModule:
             f"Agent's output (may include section markers like "
             f"[chat reply] / [docx document] / [pptx deck] / "
             f"[xlsx workbook] / [image generated] — judge ALL of them "
-            f"together against the goal):\n{output[:8000]}\n\n"
+            f"together against the goal):\n{output[:32000]}\n\n"
             "Score based on whether the produced ARTIFACTS satisfy the "
             "user's request. A short chat companion paired with a real "
             "document is fine — score the document, not the chat.\n"

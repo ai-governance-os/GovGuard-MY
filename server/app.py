@@ -16,7 +16,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, PrivateAttr
 
 from teow_agl.adapters.chat_llm import ChatLLM
 from teow_agl.adapters.openai_provider import (
@@ -31,6 +31,9 @@ from teow_agl.modules.module_102w_workflow_resolver import WorkflowResolver
 from teow_agl.modules.module_102t_task_tree import TaskTreeModule
 from teow_agl.modules.module_105_web_gate import WebHumanGate
 from teow_agl.modules.module_109_reflector import ReflectorModule
+from teow_agl.modules.module_school_case_context import (
+    build_case_context, confirm_case_binding, resolve_case_aware_semantics,
+)
 from teow_agl.modules.module_school_input_semantics import SchoolInputSemantics
 from teow_agl.modules.module_school_situation import SchoolSituationCompiler
 from teow_agl.modules.module_curator import CuratorModule
@@ -100,6 +103,20 @@ def _demo_mode() -> bool:
     WhatsApp / API send / file deletion / external modification ever fires.
     Set MAIC_DEMO_MODE=0 to disable (not used during judging)."""
     return os.environ.get("MAIC_DEMO_MODE", "1").strip().lower() not in (
+        "0", "false", "no", "off", ""
+    )
+
+
+def _live_fast_path_enabled() -> bool:
+    """Use the bounded Mixed-Live competition pipeline.
+
+    A deterministic planner supplies the non-authorising action skeleton while
+    the configured live provider handles semantics, writing and grounding.
+    This removes duplicate remote calls without moving governance into the
+    model. Set ``TEOW_AGL_LIVE_FAST_PATH=0`` for the slower research path.
+    """
+    default = "1" if _demo_mode() else "0"
+    return os.environ.get("TEOW_AGL_LIVE_FAST_PATH", default).strip().lower() not in (
         "0", "false", "no", "off", ""
     )
 
@@ -430,7 +447,9 @@ def _school_semantics_for_goal(
     raw_goal: str,
     *,
     active_workflow_id: str | None = None,
+    active_case_context: dict | None = None,
     scripted_workflow_id: str | None = None,
+    force_school_review: bool = False,
 ) -> dict:
     """Interpret an open school input once before choosing the planner tier."""
     # Judge-clicked scripted prompts deliberately keep the reproducible
@@ -438,7 +457,12 @@ def _school_semantics_for_goal(
     # because it contains one of that workflow's trigger phrases.
     if scripted_workflow_id:
         return {}
-    if not (active_workflow_id or _live_school_inputs_enabled()):
+    if not (
+        active_workflow_id
+        or active_case_context
+        or _live_school_inputs_enabled()
+        or force_school_review
+    ):
         return {}
     try:
         chat_llm = None
@@ -446,24 +470,37 @@ def _school_semantics_for_goal(
             chat_llm = ChatLLM(
                 backend=active_chat_provider(), timeout=20,
             )
-        return SchoolInputSemantics(chat_llm).classify(
-            raw_goal, active_workflow_id=active_workflow_id,
+        semantics = SchoolInputSemantics(chat_llm).classify(
+            raw_goal,
+            active_workflow_id=(
+                active_workflow_id
+                or (active_case_context or {}).get("case_context_id")
+            ),
         )
     except Exception:
         # Preserve the source-grounded lexical/domain boundary when a provider
         # is absent or its client cannot be constructed.
-        return SchoolInputSemantics(None).classify(
-            raw_goal, active_workflow_id=active_workflow_id,
+        semantics = SchoolInputSemantics(None).classify(
+            raw_goal,
+            active_workflow_id=(
+                active_workflow_id
+                or (active_case_context or {}).get("case_context_id")
+            ),
         )
+    return resolve_case_aware_semantics(
+        raw_goal, semantics, active_case_context,
+    )
 
 
 def _compile_school_situation(
     raw_goal: str,
     semantics: dict,
     *,
+    prior_case_context: dict | None = None,
     clarification_answers: dict | None = None,
     selected_deliverable_ids: list[str] | None = None,
     custom_deliverables: list[dict] | None = None,
+    declared_intent: dict | None = None,
 ) -> dict:
     global _SCHOOL_SITUATION_COMPILER
     if semantics.get("school_domain") is not True:
@@ -476,9 +513,11 @@ def _compile_school_situation(
     return _SCHOOL_SITUATION_COMPILER.compile(
         raw_goal,
         semantics,
+        prior_case_context=prior_case_context,
         clarification_answers=clarification_answers,
         selected_deliverable_ids=selected_deliverable_ids,
         custom_deliverables=custom_deliverables,
+        declared_intent=declared_intent,
     )
 
 
@@ -557,10 +596,23 @@ def _make_runtime_for_goal(
         old = {k: os.environ.get(k)
                for k in ("TEOW_AGL_PLANNER", "TEOW_AGL_CHAT_LLM")}
         provider = active_chat_provider()
-        os.environ["TEOW_AGL_PLANNER"] = provider
+        fast_path = _live_fast_path_enabled()
+        # The Situation Compiler and response-pack reconciler already own the
+        # exact action contract; a second remote planner adds drift and delay.
+        os.environ["TEOW_AGL_PLANNER"] = (
+            "smart_mock" if fast_path else provider
+        )
         os.environ["TEOW_AGL_CHAT_LLM"] = provider
         try:
             rt = _build_runtime()
+            if fast_path and hasattr(rt, "__dict__"):
+                # Per-runtime flags cannot leak into a concurrent mock task.
+                rt.live_fast_path = True
+                if rt.synthesizer is not None:
+                    rt.synthesizer.live_fast_path = True
+                # Long-term procedural learning must not block the answer.
+                rt.skill_distiller = None
+
         finally:
             for k, v in old.items():
                 if v is None:
@@ -654,6 +706,19 @@ def login(req: LoginRequest):
     return resp
 
 
+class DeclaredSchoolIntent(BaseModel):
+    """Optional user declaration; it can narrow but never grant authority."""
+
+    outcome_mode: str | None = None
+    authority_mode: str | None = None
+    task_families: list[str] = Field(default_factory=list)
+    intended_audiences: list[str] = Field(default_factory=list)
+    selected_artifact_roles: list[str] = Field(default_factory=list)
+    requested_channels: list[str] = Field(default_factory=list)
+    attachment_refs: list[str] = Field(default_factory=list)
+    unknown_policy: str | None = None
+
+
 class StartTaskRequest(BaseModel):
     raw_goal: str
     backup_status: str | None = None
@@ -661,10 +726,17 @@ class StartTaskRequest(BaseModel):
     scripted_workflow_id: str | None = None
     interaction_mode: str = "direct"
     parent_task_id: str | None = None
-    clarification_answers: dict = {}
+    clarification_answers: dict = Field(default_factory=dict)
     selected_deliverable_ids: list[str] | None = None
-    custom_deliverables: list[dict] = []
+    custom_deliverables: list[dict] = Field(default_factory=list)
     response_pack_mode: str = "full"
+    intent_contract: DeclaredSchoolIntent | None = None
+    # These capabilities can only be set by trusted server-side endpoints.
+    # Pydantic PrivateAttr values are neither accepted from JSON nor included
+    # in model_dump(), so a caller cannot forge a clarification/delta lineage.
+    _trusted_continuation: bool = PrivateAttr(default=False)
+    _trusted_case_context_id: str | None = PrivateAttr(default=None)
+    _trusted_kind: str | None = PrivateAttr(default=None)
 
 
 class DecideRequest(BaseModel):
@@ -678,12 +750,28 @@ class ConfirmResponsePackRequest(BaseModel):
     question_id: str | None = None
     answer: str | None = None
     proceed_with_tbc: bool = False
-    selected_deliverable_ids: list[str] = []
-    custom_deliverables: list[dict] = []
+    selected_deliverable_ids: list[str] = Field(default_factory=list)
+    custom_deliverables: list[dict] = Field(default_factory=list)
 
 
 class AddDeliverablesRequest(BaseModel):
     deliverables: list[dict]
+
+
+def _trusted_continuation_semantics(
+    parent_semantics: dict | None,
+    *,
+    kind: str,
+) -> dict:
+    """Carry forward classification only for a server-authorised child task."""
+    semantics = dict(parent_semantics or {})
+    semantics.update({
+        "checked": True,
+        "school_domain": True,
+        "case_relation": "follow_up",
+        "source": f"trusted_internal_{kind}_continuation",
+    })
+    return semantics
 
 
 @app.get("/api/health")
@@ -745,6 +833,7 @@ def config_summary() -> dict:
         "live_configured": live_configured,
         "live_provider": active_chat_provider(),
         "live_model": active_chat_model(),
+        "live_fast_path": _live_fast_path_enabled(),
         # Backward-compatible API field; semantically this means configured,
         # not provider-reachable. New UI copy uses ``live_configured``.
         "live_ready": live_configured,
@@ -756,65 +845,170 @@ def config_summary() -> dict:
     }
 
 
+def _clear_unexecuted_school_proposal_after_hard_stop(
+    state: TaskState,
+    result,
+) -> bool:
+    """Keep a compiler proposal from becoming a visible/continuable case."""
+    assessment = getattr(result, "pre_assessment", None)
+    if not bool(getattr(assessment, "hard_block", False)):
+        return False
+    state.school_situation = None
+    state.response_pack = None
+    state.context_workflow_id = None
+    return True
+
+
 @app.post("/api/tasks")
 def start_task(req: StartTaskRequest) -> dict:
     if req.interaction_mode not in {"direct", "review_if_needed"}:
         raise HTTPException(400, "invalid_interaction_mode")
     if req.response_pack_mode not in {"full", "delta"}:
         raise HTTPException(400, "invalid_response_pack_mode")
+    trusted_continuation = bool(req._trusted_continuation)
+    if (req.clarification_answers or req.response_pack_mode == "delta") and not (
+        trusted_continuation
+    ):
+        raise HTTPException(400, "internal_continuation_only")
+    if trusted_continuation:
+        trusted_kind = str(req._trusted_kind or "")
+        if trusted_kind not in {"clarification", "delta"}:
+            raise HTTPException(409, "trusted_continuation_kind_invalid")
+        if (
+            trusted_kind == "clarification"
+            and (req.response_pack_mode != "full" or not req.clarification_answers)
+        ):
+            raise HTTPException(409, "trusted_clarification_contract_mismatch")
+        if trusted_kind == "delta" and req.response_pack_mode != "delta":
+            raise HTTPException(409, "trusted_delta_contract_mismatch")
     if req.response_pack_mode == "delta" and (
         not req.parent_task_id or not req.custom_deliverables
     ):
         raise HTTPException(400, "delta_requires_parent_and_custom_deliverables")
     if len(req.custom_deliverables or []) > 10:
         raise HTTPException(400, "too_many_custom_deliverables")
+    if req.intent_contract is not None:
+        declaration = req.intent_contract
+        if (
+            declaration.outcome_mode == "prepare_selected_documents"
+            and not declaration.selected_artifact_roles
+            and not req.selected_deliverable_ids
+            and not req.custom_deliverables
+        ):
+            raise HTTPException(
+                400, "prepare_selected_documents_requires_a_selection"
+            )
+        if len(declaration.selected_artifact_roles) > 12:
+            raise HTTPException(400, "too_many_selected_artifact_roles")
     task_id = f"task_{uuid.uuid4().hex[:12]}"
-    parent_case_id = None
+    new_case_context_id = f"case_{uuid.uuid4().hex[:12]}"
+    candidate_parent_context: dict | None = None
     parent_school_semantics: dict | None = None
     if req.parent_task_id:
         with _app_state["lock"]:
             parent = _app_state["tasks"].get(req.parent_task_id)
             if parent is None:
                 raise HTTPException(404, "parent_task_not_found")
-            parent_case_id = parent.case_context_id
+            if parent.error or parent.status == "error":
+                raise HTTPException(409, "parent_task_failed")
+            if parent.status not in {"done", "awaiting_approval"}:
+                raise HTTPException(409, "parent_case_not_ready")
+            if not (
+                parent.case_context_id
+                and parent.school_situation
+                and parent.response_pack
+            ):
+                raise HTTPException(409, "parent_case_not_context_ready")
+            if trusted_continuation and (
+                not req._trusted_case_context_id
+                or req._trusted_case_context_id != parent.case_context_id
+            ):
+                raise HTTPException(409, "trusted_continuation_context_mismatch")
             parent_school_semantics = dict(parent.school_semantics or {})
+            candidate_parent_context = build_case_context(
+                case_context_id=parent.case_context_id,
+                source_task_id=parent.task_id,
+                raw_goal=parent.raw_goal,
+                school_situation=parent.school_situation,
+                response_pack=parent.response_pack,
+            )
+    elif trusted_continuation:
+        raise HTTPException(409, "trusted_continuation_parent_required")
     state = TaskState(task_id=task_id, raw_goal=req.raw_goal,
                       started_at=datetime.now(timezone.utc).isoformat(),
-                      parent_task_id=req.parent_task_id,
-                      case_context_id=parent_case_id or f"case_{uuid.uuid4().hex[:12]}")
+                      parent_task_id=None,
+                      case_context_id=new_case_context_id)
     with _app_state["lock"]:
         _app_state["tasks"][task_id] = state
 
     def runner():
-        if req.response_pack_mode == "delta" and parent_school_semantics:
-            school_semantics = dict(parent_school_semantics)
-            school_semantics.update({
-                "checked": True,
-                "case_relation": "follow_up",
-                "source": "parent_case_context",
-            })
+        if trusted_continuation:
+            school_semantics = _trusted_continuation_semantics(
+                parent_school_semantics,
+                kind=str(req._trusted_kind),
+            )
         else:
             school_semantics = _school_semantics_for_goal(
                 req.raw_goal,
-                active_workflow_id=req.active_workflow_id or req.parent_task_id,
+                active_workflow_id=req.active_workflow_id,
+                active_case_context=candidate_parent_context,
                 scripted_workflow_id=req.scripted_workflow_id,
+                force_school_review=(
+                    req.interaction_mode == "review_if_needed"
+                ),
             )
         relation = str(school_semantics.get("case_relation") or "").lower()
-        if (
-            relation in {"new_case", "unrelated"}
-            and req.parent_task_id
-            and req.response_pack_mode != "delta"
-        ):
-            with _app_state["lock"]:
-                state.case_context_id = f"case_{uuid.uuid4().hex[:12]}"
+        binding = confirm_case_binding(
+            relation=relation,
+            candidate_parent_task_id=req.parent_task_id,
+            candidate_case_context=candidate_parent_context,
+            new_case_context_id=new_case_context_id,
+        )
+        prior_case_context = binding["prior_case_context"]
         context_workflow_id = (
             req.active_workflow_id
-            if relation in ("follow_up", "ambiguous")
+            if relation == "follow_up" and binding["parent_task_id"]
             else None
         )
         with _app_state["lock"]:
+            state.parent_task_id = binding["parent_task_id"]
+            state.case_context_id = binding["case_context_id"]
             state.context_workflow_id = context_workflow_id
             state.school_semantics = school_semantics or None
+        # Build the runtime before the Situation Compiler. Its deterministic
+        # 101A hard floor must run before a compiler clarification can pause
+        # the request; otherwise an unsafe but grammatically ambiguous command
+        # (for example, exfiltrating a credential via "upload it") can sit in
+        # awaiting_clarification without ever receiving a RED decision.
+        # Contextual school-data rules stay deferred here so Layer 2 can still
+        # replace an unsafe disclosure request with a safe anonymous draft.
+        rt, planner_mode = _make_runtime_for_goal(
+            req.raw_goal,
+            active_workflow_id=req.active_workflow_id,
+            school_semantics=school_semantics,
+            scripted_workflow_id=req.scripted_workflow_id,
+        )
+        probe_envelope = rt.intake.receive(
+            raw_goal=req.raw_goal,
+            user_id="default_user",
+            session_id=task_id,
+            workspace_roots=rt.profile.workspace_roots,
+            task_id=task_id,
+        )
+        hard_floor_probe = rt.pre_gov.assess(
+            probe_envelope,
+            rt.profile,
+            defer_contextual_data_use=True,
+        )
+        with _app_state["lock"]:
+            state.planner_mode = planner_mode
+            state.live_provider = (
+                active_chat_provider()
+                if planner_mode == "live" else "deterministic"
+            )
+            state.live_model = (
+                active_chat_model() if planner_mode == "live" else ""
+            )
         compiled: dict = {}
         effective_review = bool(
             req.interaction_mode == "review_if_needed"
@@ -823,13 +1017,22 @@ def start_task(req: StartTaskRequest) -> dict:
                 and _live_school_inputs_enabled()
             )
         )
-        if effective_review and school_semantics:
+        if (
+            effective_review
+            and school_semantics
+            and not hard_floor_probe.hard_block
+        ):
             compiled = _compile_school_situation(
                 req.raw_goal,
                 school_semantics,
+                prior_case_context=prior_case_context,
                 clarification_answers=req.clarification_answers,
                 selected_deliverable_ids=req.selected_deliverable_ids,
                 custom_deliverables=req.custom_deliverables,
+                declared_intent=(
+                    req.intent_contract.model_dump()
+                    if req.intent_contract is not None else None
+                ),
             )
             situation = compiled.get("situation") or None
             response_pack = compiled.get("response_pack") or None
@@ -856,21 +1059,6 @@ def start_task(req: StartTaskRequest) -> dict:
                 return
         with _app_state["lock"]:
             state.phase = "governance"
-        rt, planner_mode = _make_runtime_for_goal(
-            req.raw_goal,
-            active_workflow_id=req.active_workflow_id,
-            school_semantics=school_semantics,
-            scripted_workflow_id=req.scripted_workflow_id,
-        )
-        with _app_state["lock"]:
-            state.planner_mode = planner_mode
-            state.live_provider = (
-                active_chat_provider()
-                if planner_mode == "live" else "deterministic"
-            )
-            state.live_model = (
-                active_chat_model() if planner_mode == "live" else ""
-            )
         original_emit = rt.trace.emit
 
         def capture_emit(*args, **kwargs):
@@ -929,6 +1117,11 @@ def start_task(req: StartTaskRequest) -> dict:
                 state.generation_mode = _school_generation_mode(
                     result.plan, planner_mode,
                 )
+                # The situation compiler runs before pre-governance so the
+                # runtime can govern its proposal. Once pre-governance
+                # hard-stops the task, do not expose that unexecuted proposal
+                # as a usable response pack or future case.
+                _clear_unexecuted_school_proposal_after_hard_stop(state, result)
                 state.status = "done"
                 state.phase = "complete"
                 state.finished_at = datetime.now(timezone.utc).isoformat()
@@ -1031,6 +1224,13 @@ def get_task(task_id: str) -> dict:
             ]
             if partial:
                 payload["executions"] = partial
+        if state.status == "awaiting_approval" and not payload["decisions"]:
+            partial_decisions, partial_route = (
+                _partial_governance_from_events(state.events)
+            )
+            if partial_decisions:
+                payload["decisions"] = partial_decisions
+                payload["final_route"] = partial_route
         return payload
 
 
@@ -1101,7 +1301,7 @@ def confirm_response_pack(task_id: str, req: ConfirmResponsePackRequest) -> dict
         active_workflow_id = state.context_workflow_id
         backup_parent = state.task_id
     _tasks_store.append(_state_to_dict(state))
-    child = start_task(StartTaskRequest(
+    child_request = StartTaskRequest(
         raw_goal=raw_goal,
         active_workflow_id=active_workflow_id,
         interaction_mode="review_if_needed",
@@ -1110,7 +1310,18 @@ def confirm_response_pack(task_id: str, req: ConfirmResponsePackRequest) -> dict
         selected_deliverable_ids=req.selected_deliverable_ids,
         custom_deliverables=req.custom_deliverables,
         response_pack_mode="full",
-    ))
+        intent_contract=(
+            DeclaredSchoolIntent(**(
+                ((pack.get("intent_contract") or {}).get("declaration") or {})
+            ))
+            if ((pack.get("intent_contract") or {}).get("declaration"))
+            else None
+        ),
+    )
+    child_request._trusted_continuation = True
+    child_request._trusted_case_context_id = state.case_context_id
+    child_request._trusted_kind = "clarification"
+    child = start_task(child_request)
     return {"ok": True, "task_id": child["task_id"], "governance_pending": True}
 
 
@@ -1123,8 +1334,22 @@ def add_deliverables(task_id: str, req: AddDeliverablesRequest) -> dict:
         parent = _app_state["tasks"].get(task_id)
         if parent is None:
             raise HTTPException(404, "task_not_found")
+        if parent.error or parent.status == "error":
+            raise HTTPException(409, "parent_task_failed")
+        if any(
+            str(decision.get("action_id") or "")
+            == "pre_governance_hard_block"
+            for decision in parent.decisions
+        ):
+            raise HTTPException(409, "parent_task_hard_stopped")
         if parent.status not in {"done", "awaiting_approval"}:
-            raise HTTPException(409, "parent_task_not_ready")
+            raise HTTPException(409, "parent_case_not_ready")
+        if not (
+            parent.case_context_id
+            and parent.school_situation
+            and parent.response_pack
+        ):
+            raise HTTPException(409, "parent_case_not_context_ready")
         labels = [
             str(item.get("label") or "").strip()[:120]
             for item in req.deliverables if isinstance(item, dict)
@@ -1137,14 +1362,18 @@ def add_deliverables(task_id: str, req: AddDeliverablesRequest) -> dict:
             + "; ".join(label for label in labels if label)
             + ". Prepare only the added output(s); preserve all unknown case facts as TBC."
         )
-    child = start_task(StartTaskRequest(
+    child_request = StartTaskRequest(
         raw_goal=raw_goal,
         interaction_mode="review_if_needed",
         parent_task_id=task_id,
         clarification_answers={},
         custom_deliverables=req.deliverables,
         response_pack_mode="delta",
-    ))
+    )
+    child_request._trusted_continuation = True
+    child_request._trusted_case_context_id = parent.case_context_id
+    child_request._trusted_kind = "delta"
+    child = start_task(child_request)
     return {"ok": True, "task_id": child["task_id"], "governance_pending": True}
 
 
@@ -1811,6 +2040,40 @@ def _workflow_view(result) -> dict | None:
         # national-athletics / protected-record terms. None for national.
         "governance_copy": (wf or {}).get("governance_copy"),
     }
+
+
+def _partial_governance_from_events(
+    events: list,
+) -> tuple[list[dict], str]:
+    """Expose ordinary-task governance while rt.run waits at a GREEN gate."""
+    latest_by_action: dict[str, dict] = {}
+    order: list[str] = []
+    for event in events or []:
+        if (
+            event.get("module") != "103"
+            or event.get("event_type") != "governance_decision"
+        ):
+            continue
+        details = event.get("details") or {}
+        action_id = str(details.get("action_id") or "")
+        route = str(details.get("route") or "").upper()
+        if not action_id or route not in {
+            "BLUE", "GREEN", "INFEASIBLE", "RED",
+        }:
+            continue
+        if action_id not in latest_by_action:
+            order.append(action_id)
+        latest_by_action[action_id] = dict(details)
+    decisions = [latest_by_action[action_id] for action_id in order]
+    ranks = {"BLUE": 0, "GREEN": 1, "INFEASIBLE": 2, "RED": 3}
+    final_route = (
+        max(
+            (str(item.get("route") or "").upper() for item in decisions),
+            key=lambda route: ranks.get(route, -1),
+        )
+        if decisions else ""
+    )
+    return decisions, final_route
 
 
 def _state_to_dict(state: TaskState) -> dict:

@@ -28,8 +28,13 @@ EXTERNAL_RECIPIENTS = {
 
 _RECIPIENT_PATTERNS: tuple[tuple[str, str], ...] = (
     (
+        "education_authority",
+        r"\b(?:pejabat\s+pendidikan(?:\s+daerah)?|"
+        r"kementerian\s+pendidikan)\b",
+    ),
+    (
         "school_community",
-        r"\b(?:all\s+parents|parents\s+group|parent\s+group|school\s+community|"
+        r"\b(?:all\s+(?:school\s+)?parents|parents\s+group|parent\s+group|school\s+community|"
         r"all\s+staff|whole\s+school)\b|"
         r"全体家长|全體家長|家长群|家長群|semua\s+ibu\s+bapa",
     ),
@@ -82,10 +87,11 @@ _RECIPIENT_PATTERNS: tuple[tuple[str, str], ...] = (
 )
 
 _RECIPIENT_WORDS = (
-    r"all\s+parents|parents?|guardians?|family|all\s+staff|school\s+community|"
+    r"all\s+(?:school\s+)?parents|parents?|guardians?|family|all\s+staff|school\s+community|"
     r"semua\s+ibu\s+bapa|ibu\s+bapa|penjaga|"
     r"district\s+education\s+office|education\s+authority|education\s+office|"
     r"district\s+office|ministry(?:\s+of\s+education)?|ppd|jpn|moe|"
+    r"pejabat\s+pendidikan(?:\s+daerah)?|kementerian\s+pendidikan|"
     r"hospital|medical\s+services?|clinic|doctor|emergency\s+services?|999|"
     r"fire\s+and\s+rescue|fire\s+department|bomba|police|local\s+authority|"
     r"municipal(?:ity)?|council|event\s+organizer|event\s+organiser|organizer|"
@@ -100,7 +106,8 @@ _RECIPIENT_REFERENCE = (
 # boundary.  The more ambiguous communication verbs are handled separately
 # and require either a recipient or a release object.
 _DIRECT_RELEASE_VERB = (
-    r"send|publish|submit|release|upload|post|hantar|siarkan"
+    r"send|publish|submit|release|upload|hantar|menghantar|"
+    r"serahkan|kemukakan|mengemukakan|siarkan"
 )
 _RELEASE_OBJECT = (
     r"(?:(?:this|it|them|a|an|the)\s+)?(?:message|report|notice|letter|document|file|"
@@ -111,9 +118,14 @@ _RELEASE_OBJECT = (
 
 _DIRECT_ACTION_PATTERN = re.compile(
     rf"\b(?:{_DIRECT_RELEASE_VERB})\b|"
+    rf"(?:^|\band(?:\s+then)?\s+)(?:please\s+)?post(?!-)\b|"
     rf"\b(?:share|forward)\s+{_RELEASE_OBJECT}(?:\s+(?:to|with)\s+{_RECIPIENT_REFERENCE})?|"
+    rf"\b(?:share|forward)\b[^.!?;\n]{{1,140}}\b(?:to|with)\s+"
+    rf"{_RECIPIENT_REFERENCE}|"
     rf"\b(?:share|forward)\s+(?:to|with)\s+{_RECIPIENT_REFERENCE}|"
     rf"\bemail\s+(?!(?:address|details?|account)\b)(?:{_RECIPIENT_REFERENCE}|{_RELEASE_OBJECT})|"
+    rf"\b(?:email|whatsapp|text|sms|dm)\s+(?:it|this|that|them)"
+    rf"\s+(?:to\s+)?{_RECIPIENT_REFERENCE}|"
     rf"\b(?:notify|contact|call|message|inform|tell)\s+{_RECIPIENT_REFERENCE}|"
     rf"\b(?:announce|issue)\s+(?:{_RELEASE_OBJECT}\s+)?(?:to\s+)?{_RECIPIENT_REFERENCE}|"
     rf"\b(?:reply|respond)\s+to\s+{_RECIPIENT_REFERENCE}|"
@@ -145,8 +157,45 @@ _NEGATED_PASSIVE_RELEASE_ACTION = re.compile(
     r"releasing)\b"
 )
 
+_NEGATED_RELEASE_OBJECT = re.compile(
+    r"\b(?:send|publish|submit|release|upload|post|share|forward|"
+    r"contact|notify|call|message|email|whatsapp|text)\s+"
+    r"(?:absolutely\s+)?(?:nothing|nobody|no\s+one|no\s+messages?|"
+    r"no\s+notices?|no\s+reports?|no\s+documents?)\b|"
+    r"\b(?:hantar|siarkan|serahkan|hubungi|maklumkan)\s+"
+    r"(?:tiada\s+apa-apa|tiada\s+sesiapa|jangan\s+apa-apa)\b",
+)
+
 _DRAFT_LEAD = re.compile(
     r"^(?:please\s+)?(?:draft|prepare|write|create|compose|generate)\b"
+)
+
+# A readiness instruction creates content; it does not authorise its release.
+# Without this mask, phrases such as ``make it ready to publish`` are mistaken
+# for an imperative ``publish`` merely because both contain the same verb.
+_READINESS_ONLY_RELEASE = re.compile(
+    r"\b(?:make|keep|format|finali[sz]e|prepare)\b"
+    r"[^.!?;\n]{0,70}\b(?:ready|suitable|fit)\b\s+"
+    r"(?:for\s+)?(?:immediate\s+)?(?:publication|submission|release)\b|"
+    r"\b(?:make|keep|format|finali[sz]e|prepare)\b"
+    r"[^.!?;\n]{0,70}\b(?:ready|prepared|formatted|suitable)\b\s+to\s+"
+    r"(?:send|publish|submit|release|upload|post|share|forward)\b|"
+    r"\b(?:ready|prepared|formatted|suitable)\b\s+to\s+"
+    r"(?:send|publish|submit|release|upload|post|share|forward)\b"
+)
+
+_INTERNAL_SCHOOL_REPOSITORY_TARGET = re.compile(
+    r"\b(?:school\s+staff\s+guide|staff\s+(?:guide|handbook|manual)|"
+    r"school\s+(?:handbook|manual|intranet|shared\s+drive)|"
+    r"internal\s+(?:staff\s+)?(?:portal|intranet|knowledge\s+base|wiki)|"
+    r"staff\s+(?:portal|intranet|knowledge\s+base|wiki))\b|"
+    r"校内(?:手册|指南|内联网|知识库)|校內(?:手冊|指南|內聯網|知識庫)|"
+    r"panduan\s+kakitangan\s+sekolah|portal\s+dalaman\s+sekolah",
+)
+_INTERNAL_REPOSITORY_WRITE_ACTION = re.compile(
+    r"\b(?:upload|publish|post|add|insert|save|put)\b|"
+    r"上传|上傳|发布|發佈|加入|保存|"
+    r"\b(?:muat\s+naik|terbitkan|simpan)\b",
 )
 
 
@@ -154,6 +203,11 @@ def _split_clauses(text: str) -> list[str]:
     """Return ordered, stable clauses without losing ``and send`` intent."""
 
     value = (text or "").casefold()
+    value = re.sub(
+        r",\s*(?=(?:just|only|rather\s+than)\b)",
+        ". ",
+        value,
+    )
     return [
         chunk.strip(" ,:")
         for chunk in re.split(
@@ -186,7 +240,7 @@ def _execution_tail_from_draft(chunk: str) -> str:
         return chunk[negation.start():]
     connector = re.search(
         rf"(?:,\s*|\band(?:\s+then)?\s+)(?:please\s+)?"
-        rf"(?=(?:{_DIRECT_RELEASE_VERB})\b|email\b|notify\b|contact\b|call\b|"
+        rf"(?=(?:{_DIRECT_RELEASE_VERB})\b|post\b|email\b|notify\b|contact\b|call\b|"
         rf"share\b|forward\b|message\b|inform\b|tell\b|announce\b|issue\b|reply\b|respond\b|"
         rf"whatsapp\b|text\b|sms\b|dm\b|distribute\b|circulate\b|broadcast\b|"
         rf"deliver\b|request\b|emel\b|hubungi\b|maklumkan\b|"
@@ -196,15 +250,72 @@ def _execution_tail_from_draft(chunk: str) -> str:
     return chunk[connector.end():] if connector else ""
 
 
+def _internal_repository_clause(value: str) -> bool:
+    """Return true for an internal school repository write, not a release.
+
+    A school staff guide or intranet is a persistent system destination.  It
+    needs its own governed system-action gate, but it must not be converted
+    into an unknown external recipient merely because the verb is ``upload``.
+    Explicit public/parent/agency destinations still win and remain releases.
+    """
+
+    if not (
+        _INTERNAL_SCHOOL_REPOSITORY_TARGET.search(value)
+        and _INTERNAL_REPOSITORY_WRITE_ACTION.search(value)
+    ):
+        return False
+    return not any(
+        re.search(pattern, value)
+        for recipient, pattern in _RECIPIENT_PATTERNS
+        if recipient != "school_community"
+    )
+
+
+def internal_school_repository_write_requested(text: str) -> bool:
+    """Detect an unnegated write to a named internal school repository."""
+
+    for original_chunk in _split_clauses(text):
+        chunk = _execution_tail_from_draft(original_chunk)
+        if not chunk or not _internal_repository_clause(chunk):
+            continue
+        action = _INTERNAL_REPOSITORY_WRITE_ACTION.search(chunk)
+        if action is None:
+            continue
+        prefix = chunk[max(0, action.start() - 64):action.start()]
+        if _NEGATION_PATTERN.search(prefix):
+            continue
+        return True
+    return False
+
+
 def _is_conditional_approval(chunk: str) -> bool:
-    """Treat "do not send without approval" as a gated future release."""
+    """Treat a future release that is conditional on approval as gated."""
 
-    return bool(re.search(
-        r"\b(?:without|until|unless|only\s+after)\b[^.!?;]{0,80}"
-        r"\b(?:approval|approved|authorisation|authorization|review)\b",
-        chunk,
-    ))
-
+    return bool(
+        re.search(
+            r"\b(?:request|seek|obtain|get)\s+(?:human\s+)?"
+            r"(?:approval|authorisation|authorization|review)\s+to\s+"
+            r"(?:send|email|publish|post|submit|release|share|forward|"
+            r"notify|contact|call|whatsapp)\b",
+            chunk,
+        )
+        or
+        re.search(
+            r"\b(?:without|until|unless|only\s+after)\b[^.!?;]{0,80}"
+            r"\b(?:approval|approve(?:d|s)?|authorisation|authorization|review)\b",
+            chunk,
+        )
+        or re.search(
+            r"\b(?:(?:request|require|obtain|seek|get|need)\b[^.!?;]{0,70}"
+            r"|(?:approval|authorisation|authorization|review)\s+is\s+required[^.!?;]{0,40})"
+            r"\b(?:approval|authorisation|authorization|review)?\b[^.!?;]{0,50}"
+            r"\bbefore\b[^.!?;]{0,80}"
+            r"\b(?:sent|send|published|publish|posted|post|submitted|submit|"
+            r"released|release|shared|share|forwarded|forward|contacted|contact|"
+            r"notified|notify|called|call|emailed|email|whatsapped|whatsapp)\b",
+            chunk,
+        )
+    )
 
 def release_clauses(text: str) -> tuple[list[str], list[str]]:
     """Classify ordered clauses as positive or negated release intent."""
@@ -215,19 +326,35 @@ def release_clauses(text: str) -> tuple[list[str], list[str]]:
         chunk = _execution_tail_from_draft(original_chunk)
         if not chunk:
             continue
+        # Remove draft-readiness language before testing for an execution
+        # verb. A second, independently commanded release in the same clause
+        # remains visible after the narrow phrase is removed.
+        action_chunk = _READINESS_ONLY_RELEASE.sub("", chunk)
+        # Internal repository writes are governed as system-level changes by
+        # the Situation Compiler, not invented as external stakeholders here.
+        if _internal_repository_clause(action_chunk):
+            continue
+        if _NEGATED_RELEASE_OBJECT.search(action_chunk):
+            negative.append(original_chunk)
+            continue
 
-        negated = bool(_NEGATION_PATTERN.search(chunk))
+        # An explicit approval-before-send instruction is a future external
+        # action with a gate even when the release verb is passive.
+        if _is_conditional_approval(action_chunk):
+            positive.append(original_chunk)
+            continue
+        negated = bool(_NEGATION_PATTERN.search(action_chunk))
         if negated and (
-            _DIRECT_ACTION_PATTERN.search(chunk)
-            or _NEGATED_PASSIVE_RELEASE_ACTION.search(chunk)
+            _DIRECT_ACTION_PATTERN.search(action_chunk)
+            or _NEGATED_PASSIVE_RELEASE_ACTION.search(action_chunk)
         ):
-            if _is_conditional_approval(chunk):
+            if _is_conditional_approval(action_chunk):
                 positive.append(original_chunk)
             else:
                 negative.append(original_chunk)
             continue
 
-        if _DIRECT_ACTION_PATTERN.search(chunk):
+        if _DIRECT_ACTION_PATTERN.search(action_chunk):
             positive.append(original_chunk)
     return positive, negative
 
@@ -335,6 +462,10 @@ def infer_explicit_external_recipients(
         recipients.add("school_community")
     elif not recipients:
         recipients.add("external_stakeholder")
+    if "school_community" in recipients:
+        # "All parents" is one community release, not a second private-family
+        # release merely because a semantic output used the guardian role.
+        recipients.discard("guardian")
     return recipients
 
 

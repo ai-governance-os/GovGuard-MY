@@ -164,6 +164,32 @@
     "emergency",
     "student_data_learning_request"
   ],
+  "intent_required_hard_block_categories": [
+    "credential_or_secret"
+  ],
+  "hard_block_intent_rules": [
+    {
+      "id": "credential_access_or_exfiltration",
+      "category": "credential_or_secret",
+      "_doc": "A credential object grammatically bound to an access/disclosure action is a pre-semantic hard stop only when that local action is not negated.",
+      "local_intent_contract": {
+        "credential_object_terms": ["api key", "api keys", "api_key", "openai_api_key", ".env", "password", "passwords", "credential", "credentials", "access token", "access tokens", "client secret", "secret key", "its token", "the token", "auth token", "authentication token", "kata laluan", "kunci api", "token akses", "密码", "密钥", "凭证"],
+        "action_terms": ["fetch", "fetched", "fetching", "open", "opened", "opening", "read", "reading", "retrieve", "retrieved", "retrieving", "copy", "copied", "copying", "paste", "pasted", "pasting", "put", "putting", "include", "included", "including", "insert", "inserted", "inserting", "export", "exported", "exporting", "dump", "dumped", "dumping", "extract", "extracted", "extracting", "print", "printed", "printing", "display", "displayed", "displaying", "show", "showed", "shown", "showing", "give", "gave", "given", "giving", "provide", "provided", "providing", "return", "returned", "returning", "output", "reveal", "revealed", "revealing", "expose", "exposed", "exposing", "leak", "leaked", "leaking", "send", "sent", "sending", "email", "emailed", "emailing", "publish", "published", "publishing", "upload", "uploaded", "uploading", "steal", "stole", "stolen", "exfiltrate", "exfiltrated", "exfiltrating", "baca", "dedahkan", "tunjukkan", "hantar", "salin", "paparkan", "读出来", "读取", "显示", "发给我", "发送", "泄露", "提取", "复制"],
+        "direct_bridge_terms": ["the", "a", "an", "this", "that", "my", "our", "your", "its", "actual", "real", "stored", "current", "existing", "same", "raw", "full", "me", "us", "from", "semua", "ini", "itu", "tersebut", "的", "这个", "那个"],
+        "reverse_bridge_terms": ["the", "this", "that", "it", "them", "its", "is", "are", "was", "were", "be", "been", "being", "must", "should", "shall", "will", "would", "can", "could", "may", "might", "not", "never", "and", "or", "then", "and then", "to", "from", "into", "in", "of", "do", "does", "did", "tidak", "jangan", "dan", "atau", "akan", "telah", "ini", "itu", "tersebut", "的", "里", "里的", "把", "其"],
+        "reverse_action_terms": ["fetched", "opened", "read", "retrieved", "copied", "pasted", "included", "inserted", "exported", "dumped", "extracted", "printed", "displayed", "shown", "given", "provided", "returned", "revealed", "exposed", "leaked", "sent", "emailed", "published", "uploaded", "stolen", "exfiltrated", "读出来", "读取", "显示", "发给我", "发送", "泄露", "提取", "复制"],
+        "reference_pronoun_terms": ["it", "them", "this value", "that value", "the value", "the same value", "nilai itu", "token itu", "kunci itu", "它", "它们", "这个值", "该值"],
+        "anaphora_bridge_terms": ["and", "or", "then", "and then", "but", "however", "yet", "instead", "so", "therefore", "nevertheless", "dan", "atau", "kemudian", "tetapi", "namun", "sebaliknya", "但是", "不过", "然后"],
+        "topic_container_prefix_terms": ["explanation of", "explanation about", "policy about", "policy on", "guide about", "guide to", "reminder about", "article about", "documentation about", "training about", "overview of", "description of", "penerangan tentang", "dasar tentang", "panduan tentang", "关于", "有关"],
+        "negation_terms": ["not", "never", "do not", "don't", "must not", "mustn't", "should not", "shouldn't", "cannot", "can't", "avoid", "jangan", "tidak", "usah", "不得", "不要", "不可", "避免", "切勿"],
+        "scope_break_terms": ["but", "however", "yet", "instead", "and then", "tetapi", "namun", "sebaliknya", "但是", "不过", "然后"],
+        "max_bridge_chars": 56,
+        "max_anaphora_chars": 120,
+        "topic_prefix_window_chars": 64,
+        "negation_window_chars": 96
+      }
+    }
+  ],
   "risk_rules": [
     {
       "id": "sensitive_data_disclosure",
@@ -292,7 +318,7 @@
   "external_operations": ["email", "send_email", "publish", "upload", "post", "tweet", "send"],
   "shell_operations": ["shell", "shell_run", "exec", "bash", "powershell"],
   "code_edit_operations": ["edit_file", "patch", "apply_patch", "modify_source"],
-  "gui_operations": ["mouse_click", "mouse_move", "keyboard_type", "keyboard_hotkey", "scroll"],
+  "gui_operations": ["mouse_click", "mouse_move", "keyboard_type", "keyboard_hotkey", "scroll", "publish_internal_school_resource"],
   "gui_safe_operations": ["screenshot", "mouse_move", "scroll"],
   "preview_safe_operations": ["list_files", "classify_files", "preview_deletion", "compose_draft", "show_preview", "inspect_file", "propose_patch", "show_diff", "explain_command", "dry_run", "prepare_draft", "classify_sensitivity", "request_approval", "screenshot"],
   "credential_path_keywords": ["api key", "password", "secret", "token", "credential", ".env"]

@@ -9,7 +9,8 @@
     "external_communication_send",
     "official_school_circular_release",
     "student_attendance_update",
-    "disciplinary_record_reference"
+    "disciplinary_record_reference",
+    "internal_school_repository_publish"
   ],
   "hard_block_actions_add": [
     "autonomous_external_send_to_parents"

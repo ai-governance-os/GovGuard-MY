@@ -24,6 +24,7 @@ from .modules.module_school_artifact_guard import (
     is_school_output_contract,
     normalize_school_markdown_plan,
 )
+from .modules.module_deliverable_mentions import is_requested_output_mention
 from .modules.module_school_situation import (
     govern_school_research_actions,
     reconcile_school_response_pack,
@@ -160,6 +161,70 @@ def _verified_deterministic_school_fallback(
         ):
             return False
     return True
+
+
+def _verified_fast_school_bundle(
+    actions: list[CandidateAction],
+) -> bool:
+    """Return whether every school artifact has bounded verification.
+
+    Every file must be live-authored and must pass both semantic audits.
+
+    A deterministic role fallback can be mechanically safe, but a mixed
+    live/fallback bundle has not proved the user's complete semantic goal. It
+    must therefore continue to the ordinary verifier instead of receiving a
+    goal-complete grade from the fast path.
+    """
+    artifacts = [
+        action for action in actions
+        if (action.metadata or {}).get("school_output_contract")
+        and (action.metadata or {}).get("school_content_role") == "artifact"
+    ]
+    if not artifacts:
+        return False
+    for action in artifacts:
+        validation = (action.metadata or {}).get(
+            "school_generation_validation"
+        ) or {}
+        if validation.get("pass") is not True:
+            return False
+        mode = str(validation.get("mode") or "")
+        if mode.startswith("deterministic_"):
+            return False
+        if (
+            validation.get("semantic_audit_passed") is True
+            and validation.get("goal_alignment_passed") is True
+        ):
+            continue
+        return False
+    return True
+
+
+def _is_governed_school_artifact(action: CandidateAction) -> bool:
+    metadata = action.metadata or {}
+    return bool(
+        metadata.get("school_output_contract")
+        and metadata.get("school_content_role") == "artifact"
+    )
+
+
+def _hold_failed_school_bundle(
+    actions: list[CandidateAction],
+    *,
+    reason: str,
+) -> None:
+    """Terminalise a failed plan-level bundle without remote per-file fanout."""
+    for action in actions:
+        if not _is_governed_school_artifact(action):
+            continue
+        metadata = action.metadata
+        metadata["synthesis_skip"] = True
+        metadata["school_generation_failed"] = True
+        metadata.setdefault("school_generation_validation", {
+            "pass": False,
+            "mode": "plan_level_bundle_exception",
+            "issues": [reason[:500]],
+        })
 
 
 def _demo_mode_active() -> bool:
@@ -1946,7 +2011,8 @@ class Runtime:
         # them in. Falls through silently on any error so governance still
         # runs.
         if self.synthesizer is not None and plan.actions:
-            if is_school_output_contract(plan.actions):
+            school_bundle_owned = is_school_output_contract(plan.actions)
+            if school_bundle_owned:
                 try:
                     diag = self.synthesizer.enrich_school_plan(
                         plan.actions, user_intent=envelope.normalized_goal)
@@ -1958,6 +2024,9 @@ class Runtime:
                         details=diag,
                     )
                 except Exception as exc:
+                    _hold_failed_school_bundle(
+                        plan.actions, reason=f"bundle_error:{exc}"
+                    )
                     self._emit(
                         "102S", "school_content_bundle_error",
                         envelope.task_id, envelope.session_id,
@@ -1965,6 +2034,11 @@ class Runtime:
                     )
             web_ctx = brief.get("web_search_context") or []
             for action in plan.actions:
+                if school_bundle_owned and _is_governed_school_artifact(action):
+                    # Module 102S is the sole content owner for a governed
+                    # school bundle. A plan-level reject must never multiply
+                    # into one remote writer + auditor pair per file.
+                    continue
                 # Thread user_intent through metadata so ChatTool's own
                 # synth fallback can also see it if needed.
                 action.metadata.setdefault("user_intent", envelope.normalized_goal)
@@ -2059,7 +2133,10 @@ class Runtime:
 
                 # Synthesizer for follow-up plan (same logic as first pass).
                 if self.synthesizer is not None and followup_plan.actions:
-                    if is_school_output_contract(followup_plan.actions):
+                    followup_school_bundle_owned = is_school_output_contract(
+                        followup_plan.actions
+                    )
+                    if followup_school_bundle_owned:
                         try:
                             diag = self.synthesizer.enrich_school_plan(
                                 followup_plan.actions,
@@ -2073,6 +2150,10 @@ class Runtime:
                                 details=diag,
                             )
                         except Exception as exc:
+                            _hold_failed_school_bundle(
+                                followup_plan.actions,
+                                reason=f"bundle_error:{exc}",
+                            )
                             self._emit(
                                 "102S", "school_content_bundle_error",
                                 envelope.task_id, envelope.session_id,
@@ -2082,6 +2163,11 @@ class Runtime:
                     web_ctx = followup_brief.get("web_search_context") or []
                     prior = followup_brief.get("prior_iteration_results") or []
                     for action in followup_plan.actions:
+                        if (
+                            followup_school_bundle_owned
+                            and _is_governed_school_artifact(action)
+                        ):
+                            continue
                         action.metadata.setdefault(
                             "user_intent", envelope.normalized_goal)
                         if web_ctx and "web_search_context" not in action.metadata:
@@ -2168,8 +2254,11 @@ class Runtime:
         ]
         for tool in ("pptx", "xlsx", "docx"):
             if any(
-                cls._TARGET_TOOL_PATTERNS[tool].search(clause)
-                and cls._TARGET_OUTPUT_REQUEST.search(clause)
+                is_requested_output_mention(
+                    clause,
+                    cls._TARGET_TOOL_PATTERNS[tool],
+                    request_pattern=cls._TARGET_OUTPUT_REQUEST,
+                )
                 for clause in clauses
             ):
                 return tool
@@ -2338,13 +2427,18 @@ class Runtime:
                     plan.actions if plan else []
                 )
             )
+            fast_school_bundle = bool(
+                getattr(self, "live_fast_path", False)
+                and _verified_fast_school_bundle(
+                    plan.actions if plan else [])
+            )
             if deterministic_school_fallback:
                 # The safe fallback is authored by bounded code and has just
                 # passed every mechanical artifact, grounding, privacy and
-                # policy check.  A second LLM opinion adds no authority here;
-                # if the provider is down it must not turn a verified outage
-                # fallback into VERIFY-FAIL.  Live-authored prose remains
-                # subject to the semantic judge below.
+                # policy check. This proves a governed safe-format fallback,
+                # not semantic completion of an arbitrary user goal. Provider
+                # outage must not fabricate a green VERIFIED claim; the UI
+                # therefore labels this grade SAFE FORMAT ONLY.
                 judge = {
                     "enabled": True, "pass": None, "score": 0,
                     "threshold": 0, "issues": [], "suggestions": [],
@@ -2354,6 +2448,23 @@ class Runtime:
                     ),
                     "skipped_reason": "verified_deterministic_fallback",
                 }
+                verification["verification_grade"] = "safe_format_only"
+                verification["semantic_verification"] = "not_run_deterministic_fallback"
+            elif fast_school_bundle:
+                # The bundle has already passed two independent semantic
+                # checks: source grounding and raw-user-goal alignment, plus
+                # exact action-id matching and deterministic coverage. Record
+                # an honest merged verification instead of calling a second
+                # LLM judge over the same evidence.
+                judge = {
+                    "enabled": True, "pass": None, "score": 0,
+                    "threshold": 0, "issues": [], "suggestions": [],
+                    "rubric_used": "merged_school_bundle_verification",
+                    "summary": "llm_judge_merged:bundle_semantic_audit_and_contracts",
+                    "skipped_reason": "merged_school_bundle_verification",
+                }
+                verification["verification_grade"] = "goal_complete"
+                verification["semantic_verification"] = "merged_bundle_audit"
             else:
                 try:
                     judge = self.verifier.llm_judge(
@@ -2379,10 +2490,16 @@ class Runtime:
                 plan.actions if plan else [])
             intentional_school_judge_skip = (
                 judge.get("skipped_reason") in {
+                    "merged_school_bundle_verification",
                     "school_response_pack_delta",
                     "verified_deterministic_fallback",
                 }
             )
+            if judge.get("pass") is True:
+                verification["verification_grade"] = (
+                    "partial" if verification.get("verification_grade") == "partial"
+                    else "goal_complete"
+                )
             if (judge.get("pass") is False
                     or (
                         school_contract
@@ -2391,6 +2508,7 @@ class Runtime:
                     )):
                 verification["pass"] = False
                 verification["verification_status"] = "failed"
+                verification["verification_grade"] = "failed"
                 verification["summary"] = (
                     (verification.get("summary") or "")
                     + " | " + (
@@ -2600,6 +2718,31 @@ class Runtime:
             linked_deliverable_id = str(
                 action.metadata.get("linked_deliverable_id") or ""
             ).strip()
+            if action.metadata.get("release_prerequisite_missing") is True:
+                decision = GovernanceDecision(
+                    task_id=envelope.task_id,
+                    action_id=action.action_id,
+                    route="INFEASIBLE",
+                    reasons=[
+                        "external_release_prerequisite_missing",
+                        str(
+                            action.metadata.get("release_prerequisite_reason")
+                            or "required_release_payload_not_supplied"
+                        ),
+                    ],
+                    ticket_required=False,
+                    approval_required=False,
+                    policy_version=self.cfg.policy_version(),
+                )
+                result.decisions.append(decision)
+                self._emit(
+                    "103", "governance_decision",
+                    envelope.task_id, envelope.session_id,
+                    summary="route=INFEASIBLE (release prerequisite missing)",
+                    details=decision.model_dump(),
+                )
+                self._on_infeasible(envelope, decision, result)
+                continue
             if linked_deliverable_id:
                 linked_action = next(
                     (
@@ -2669,7 +2812,7 @@ class Runtime:
                 self._emit("103", "governance_decision",
                            envelope.task_id, envelope.session_id,
                            summary="route=RED (data_use_guard)",
-                           details={"decision_id": decision.decision_id})
+                           details=decision.model_dump())
                 # _on_red appends to result.decisions — do not append again (§H).
                 self._on_red(envelope, decision, result)
                 continue
@@ -2697,7 +2840,7 @@ class Runtime:
                     "103", "governance_decision",
                     envelope.task_id, envelope.session_id,
                     summary="route=INFEASIBLE (data_use_guard)",
-                    details={"decision_id": decision.decision_id},
+                    details=decision.model_dump(),
                 )
                 result.decisions.append(decision)
                 self._on_infeasible(envelope, decision, result)
@@ -3528,17 +3671,20 @@ class Runtime:
 
     @staticmethod
     def _office_tool_for_intent(intent: str) -> str:
-        lowered = intent.lower()
-        if any(tok in lowered for tok in (
-            "ppt", "pptx", "powerpoint", "slide", "slides", "presentation",
-            "\u5e7b\u706f", "\u5e7b\u706f\u7247", "\u6f14\u793a",
-            "\u6f14\u793a\u6587\u7a3f",
-        )):
+        if is_requested_output_mention(
+            intent,
+            r"\bpptx?\b|\bpowerpoint\b|\bslide(?:\s+deck|s)?\b|"
+            r"\bpresentation\b|\u5e7b\u706f|\u5e7b\u706f\u7247|"
+            r"\u6f14\u793a\u6587\u7a3f|\u6f14\u793a",
+            request_pattern=Runtime._TARGET_OUTPUT_REQUEST,
+        ):
             return "pptx"
-        if any(tok in lowered for tok in (
-            "excel", "xlsx", "spreadsheet", "workbook",
-            "\u7535\u5b50\u8868\u683c", "\u8868\u683c", "\u5de5\u4f5c\u7c3f",
-        )):
+        if is_requested_output_mention(
+            intent,
+            r"\bexcel\b|\bxlsx?\b|\bspreadsheet\b|\bworkbook\b|"
+            r"\u7535\u5b50\u8868\u683c|\u8868\u683c|\u5de5\u4f5c\u7c3f",
+            request_pattern=Runtime._TARGET_OUTPUT_REQUEST,
+        ):
             return "xlsx"
         return "docx"
 
@@ -4044,6 +4190,52 @@ class Runtime:
                                result, "task_category", "") or "",
                        })
             return
+
+        # School prose is eligible for procedural distillation only after the
+        # expensive semantic judge confirms goal completion. Mechanical
+        # formatting or a safe deterministic fallback is not evidence that the
+        # generated procedure is true or reusable. The separate deterministic
+        # workflow-SOP path below remains PII-free and owner-approved.
+        plan = getattr(result, "plan", None)
+        plan_actions = list(getattr(plan, "actions", None) or [])
+        if is_school_output_contract(plan_actions):
+            grade = str(verification.get("verification_grade") or "")
+            judge = verification.get("judge") or {}
+            artifact_validations = [
+                (action.metadata or {}).get("school_generation_validation") or {}
+                for action in plan_actions
+                if (action.metadata or {}).get("school_output_contract")
+                and (action.metadata or {}).get("school_content_role") == "artifact"
+            ]
+            semantic_ready = bool(
+                grade == "goal_complete"
+                and judge.get("pass") is True
+                and artifact_validations
+                and all(
+                    item.get("pass") is True
+                    and not str(item.get("mode") or "").startswith("deterministic_")
+                    for item in artifact_validations
+                )
+            )
+            if not semantic_ready:
+                self._emit(
+                    "109B", "skill_distiller_skipped_semantic_unverified",
+                    envelope.task_id, envelope.session_id,
+                    summary=(
+                        f"grade={grade or 'NONE'} "
+                        f"judge_pass={judge.get('pass')} - "
+                        "school skill distillation skipped"
+                    ),
+                    details={
+                        "verification_grade": grade or "NONE",
+                        "judge_pass": judge.get("pass"),
+                        "artifact_validation_modes": [
+                            str(item.get("mode") or "")
+                            for item in artifact_validations
+                        ],
+                    },
+                )
+                return
 
         # --- Compute plan_shape for dedupe (check 8a) ----------------
         plan_shape = ""

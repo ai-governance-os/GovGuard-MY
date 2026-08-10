@@ -352,7 +352,10 @@ body {
   list-style: none; padding: 0; margin: 8px 0 0; font-size: 12px;
   font-family: ui-monospace, Menlo, monospace; color: var(--text-soft);
 }
-.msg.agent .timeline-mini li { padding: 2px 0; border-left: 2px solid var(--border); padding-left: 8px; }
+.msg.agent .timeline-mini li {
+  padding: 2px 0 2px 8px; border-left: 2px solid var(--border);
+  min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word;
+}
 .msg.agent .timeline-mini li.route-BLUE       { border-left-color: var(--accent); }
 .msg.agent .timeline-mini li.route-GREEN      { border-left-color: var(--green); }
 .msg.agent .timeline-mini li.route-INFEASIBLE { border-left-color: var(--orange); }
@@ -380,6 +383,7 @@ body {
 .chip.SAFE-STOP  { background: rgba(217,119,6,.10);   color: var(--orange); border-color: rgba(217,119,6,.30); }
 .chip.NEEDS-REPAIR { background: rgba(211,58,58,.10); color: var(--red); border-color: rgba(211,58,58,.30); }
 .chip.PARTIAL    { background: rgba(13,148,136,.12); color: #0d9488; border-color: rgba(13,148,136,.32); }
+.chip.SAFE-FORMAT { background: rgba(217,119,6,.10); color: var(--orange); border-color: rgba(217,119,6,.30); }
 .chip.USER-BOUNDARY { background: var(--bg-soft); color: var(--text-soft); border-color: var(--border); }
 .chip.USER-BOUNDARY.RED { color: var(--red); border-color: rgba(211,58,58,.30); }
 .chip.USER-BOUNDARY.INFEASIBLE { color: var(--orange); border-color: rgba(217,119,6,.30); }
@@ -465,6 +469,7 @@ body {
 
 /* Workflow Autonomy panel (102W/101D) — beside the governance card */
 .workflow-panel {
+  min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word;
   margin: 8px 0 4px;
   border: 1px solid rgba(13,148,136,.30);
   border-left: 3px solid #0d9488;
@@ -494,6 +499,7 @@ body {
 .workflow-panel .wf-step {
   display: flex; align-items: baseline; gap: 10px;
   padding: 3px 0; font-size: 13px; line-height: 1.4;
+  min-width: 0; max-width: 100%; flex-wrap: wrap;
 }
 .workflow-panel .wf-n {
   flex: 0 0 18px; font-family: ui-monospace, Menlo, monospace;
@@ -502,6 +508,7 @@ body {
 .workflow-panel .wf-name { flex: 0 0 200px; font-weight: 600; color: var(--text); }
 .workflow-panel .wf-route { flex: 0 0 78px; font-weight: 800; letter-spacing: .3px; }
 .workflow-panel .wf-status { flex: 0 0 116px; color: var(--text-soft); }
+.workflow-panel .wf-step > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
 .workflow-panel .wf-note { flex: 1 1 auto; color: var(--text-mute); font-size: 12px; }
 .workflow-panel .gp-route.BLUE       { color: var(--accent); }
 .workflow-panel .gp-route.GREEN      { color: var(--green); }
@@ -529,12 +536,19 @@ body {
 .approval-card {
   padding: 12px; margin: 10px 0; border-radius: var(--radius-sm);
   border: 1px solid rgba(31,158,84,.4); background: rgba(31,158,84,.05);
+  min-width: 0; max-width: 100%; overflow-wrap: anywhere;
+}
+.approval-card > *, .approval-card .summary, .approval-card .reasons,
+.approval-card .approval-status {
+  min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word;
 }
 .approval-card .summary { font-weight: 600; margin-bottom: 4px; }
 .approval-card .reasons { color: var(--text-soft); font-size: 12px;
-  font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
-.approval-card .actions { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
-.approval-card input[type=text] { flex: 1; padding: 8px 10px;
+  font-family: ui-monospace, Menlo, monospace; }
+.approval-card .actions { display: flex; flex-wrap: wrap; gap: 8px;
+  margin-top: 10px; align-items: center; min-width: 0; }
+.approval-card input[type=text] { flex: 1 1 180px; min-width: 0; max-width: 100%;
+  padding: 8px 10px;
   background: var(--bg); border: 1px solid var(--border); color: var(--text);
   border-radius: var(--radius-sm); font-size: 13px; }
 .approval-card .approve { background: var(--green); color: white; }
@@ -546,7 +560,7 @@ body {
 .approval-card .status-pending { color: var(--text-soft); font-style: italic; }
 .approval-card .status-ok      { color: var(--green); font-weight: 600; }
 .approval-card .status-err     { color: var(--red);   font-weight: 600;
-  font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
+  font-family: ui-monospace, Menlo, monospace; }
 
 /* Open-school Situation Compiler + deterministic response-pack coverage. */
 .response-pack {
@@ -569,6 +583,21 @@ body {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 560px; }
 .response-pack-severity { font-size: 11px; text-transform: uppercase;
   letter-spacing: .5px; font-weight: 700; color: var(--orange); }
+.response-pack-intent {
+  min-width: 0; margin: 8px 0 12px; padding: 10px 12px;
+  border: 1px solid rgba(31,111,235,.24); border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm); background: rgba(31,111,235,.04);
+  font-size: 12px; color: var(--text); overflow-wrap: anywhere;
+}
+.response-pack-intent-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 4px;
+}
+.response-pack-intent-head span {
+  color: var(--accent); font-size: 9.5px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .35px;
+}
+.response-pack-intent small { display: block; margin-top: 4px; color: var(--text-soft); }
 .request-boundary, .gp-request-boundary {
   min-width: 0; margin: 8px 0 12px; padding: 10px 12px;
   border: 1px solid var(--border); border-left: 4px solid var(--text-mute);
@@ -622,6 +651,37 @@ body {
 .response-pack-item-copy { display: flex; flex-direction: column; min-width: 0; }
 .response-pack-item-copy strong { font-size: 13px; font-weight: 600; color: var(--text); }
 .response-pack-item-copy small { font-size: 11px; color: var(--text-soft); }
+.response-pack-status {
+  display: inline-flex; align-self: flex-start; margin-top: 4px; padding: 1px 7px;
+  border-radius: 999px; border: 1px solid var(--border); font-size: 9.5px;
+  font-weight: 800; letter-spacing: .35px; line-height: 1.4;
+}
+.response-pack-status.status-created,
+.response-pack-status.status-completed { color: var(--green); border-color: rgba(31,158,84,.35); background: rgba(31,158,84,.08); }
+.response-pack-status.status-awaiting_approval { color: var(--orange); border-color: rgba(217,119,6,.35); background: rgba(217,119,6,.08); }
+.response-pack-status.status-blocked,
+.response-pack-status.status-missing,
+.response-pack-status.status-failed { color: var(--red); border-color: rgba(211,58,58,.35); background: rgba(211,58,58,.07); }
+.response-pack-status.status-selected { color: var(--text-mute); background: var(--bg-soft); }
+.response-pack-item.coverage-missing,
+.response-pack-item.coverage-failed { border-left: 3px solid var(--red); padding-left: 7px; }
+.response-pack-item-copy, .response-pack-item-copy strong,
+.response-pack-item-copy small { overflow-wrap: anywhere; word-break: break-word; }
+.case-relation-note {
+  display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap;
+  margin: 8px 0; padding: 8px 10px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft); background: var(--bg-soft);
+  color: var(--text-soft); font-size: 12px; overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.case-relation-note[hidden] { display: none; }
+.case-relation-note strong { color: var(--text); white-space: nowrap; }
+.case-relation-note.relation-follow_up { border-left: 3px solid var(--accent); }
+.case-relation-note.relation-new_case { border-left: 3px solid var(--green); }
+.case-relation-note.relation-unrelated { border-left: 3px solid var(--text-mute); }
+.case-relation-note.relation-ambiguous {
+  border-left: 3px solid var(--orange); background: rgba(217,119,6,.07);
+}
 .response-pack-question { margin-top: 12px; padding-top: 10px;
   border-top: 1px solid var(--border); }
 .response-pack-question > strong, .response-pack-question > small { display: block; }
@@ -1053,6 +1113,18 @@ body {
 
 /* Responsive outcome cards. Do not hide overflow: every governance reason must
    remain readable at judge-laptop, tablet and phone widths. */
+@media (max-width: 760px) {
+  .workflow-panel .wf-step {
+    display: grid; grid-template-columns: 24px minmax(0, 1fr);
+    column-gap: 8px; row-gap: 2px; align-items: start; padding: 6px 0;
+  }
+  .workflow-panel .wf-n { grid-column: 1; grid-row: 1 / span 4; width: auto; }
+  .workflow-panel .wf-name,
+  .workflow-panel .wf-route,
+  .workflow-panel .wf-status,
+  .workflow-panel .wf-note { grid-column: 2; width: auto; flex-basis: auto; }
+}
+
 @media (max-width: 900px) {
   .app, .app.with-audit { grid-template-columns: minmax(0, 1fr); }
   .audit-drawer {

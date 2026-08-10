@@ -45,10 +45,21 @@ class PreGovernanceModule:
     ) -> PreGovernanceAssessment:
         text = envelope.normalized_goal
         category = self._classify(text)
-        lexical_category = category
         hard_block_categories = set(
             self.classifier.get("hard_block_categories", [])
         )
+        intent_hard_rule = self._match_intent_hard_block_rule(text)
+        intent_required_categories = set(
+            self.classifier.get("intent_required_hard_block_categories", [])
+        )
+        if intent_hard_rule is not None:
+            category = str(intent_hard_rule.get("category") or category)
+        elif category in intent_required_categories:
+            # A bare reference to credentials may be an ordinary explanation
+            # request.  Only the configured object x access/disclosure intent
+            # contract turns it into a hard stop.
+            category = _UNKNOWN_CATEGORY
+        lexical_category = category
         override_rejected = False
         # Semantic override (101C). Only labels the data layer already
         # knows are accepted — the override changes WHICH configured
@@ -72,6 +83,10 @@ class PreGovernanceModule:
         hard_block = False
         hard_block_code: str | None = None
         reasons: list[str] = []
+        if intent_hard_rule is not None:
+            reasons.append(
+                f"intent_hard_block_rule:{intent_hard_rule.get('id')}"
+            )
         if category_override and category == category_override:
             reasons.append(f"category_override:{override_reason or 'semantic_intake'}")
         if override_rejected:
@@ -205,6 +220,202 @@ class PreGovernanceModule:
             if all(any(str(p).lower() in low for p in grp) for grp in groups):
                 return rule
         return None
+
+    def _match_intent_hard_block_rule(self, text: str) -> dict | None:
+        """Match config-declared hard floors that require object x intent.
+
+        Unlike contextual school data-use rules, these protect secrets before
+        any semantic/category override and therefore are never deferred.  The
+        vocabulary remains entirely in configuration.
+        """
+        low = (text or "").lower()
+        for rule in self.classifier.get("hard_block_intent_rules", []) or []:
+            local_contract = rule.get("local_intent_contract")
+            if isinstance(local_contract, dict):
+                if self._matches_unnegated_local_intent(low, local_contract):
+                    return rule
+                # A local contract replaces the old whole-sentence bag of
+                # words.  Falling through to require_all would reintroduce
+                # the exact negation and educational false positives this
+                # contract exists to prevent.
+                continue
+            groups = rule.get("require_all") or []
+            if not groups:
+                continue
+            exclusions = rule.get("exclude_any") or []
+            if any(str(p).lower() in low for p in exclusions if str(p).strip()):
+                continue
+            if all(any(str(p).lower() in low for p in group) for group in groups):
+                return rule
+        return None
+
+    @staticmethod
+    def _configured_term_spans(
+        text: str,
+        terms: list[Any],
+    ) -> list[tuple[int, int]]:
+        """Return config-term spans with safe ASCII token boundaries."""
+        spans: set[tuple[int, int]] = set()
+        for raw in terms or []:
+            term = str(raw or "").strip().lower()
+            if not term:
+                continue
+            pattern = re.escape(term)
+            if term[0].isascii() and (term[0].isalnum() or term[0] == "_"):
+                pattern = r"(?<![A-Za-z0-9_])" + pattern
+            if term[-1].isascii() and (term[-1].isalnum() or term[-1] == "_"):
+                pattern += r"(?![A-Za-z0-9_])"
+            spans.update((match.start(), match.end()) for match in re.finditer(
+                pattern, text,
+            ))
+        return sorted(spans)
+
+    @staticmethod
+    def _configured_bridge_allowed(
+        bridge: str,
+        allowed_terms: list[Any],
+        *,
+        max_chars: int,
+    ) -> bool:
+        """Accept only grammar particles configured for an object binding."""
+        if len(bridge) > max_chars:
+            return False
+        tokens = re.findall(
+            r"[A-Za-z0-9_]+|[\u3400-\u9fff]+",
+            str(bridge or "").casefold(),
+        )
+        allowed_tokens = {
+            token
+            for term in allowed_terms or []
+            for token in re.findall(
+                r"[A-Za-z0-9_]+|[\u3400-\u9fff]+",
+                str(term or "").casefold(),
+            )
+        }
+        return all(token in allowed_tokens for token in tokens)
+
+    @classmethod
+    def _action_is_locally_negated(
+        cls,
+        text: str,
+        action_start: int,
+        contract: dict,
+    ) -> bool:
+        """Check negation in the action's local clause, not the whole goal."""
+        window_size = int(contract.get("negation_window_chars") or 96)
+        prefix = text[max(0, action_start - window_size):action_start]
+        # Sentence punctuation ends a negation scope. A dot only counts when
+        # it ends a sentence, so the dot in `.env` cannot split the clause.
+        boundary_matches = list(re.finditer(r"\.(?=\s|$)|[!?;:\n]", prefix))
+        if boundary_matches:
+            prefix = prefix[boundary_matches[-1].end():]
+        breakers = cls._configured_term_spans(
+            prefix, list(contract.get("scope_break_terms") or []),
+        )
+        if breakers:
+            prefix = prefix[breakers[-1][1]:]
+        return bool(cls._configured_term_spans(
+            prefix, list(contract.get("negation_terms") or []),
+        ))
+
+    @classmethod
+    def _credential_object_is_topic_only(
+        cls,
+        text: str,
+        object_start: int,
+        contract: dict,
+    ) -> bool:
+        """True when the credential words name a document topic, not data.
+
+        For example, ``an explanation of API keys`` makes ``it`` refer to the
+        explanation. The topic prefixes are configuration, not code lexicon.
+        """
+        window_size = int(contract.get("topic_prefix_window_chars") or 64)
+        prefix = text[max(0, object_start - window_size):object_start].rstrip()
+        for raw in contract.get("topic_container_prefix_terms") or []:
+            term = str(raw or "").strip().casefold()
+            if term and prefix.casefold().endswith(term):
+                return True
+        return False
+
+    @classmethod
+    def _matches_unnegated_local_intent(
+        cls,
+        text: str,
+        contract: dict,
+    ) -> bool:
+        """Match a credential object bound to an unnegated risky action.
+
+        The bridge is deliberately grammatical rather than proximity-only:
+        ``copy its token`` binds directly, while ``copy this explanation of
+        API keys`` does not. All vocabulary and bridge particles remain in
+        configuration.
+        """
+        action_spans = cls._configured_term_spans(
+            text, list(contract.get("action_terms") or []),
+        )
+        object_spans = cls._configured_term_spans(
+            text, list(contract.get("credential_object_terms") or []),
+        )
+        reverse_action_spans = set(cls._configured_term_spans(
+            text, list(contract.get("reverse_action_terms") or []),
+        ))
+        reference_spans = cls._configured_term_spans(
+            text, list(contract.get("reference_pronoun_terms") or []),
+        )
+        max_chars = int(contract.get("max_bridge_chars") or 56)
+        direct_terms = list(contract.get("direct_bridge_terms") or [])
+        reverse_terms = list(contract.get("reverse_bridge_terms") or [])
+        anaphora_terms = list(contract.get("anaphora_bridge_terms") or [])
+        max_anaphora = int(contract.get("max_anaphora_chars") or 120)
+        for action_start, action_end in action_spans:
+            if cls._action_is_locally_negated(text, action_start, contract):
+                continue
+            for object_start, object_end in object_spans:
+                if action_end <= object_start:
+                    if cls._configured_bridge_allowed(
+                        text[action_end:object_start],
+                        direct_terms,
+                        max_chars=max_chars,
+                    ):
+                        return True
+                elif object_end <= action_start:
+                    if cls._credential_object_is_topic_only(
+                        text, object_start, contract,
+                    ):
+                        continue
+                    # Reverse word order is authoritative only for configured
+                    # passive/post-positive verbs. A base verb such as
+                    # ``upload`` needs an immediate reference pronoun so
+                    # document topics do not become credential objects.
+                    if (
+                        (action_start, action_end) in reverse_action_spans
+                        and cls._configured_bridge_allowed(
+                            text[object_end:action_start],
+                            reverse_terms,
+                            max_chars=max_chars,
+                        )
+                    ):
+                        return True
+                    if (
+                        action_start - object_end <= max_anaphora
+                        and cls._configured_bridge_allowed(
+                            text[object_end:action_start],
+                            anaphora_terms,
+                            max_chars=max_anaphora,
+                        )
+                        and any(
+                            action_end <= ref_start
+                            and cls._configured_bridge_allowed(
+                                text[action_end:ref_start],
+                                direct_terms,
+                                max_chars=max_chars,
+                            )
+                            for ref_start, _ref_end in reference_spans
+                        )
+                    ):
+                        return True
+        return False
 
     def _context_features(self, envelope: TaskEnvelope, profile: ProfileView, category: str) -> dict[str, Any]:
         text = envelope.normalized_goal

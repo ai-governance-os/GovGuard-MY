@@ -136,6 +136,11 @@ class ActionRiskModule:
         # action_taxonomy.json and the active pack's approval_required_actions,
         # this routes the change through GREEN (educator approval required).
         is_student_record_change = "student_record_change" in action.risk_factors
+        # A write to an internal school system is not an external release, but
+        # it is still a state-changing action. Surface that distinction to the
+        # policy taxonomy so it can require human approval without pretending
+        # that the work is being published publicly.
+        is_system_level_change = bool((action.metadata or {}).get("system_level_change"))
 
         return {
             "destructive": is_destructive,
@@ -160,6 +165,7 @@ class ActionRiskModule:
             "legal_content": is_legal_content,
             "parent_notice": is_parent_notice,
             "student_record_change": is_student_record_change,
+            "system_level_change": is_system_level_change,
         }
 
     def _level_for(self, score: float) -> str:

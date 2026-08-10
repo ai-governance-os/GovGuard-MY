@@ -7,8 +7,11 @@ and remain the only components allowed to choose BLUE/GREEN/RED/INFEASIBLE.
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
+
+from .module_school_intent_contract import declared_output_cardinality
 
 
 _RELATIONS = {"follow_up", "new_case", "unrelated", "ambiguous"}
@@ -104,8 +107,9 @@ _OUTPUT_ROLE_DEFAULT_RECIPIENT = {
 # anchors are deliberately closed and multilingual; they are used only to
 # prevent context capture, never to choose a governance route.
 _SCHOOL_ANCHORS = (
-    "school", "student", "students", "pupil", "pupils", "teacher",
-    "teachers", "parent", "parents", "guardian", "guardians",
+    "school", "student", "students", "pupil", "pupils", "learner",
+    "learners", "teacher", "teachers", "educator", "educators",
+    "faculty", "teaching staff", "parent", "parents", "guardian", "guardians",
     "classroom", "campus", "attendance", "discipline", "disciplinary",
     "school event", "school notice", "school report", "official record",
     "bazaar", "fundraiser", "fundraising", "coupon", "speech competition",
@@ -113,13 +117,17 @@ _SCHOOL_ANCHORS = (
     "canteen", "classroom", "laboratory", "library", "assembly",
     "school bus", "hostel", "dormitory", "principal", "headteacher",
     "recess", "playground", "school hall", "form teacher", "homeroom",
-    "prefect", "exam paper", "co-curricular", "cocurricular",
+    "prefect", "exam paper", "class average", "co-curricular", "cocurricular",
     "timetable", "class schedule", "school calendar", "meeting minutes",
     "staff meeting", "pibg", "pta", "enrolment", "enrollment",
     "promotion list", "class promotion", "ppd", "jpn",
+    "district education office", "education authority", "education office",
+    "ministry of education",
     "kantin", "kelas", "makmal", "perhimpunan", "bas sekolah", "asrama",
     "waktu rehat", "padang sekolah", "guru kelas", "pengawas", "kertas peperiksaan",
     "disiplin", "kehadiran", "jualan amal", "kupon",
+    "pejabat pendidikan", "pejabat pendidikan daerah",
+    "kementerian pendidikan",
     "jadual waktu", "minit mesyuarat", "pendaftaran murid", "senarai kenaikan kelas",
     "学校", "学生", "老师", "教师", "家长", "监护人", "纪律", "出勤",
     "违规", "校园", "校内", "义卖", "固本", "餐券", "演讲", "校方",
@@ -150,6 +158,44 @@ def _has_anchor(text: str, anchors: tuple[str, ...]) -> bool:
         elif re.search(rf"(?<!\w){re.escape(token)}(?!\w)", value):
             return True
     return False
+
+
+def _self_contained_external_content_request(text: str) -> bool:
+    """Recognise a bounded non-school content task despite a school wrapper.
+
+    A phrase such as ``for a school media lesson`` explains why the user wants
+    an article; it does not turn a FIFA tournament report into school
+    administration.  This narrow predicate protects the domain boundary
+    without rejecting genuine school sports notices, event plans or reports.
+    """
+    value = re.sub(r"\s+", " ", str(text or "").casefold()).strip()
+    authoring = r"(?:write|draft|create|prepare|produce)"
+    content = r"(?:report|article|essay|summary|presentation)"
+    world_cup = r"(?:(?:fifa\s+)?world\s+cup)"
+    world_cup_report = bool(re.search(
+        rf"\b{authoring}\b[^.!?\n]{{0,100}}\b{world_cup}\b"
+        rf"[^.!?\n]{{0,65}}\b{content}\b|"
+        rf"\b{authoring}\b[^.!?\n]{{0,100}}\b{content}\b"
+        rf"[^.!?\n]{{0,65}}\b(?:about|on|covering)\b"
+        rf"[^.!?\n]{{0,35}}\b{world_cup}\b|"
+        rf"\b{authoring}\b[^.!?\n]{{0,100}}\b{world_cup}\b"
+        rf"[^.!?\n]{{0,35}}\b(?:tournament\s+)?report\b",
+        value,
+    ))
+    world_cup_fixture = bool(re.search(
+        rf"\b{world_cup}\b[^.!?\n]{{0,80}}\b"
+        r"(?:match(?:es)?|fixture(?:s)?|schedule|score(?:s)?|result(?:s)?)\b|"
+        r"\b(?:next|upcoming)\b[^.!?\n]{0,80}\b"
+        rf"{world_cup}\b",
+        value,
+    ))
+    recipe = bool(re.search(
+        r"\b(?:write|draft|create|make|give|show|find|suggest|prepare)\b"
+        r"[^.!?\n]{0,80}\b(?:a\s+)?recipe\b|"
+        r"\brecipe\s+for\b",
+        value,
+    )) and not _has_anchor(text, _SCHOOL_ANCHORS)
+    return world_cup_report or world_cup_fixture or recipe
 
 
 class SchoolInputSemantics:
@@ -253,8 +299,13 @@ governance colours or approval decisions:
   content_only. Names, dates and wording-only gaps are content_only.
 - requested_deliverables: canonical artifact roles only when explicit.
 - requested_outputs: one object for EACH output the user explicitly asks for.
-  Do not add merely useful extras. Each object has artifact_role, label,
+  Do not add merely useful extras. Never combine several requested files into
+  one object. If three unfamiliar files all map to school_document, return
+  three separate school_document objects with distinct labels and purposes.
+  Each object has artifact_role, label, explicit,
   purpose, audience, recipient_type, languages and source_fact_ids.
+  explicit must be true. If an output is merely recommended rather than
+  explicitly requested, omit it from requested_outputs entirely.
   artifact_role must be one of internal_incident_report,
   private_parent_notice, school_parent_notice, emergency_contact_script,
   fire_rescue_contact_script, medical_handover_script,
@@ -282,26 +333,170 @@ governance colours or approval decisions:
 All safety concept fields are booleans. If uncertain, keep the concept false
 and lower confidence; use case_relation=ambiguous where appropriate."""
         try:
-            # OpenAI has a native strict JSON response mode. The generic
-            # chat_json() path asks for JSON in prose but some models may emit
-            # fenced JavaScript-like objects with unquoted enum values (the
-            # meaning is correct, yet json.loads must reject it). Use the
-            # provider's json_object mode so a valid semantic classification
-            # is never silently discarded into the deterministic fallback.
-            if (getattr(self.chat_llm, "backend", "") == "openai"
-                    and hasattr(self.chat_llm, "chat_json_openai")):
-                raw = self.chat_llm.chat_json_openai(
-                    system, user, max_tokens=1500
-                )
-            else:
-                raw = self.chat_llm.chat_json(system, user, max_tokens=1500)
+            raw = self._request_json(system, user, max_tokens=1800)
         except Exception:
             return self._fallback("llm_error", text, active_workflow_id)
         if not isinstance(raw, dict) or not raw:
             return self._fallback("empty_or_unparseable", text, active_workflow_id)
         normalised = self._normalise(raw)
-        return self._apply_domain_boundary(
+        bounded = self._apply_domain_boundary(
             normalised, text=text, active_workflow_id=active_workflow_id)
+        return self._enforce_declared_output_cardinality(bounded, text=text)
+
+    def _request_json(
+        self,
+        system: str,
+        user: str,
+        *,
+        max_tokens: int,
+    ) -> dict:
+        """Use the strongest JSON mode exposed by any configured provider."""
+        # OpenAI has a native strict JSON response mode. The generic
+        # chat_json() path asks for JSON in prose but some models may emit
+        # fenced JavaScript-like objects with unquoted enum values (the
+        # meaning is correct, yet json.loads must reject it). Keep this choice
+        # behind one provider-neutral method so cardinality repair follows the
+        # same transport as initial classification.
+        if (
+            getattr(self.chat_llm, "backend", "") == "openai"
+            and hasattr(self.chat_llm, "chat_json_openai")
+        ):
+            return self.chat_llm.chat_json_openai(
+                system, user, max_tokens=max_tokens
+            )
+        return self.chat_llm.chat_json(system, user, max_tokens=max_tokens)
+
+    def _enforce_declared_output_cardinality(
+        self,
+        result: dict,
+        *,
+        text: str,
+    ) -> dict:
+        """Repair a collapsed explicit file list once, then fail visibly.
+
+        Natural-language interpretation is still delegated to the model.  A
+        deterministic first-party count only checks the structural invariant:
+        an explicit request for N separate outputs must yield at least N
+        requested_output objects.  The extra call happens only when that
+        invariant is violated.  If the provider cannot repair it, downstream
+        intent coverage remains incomplete rather than incorrectly VERIFIED.
+        """
+        if result.get("school_domain") is not True:
+            return result
+        declared_count = declared_output_cardinality(text)
+        if declared_count == 0:
+            return result
+
+        guarded = dict(result)
+        situation = dict(guarded.get("situation") or {})
+        outputs = [
+            dict(item)
+            for item in (situation.get("requested_outputs") or [])
+            if isinstance(item, dict)
+        ]
+        initial_count = len(outputs)
+        repair_attempted = initial_count < declared_count
+        repair_improved = False
+        if repair_attempted:
+            repair_system = (
+                "You repair only the explicit requested-output list for a "
+                "school-administration semantic contract. Do not decide "
+                "governance, add optional work, merge files, or write the "
+                "files. Return one JSON object only."
+            )
+            repair_user = f"""User request: {text}
+Deterministic source-text floor: at least {declared_count} separate outputs.
+Current requested_outputs: {json.dumps(outputs, ensure_ascii=False)}
+
+Return {{"requested_outputs": [...]}} with one object for every explicitly
+requested output and at least {declared_count} distinct objects. Preserve
+distinct labels and purposes. Use artifact_role="school_document" when no
+specialised role fits. Each object must contain artifact_role, label, purpose,
+audience, recipient_type, languages, and source_fact_ids. Add no merely useful
+extras."""
+            try:
+                repaired_raw = self._request_json(
+                    repair_system, repair_user, max_tokens=1400
+                )
+            except Exception:
+                repaired_raw = {}
+            if isinstance(repaired_raw, dict):
+                repair_container = repaired_raw.get("situation")
+                if not isinstance(repair_container, dict):
+                    repair_container = repaired_raw
+                repaired = self._normalise_situation(
+                    {"requested_outputs": repair_container.get("requested_outputs")}
+                ).get("requested_outputs") or []
+                if len(repaired) > len(outputs):
+                    outputs = [dict(item) for item in repaired]
+                    repair_improved = True
+
+        # A source that explicitly asks for one file also owns an upper bound.
+        # This prevents a semantic provider from turning one Malay ``satu surat
+        # makluman`` into both a community notice and a private-family letter.
+        # Only the declared single-output case is collapsed; multi-file floors
+        # continue to preserve every semantic slot.
+        if declared_count == 1 and len(outputs) > 1:
+            source = text.casefold()
+            broad_parent = bool(re.search(
+                r"\b(?:all\s+parents?|all\s+guardians?|school\s+community|"
+                r"semua\s+(?:ibu\s+bapa|penjaga)|seluruh\s+(?:ibu\s+bapa|penjaga))\b",
+                source,
+            ))
+            private_parent = bool(re.search(
+                r"\b(?:the|his|her|their)\s+(?:parent|guardian)|"
+                r"(?:ibu\s+bapa|penjaga)\s+(?:murid|pelajar)\s+(?:itu|tersebut)\b",
+                source,
+            )) and not broad_parent
+
+            def single_output_score(item: dict) -> tuple[int, int]:
+                role = str(item.get("artifact_role") or "").casefold()
+                audience = str(item.get("audience") or "").casefold()
+                recipient = str(item.get("recipient_type") or "").casefold()
+                score = 0
+                if broad_parent and (
+                    role == "school_parent_notice"
+                    or audience == "school_community"
+                    or recipient == "school_community"
+                ):
+                    score += 20
+                if private_parent and (
+                    role == "private_parent_notice"
+                    or audience == "private_recipient"
+                    or recipient == "guardian"
+                ):
+                    score += 20
+                # Prefer a label literally grounded in the request over a
+                # provider-added companion, while retaining stable first-item
+                # order as the final tie-breaker.
+                label = str(item.get("label") or "").casefold().strip()
+                if label and label in source:
+                    score += 5
+                return score, -outputs.index(item)
+
+            outputs = [max(outputs, key=single_output_score)]
+
+        complete = len(outputs) >= declared_count
+        for index, output in enumerate(outputs):
+            if index < declared_count:
+                output["declared_slot_explicit"] = True
+        situation["requested_outputs"] = outputs
+        situation["declared_output_count"] = declared_count
+        situation["observed_output_count"] = len(outputs)
+        situation["output_contract_complete"] = complete
+        situation["output_contract_status"] = (
+            "complete_after_repair" if repair_improved and complete
+            else "complete" if complete
+            else "incomplete_after_repair" if repair_attempted
+            else "incomplete"
+        )
+        guarded["situation"] = situation
+        if repair_improved:
+            guarded["source"] = (
+                str(guarded.get("source") or "school_semantic_llm")
+                + "+cardinality_repair"
+            )
+        return guarded
 
     @staticmethod
     def _apply_domain_boundary(
@@ -318,6 +513,22 @@ and lower confidence; use case_relation=ambiguous where appropriate."""
         """
         if result.get("school_domain") is not True:
             return result
+        if _self_contained_external_content_request(text):
+            guarded = dict(result)
+            guarded.update({
+                "checked": True,
+                "school_domain": False,
+                "case_relation": "unrelated",
+                "school_area": "other",
+                "data_use_concepts": [],
+                "situation": {},
+                "rationale": (
+                    "deterministic_domain_boundary:"
+                    "self_contained_external_content"
+                ),
+                "source": "school_semantic_llm+boundary_guard",
+            })
+            return guarded
         school_anchor = _has_anchor(text, _SCHOOL_ANCHORS)
         followup_anchor = bool(active_workflow_id) and _has_anchor(
             text, _FOLLOWUP_ANCHORS)
@@ -471,7 +682,7 @@ and lower confidence; use case_relation=ambiguous where appropriate."""
                 "impact": impact,
             })
         requested_outputs: list[dict] = []
-        for item in (raw.get("requested_outputs") or [])[:8]:
+        for item in (raw.get("requested_outputs") or [])[:12]:
             if not isinstance(item, dict):
                 continue
             role = str(item.get("artifact_role") or "").strip().lower()
@@ -507,6 +718,11 @@ and lower confidence; use case_relation=ambiguous where appropriate."""
                 "recipient_type": recipient,
                 "languages": languages,
                 "source_fact_ids": source_fact_ids,
+                **(
+                    {"explicit": item.get("explicit") is True}
+                    if isinstance(item.get("explicit"), bool)
+                    else {}
+                ),
             })
 
         return {
@@ -543,8 +759,12 @@ and lower confidence; use case_relation=ambiguous where appropriate."""
         text: str = "",
         active_workflow_id: str | None = None,
     ) -> dict:
-        school_domain = _has_anchor(text, _SCHOOL_ANCHORS) or (
-            bool(active_workflow_id) and _has_anchor(text, _FOLLOWUP_ANCHORS)
+        external_content = _self_contained_external_content_request(text)
+        school_domain = not external_content and (
+            _has_anchor(text, _SCHOOL_ANCHORS) or (
+                bool(active_workflow_id)
+                and _has_anchor(text, _FOLLOWUP_ANCHORS)
+            )
         )
         # When the provider is unavailable, a positive school-domain match is
         # deliberately only a lexical floor (the richer case facets remain
@@ -564,7 +784,10 @@ and lower confidence; use case_relation=ambiguous where appropriate."""
             "requested_action": "",
             "audience": "unknown",
             "confidence": 0.0,
-            "rationale": reason,
+            "rationale": (
+                f"{reason}:self_contained_external_content"
+                if external_content else reason
+            ),
             "data_use_concepts": [],
             "situation": {},
             "source": (

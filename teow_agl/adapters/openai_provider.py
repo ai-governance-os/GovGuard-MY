@@ -63,6 +63,11 @@ def _load_dotenv_once() -> None:
     global _DOTENV_LOADED
     if _DOTENV_LOADED:
         return
+    if os.environ.get("TEOW_AGL_SKIP_DOTENV", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }:
+        _DOTENV_LOADED = True
+        return
     _DOTENV_LOADED = True
     here = Path(__file__).resolve()
     for parent in (here.parent, *here.parents):
@@ -233,6 +238,11 @@ def _embedding_api_key() -> str:
     explicit = os.environ.get("OPENAI_EMBED_API_KEY", "").strip()
     if explicit:
         return explicit
+    if os.environ.get("SKILL_EMBEDDING_PROVIDER", "").strip().lower() == "openai":
+        # The embedding lane has its own explicit provider switch. It must not
+        # inherit the chat provider identity (for example DeepSeek) after the
+        # operator deliberately selects OpenAI embeddings.
+        return os.environ.get("OPENAI_API_KEY", "").strip()
     # In DeepSeek compatibility mode OPENAI_API_KEY contains a DeepSeek key.
     # Never send that credential to OpenAI's embedding endpoint.
     if _provider_name() == "deepseek":
@@ -308,6 +318,112 @@ def _post_with_retry(
         return None
 
 
+def _message_content(data: dict | None) -> str:
+    """Extract final assistant content from an OpenAI-compatible response.
+
+    DeepSeek V4 thinking responses place the private reasoning beside
+    ``content`` as ``reasoning_content``. Only the final ``content`` is part
+    of the application contract; reasoning must never be parsed as a plan or
+    exposed in an artifact. A defensive list-content branch also keeps the
+    adapter compatible with gateways that return typed text parts.
+    """
+    try:
+        content = data["choices"][0]["message"]["content"]  # type: ignore[index]
+    except (KeyError, IndexError, TypeError):
+        return ""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                value = item.get("text") or item.get("content") or ""
+                if isinstance(value, str):
+                    parts.append(value)
+        return "".join(parts).strip()
+    return ""
+
+
+def _extract_json_object(text: str) -> dict:
+    """Return one JSON object from final model text, never from reasoning."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return {}
+    try:
+        parsed = json.loads(cleaned)
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"\{.*\}", cleaned, flags=re.S)
+    if not match:
+        return {}
+    try:
+        parsed = json.loads(match.group(0))
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def _json_chat_with_recovery(
+    payload: dict,
+    *,
+    provider: str,
+    timeout: int,
+    api_key: str,
+) -> tuple[dict, str]:
+    """Make a JSON chat call with one bounded DeepSeek V4 recovery.
+
+    DeepSeek documents two relevant behaviours: JSON mode can occasionally
+    return empty final content, and in thinking mode ``max_tokens`` covers
+    both reasoning and the final answer. A schema-sized call can therefore
+    spend its entire budget before emitting JSON. We keep the operator's
+    preferred thinking mode for the first attempt, then retry exactly once in
+    non-thinking mode with explicit JSON wording. No provider is switched,
+    and no reasoning text is accepted as application data.
+    """
+    data = _post_with_retry(
+        _chat_endpoint(provider), payload, timeout=timeout, api_key=api_key,
+    )
+    parsed = _extract_json_object(_message_content(data))
+    if parsed:
+        return parsed, "primary"
+    if data is None:
+        # Recovery repairs a successful HTTP response whose final content is
+        # empty or malformed. It must not repeat an outage, rate-limit or
+        # server failure with a second complete request sequence.
+        return {}, "transport_or_http_error"
+    if provider != "deepseek":
+        return {}, "empty_or_unparseable"
+
+    recovery = dict(payload)
+    recovery["thinking"] = {"type": "disabled"}
+    recovery.pop("reasoning_effort", None)
+    recovery["max_tokens"] = max(int(payload.get("max_tokens") or 0), 4096)
+    messages = [dict(item) for item in payload.get("messages") or []]
+    if messages:
+        last = dict(messages[-1])
+        last["content"] = (
+            str(last.get("content") or "")
+            + "\n\nJSON RECOVERY: Return one complete, non-empty JSON object "
+              "matching the requested schema. Do not output prose or fences."
+        )
+        messages[-1] = last
+    recovery["messages"] = messages
+    data = _post_with_retry(
+        _chat_endpoint(provider), recovery, timeout=timeout,
+        retry_on_transient=False, api_key=api_key,
+    )
+    parsed = _extract_json_object(_message_content(data))
+    if parsed:
+        return parsed, "deepseek_nonthinking_recovery"
+    return {}, (
+        "transport_or_http_error_after_recovery" if data is None
+        else "deepseek_recovery_empty_or_unparseable"
+    )
+
+
 def _parse_retry_after(value: str | None, default: float) -> float:
     if not value:
         return default
@@ -351,10 +467,7 @@ def openai_chat(
     )
     if not data:
         return ""
-    try:
-        return (data["choices"][0]["message"]["content"] or "").strip()
-    except (KeyError, IndexError, TypeError):
-        return ""
+    return _message_content(data)
 
 
 def openai_chat_json(
@@ -387,30 +500,13 @@ def openai_chat_json(
         "response_format": {"type": "json_object"},
     }
     _apply_thinking(payload, provider)
-    data = _post_with_retry(
-        _chat_endpoint(provider), payload, timeout=timeout,
+    parsed, _ = _json_chat_with_recovery(
+        payload,
+        provider=provider,
+        timeout=timeout,
         api_key=_api_key(provider),
     )
-    if not data:
-        return {}
-    try:
-        text = data["choices"][0]["message"]["content"] or ""
-    except (KeyError, IndexError, TypeError):
-        return {}
-    text = text.strip()
-    if not text:
-        return {}
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-    match = re.search(r"\{.*\}", text, flags=re.S)
-    if not match:
-        return {}
-    try:
-        return json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return {}
+    return parsed
 
 
 # ---------------------------------------------------------------------------
@@ -533,24 +629,21 @@ class OpenAIPlanner:
             "response_format": {"type": "json_object"},
         }
         _apply_thinking(payload, self.provider)
-        headers = {"Authorization": f"Bearer {self.api_key}",
-                   "Content-Type": "application/json"}
-        try:
-            r = httpx.post(self.endpoint, headers=headers, json=payload,
-                           timeout=self.timeout)
-            if r.status_code == 429 or 500 <= r.status_code < 600:
-                time.sleep(_parse_retry_after(r.headers.get("Retry-After"), 5))
-                r = httpx.post(self.endpoint, headers=headers, json=payload,
-                               timeout=self.timeout)
-            r.raise_for_status()
-            text = r.json()["choices"][0]["message"]["content"]
-        except Exception as exc:
-            return self._refusal(planning_brief, "model_error", str(exc))
-        try:
-            parsed = self._extract_json(text)
-        except ValueError:
-            return self._refusal(planning_brief, "format_failure",
-                                 "non_json_response")
+        parsed, recovery = _json_chat_with_recovery(
+            payload,
+            provider=self.provider,
+            timeout=self.timeout,
+            api_key=self.api_key,
+        )
+        if not parsed:
+            refusal_type = (
+                "model_error" if recovery.startswith("transport_or_http_error")
+                else "format_failure"
+            )
+            return self._refusal(
+                planning_brief, refusal_type,
+                "non_json_response:" + recovery,
+            )
         if "refusal_type" in parsed:
             return parsed
         if not parsed.get("actions"):

@@ -18,11 +18,20 @@ weaken the richer event schema — it is an additive export with a pinned shape:
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 _EXEC_STATUSES = {"not_run", "success", "blocked", "simulated", "failed"}
 _SENSITIVE_FEATURES = ("sensitive_path", "credential_path", "high_value_asset")
 _EXTERNAL_FEATURES = ("external_facing",)
+
+_MALAY_CUE_RE = re.compile(
+    r"\b(?:sediakan|jangan|murid|pelajar|sekolah|kantin|berhampiran|"
+    r"ibu\s+bapa|penjaga|laporan|draf|hantar|serahkan|kemukakan|"
+    r"kelulusan|emel|hubungi|maklumkan|siarkan|kepada|"
+    r"pejabat\s+pendidikan|kementerian\s+pendidikan)\b",
+    re.IGNORECASE,
+)
 
 
 def _language_of(text: str) -> str:
@@ -33,7 +42,10 @@ def _language_of(text: str) -> str:
     if has_cjk:
         return "zh"
     if has_latin:
-        return "en"
+        # Malay and English both use Latin characters.  Require at least two
+        # bounded school-administration cues so a Malaysian proper noun or one
+        # borrowed word cannot relabel an otherwise English intake.
+        return "ms" if len(_MALAY_CUE_RE.findall(text or "")) >= 2 else "en"
     return "und"
 
 

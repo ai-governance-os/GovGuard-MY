@@ -243,6 +243,48 @@
       "recipient_type": "school_staff",
       "source_policy": "case_facts_only"
     },
+    "speech_or_address": {
+      "label": "Speech / address draft",
+      "filename": "speech_or_address_draft.md",
+      "audience": "school_community",
+      "recipient_type": "school_community",
+      "source_policy": "verified_non_personal_facts_only"
+    },
+    "meeting_minutes": {
+      "label": "Meeting minutes draft",
+      "filename": "meeting_minutes_draft.md",
+      "audience": "internal",
+      "recipient_type": "school_staff",
+      "source_policy": "case_facts_only"
+    },
+    "duty_roster": {
+      "label": "Duty roster draft",
+      "filename": "duty_roster_draft.md",
+      "audience": "internal",
+      "recipient_type": "school_staff",
+      "source_policy": "case_facts_only"
+    },
+    "timetable_or_schedule": {
+      "label": "Timetable / schedule draft",
+      "filename": "timetable_or_schedule_draft.md",
+      "audience": "internal",
+      "recipient_type": "school_staff",
+      "source_policy": "case_facts_only"
+    },
+    "curriculum_continuity_plan": {
+      "label": "Curriculum continuity plan",
+      "filename": "curriculum_continuity_plan.md",
+      "audience": "internal",
+      "recipient_type": "school_leadership",
+      "source_policy": "case_facts_only"
+    },
+    "user_titled_document": {
+      "label": "User-titled governed school document",
+      "filename": "user_titled_school_document_draft.md",
+      "audience": "internal",
+      "recipient_type": "school_staff",
+      "source_policy": "case_facts_only"
+    },
     "school_document": {
       "label": "School administration draft",
       "filename": "school_document_draft.md",
@@ -263,12 +305,12 @@
     "cyber_data": ["cyber_incident_response", "evidence_preservation_log", "regulatory_notification_assessment"],
     "finance_procurement": ["finance_procurement_memo"],
     "events_cocurricular": ["event_action_plan", "external_stakeholder_message"],
-    "teaching_learning_support": ["student_support_plan"],
-    "staffing_hr": ["internal_incident_report", "evidence_preservation_log"],
+    "teaching_learning_support": ["student_support_plan", "curriculum_continuity_plan"],
+    "staffing_hr": ["internal_incident_report", "evidence_preservation_log", "duty_roster"],
     "communications_reputation": ["internal_incident_report", "public_communication_draft"],
     "records_regulatory": ["regulatory_notification_assessment", "education_authority_report"],
     "community_external_party": ["internal_incident_report", "external_stakeholder_message"],
-    "general_school_admin": ["school_document"]
+    "general_school_admin": ["user_titled_document"]
   },
   "clarification": {
     "max_questions_per_turn": 1,

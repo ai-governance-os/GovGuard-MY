@@ -66,6 +66,13 @@ const state = {
   // active context; a semantic new case/unrelated request clears it.
   activeWorkflowId: null,
   activeCaseTaskId: null,
+  // Polls can arrive out of order. Only the latest submitted task may replace
+  // the active case/workflow context used by the next composer submission.
+  submissionSequence: 0,
+  latestSubmissionSequence: 0,
+  latestTaskId: null,
+  caseContextPendingTaskId: null,
+  caseContextPendingSequence: null,
   liveWorkflows: [],
   liveSchoolInputs: false,
   liveReady: false,
@@ -166,10 +173,230 @@ function autoSizeTextarea(el) {
   el.style.height = Math.min(el.scrollHeight, 200) + "px";
 }
 
+function setComposerContextPending(sequence = null, taskId = null) {
+  state.caseContextPendingSequence = sequence;
+  state.caseContextPendingTaskId = taskId;
+  const runButton = $("#run-btn");
+  if (!runButton) return;
+  runButton.disabled = sequence !== null;
+  runButton.title = sequence !== null
+    ? "Waiting for the latest task to establish its case relationship."
+    : "";
+}
+
+function beginTaskSubmission() {
+  const sequence = ++state.submissionSequence;
+  state.latestSubmissionSequence = sequence;
+  state.latestTaskId = null;
+  setComposerContextPending(sequence, null);
+  return sequence;
+}
+
+function registerSubmittedTask(taskId, node, handle, sequence) {
+  state.tasks[taskId] = {
+    ui_node: node,
+    poll_handle: handle,
+    submission_sequence: sequence,
+    prior_active_workflow_id: state.activeWorkflowId || null,
+    prior_active_case_task_id: state.activeCaseTaskId || null,
+  };
+  if (sequence === state.latestSubmissionSequence) {
+    state.latestTaskId = taskId;
+    setComposerContextPending(sequence, taskId);
+  }
+}
+
+function finishFailedSubmission(sequence) {
+  if (sequence !== state.latestSubmissionSequence) return;
+  state.latestTaskId = null;
+  setComposerContextPending(null, null);
+}
+
+function taskOwnsLatestSubmission(
+  taskId,
+  taskMap = state.tasks,
+  latestSequence = state.latestSubmissionSequence,
+  latestTaskId = state.latestTaskId,
+) {
+  const slot = taskMap && taskMap[taskId];
+  if (!slot || slot.submission_sequence !== latestSequence) return false;
+  return !latestTaskId || latestTaskId === taskId;
+}
+
+function normaliseCaseRelation(value) {
+  const relation = String(value || "").trim().toLowerCase();
+  return ["follow_up", "new_case", "unrelated", "ambiguous"].includes(relation)
+    ? relation : "";
+}
+
+function readableCaseReason(value) {
+  return String(value || "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function caseRelationView(d) {
+  const semantics = (d && d.school_semantics) || {};
+  const relation = normaliseCaseRelation(semantics.case_relation);
+  if (!relation) return null;
+  const evidence = semantics.case_relation_evidence || {};
+  const copy = {
+    follow_up: {
+      label: "CASE: FOLLOW-UP",
+      message: "This request was linked to the previous school case.",
+    },
+    new_case: {
+      label: "CASE: NEW",
+      message: "This request was kept separate as a new school case.",
+    },
+    unrelated: {
+      label: "CASE: UNRELATED",
+      message: "No prior school-case data was carried into this request.",
+    },
+    ambiguous: {
+      label: "CASE: AMBIGUOUS",
+      message: "The case link is uncertain, so the system did not assume continuity.",
+    },
+  }[relation];
+  const reason = readableCaseReason(evidence.reason);
+  const tokens = Array.isArray(evidence.shared_topic_tokens)
+    ? evidence.shared_topic_tokens.filter(Boolean).slice(0, 8)
+    : [];
+  const details = [
+    evidence.proposed ? "proposed=" + evidence.proposed : "",
+    evidence.validated ? "validated=" + evidence.validated : "",
+    reason ? "reason=" + reason : "",
+    tokens.length ? "shared topics=" + tokens.join(", ") : "",
+  ].filter(Boolean);
+  return {
+    relation,
+    label: copy.label,
+    message: copy.message,
+    reason,
+    details: details.join(" | "),
+  };
+}
+
+function deriveCaseContinuity(current, taskId, d, ownsLatest) {
+  const base = {
+    activeWorkflowId: current.activeWorkflowId || null,
+    activeCaseTaskId: current.activeCaseTaskId || null,
+    liveWorkflows: Array.isArray(current.liveWorkflows)
+      ? current.liveWorkflows : [],
+  };
+  if (!ownsLatest) {
+    return {...base, applied: false, stale: true, resolved: false};
+  }
+  const semantics = (d && d.school_semantics) || {};
+  const relation = normaliseCaseRelation(semantics.case_relation);
+  const terminal = ["done", "error", "awaiting_clarification"]
+    .includes(String((d && d.status) || ""));
+  const workflow = d && d.workflow;
+  const detectedId = workflow && workflow.detected
+    ? (workflow.workflow_id || (workflow.resolution || {}).workflow_id)
+    : null;
+  const detectedAllowed = detectedId && base.liveWorkflows.includes(detectedId);
+  let activeWorkflowId = base.activeWorkflowId;
+  let activeCaseTaskId = base.activeCaseTaskId;
+
+  if (hasPreGovernanceHardStop(d)) {
+    const slot = current && current.tasks && current.tasks[taskId];
+    activeWorkflowId = slot && Object.prototype.hasOwnProperty.call(
+      slot, "prior_active_workflow_id"
+    ) ? slot.prior_active_workflow_id : base.activeWorkflowId;
+    activeCaseTaskId = slot && Object.prototype.hasOwnProperty.call(
+      slot, "prior_active_case_task_id"
+    ) ? slot.prior_active_case_task_id : base.activeCaseTaskId;
+    return {
+      activeWorkflowId,
+      activeCaseTaskId,
+      liveWorkflows: base.liveWorkflows,
+      applied: true,
+      stale: false,
+      resolved: true,
+      relation: "",
+      hardStopped: true,
+    };
+  }
+
+  if (relation === "unrelated" || relation === "ambiguous") {
+    activeWorkflowId = null;
+    activeCaseTaskId = null;
+  } else if (relation === "new_case") {
+    activeWorkflowId = detectedAllowed ? detectedId : null;
+    activeCaseTaskId = taskId;
+  } else if (relation === "follow_up") {
+    activeCaseTaskId = taskId;
+    if (d.context_workflow_id) activeWorkflowId = d.context_workflow_id;
+    else if (detectedAllowed) activeWorkflowId = detectedId;
+  } else if (terminal && d.status === "done"
+      && d.school_situation && d.school_situation.active !== false) {
+    activeCaseTaskId = taskId;
+    if (d.context_workflow_id) activeWorkflowId = d.context_workflow_id;
+    else if (detectedAllowed) activeWorkflowId = detectedId;
+  }
+
+  return {
+    activeWorkflowId,
+    activeCaseTaskId,
+    liveWorkflows: base.liveWorkflows,
+    applied: true,
+    stale: false,
+    resolved: Boolean(relation) || terminal,
+    relation,
+  };
+}
+
+function applyCaseContinuityFromPoll(taskId, d) {
+  const ownsLatest = taskOwnsLatestSubmission(taskId);
+  const next = deriveCaseContinuity(state, taskId, d, ownsLatest);
+  if (!next.applied) return next;
+  state.activeWorkflowId = next.activeWorkflowId;
+  state.activeCaseTaskId = next.activeCaseTaskId;
+  const slot = state.tasks[taskId];
+  if (next.resolved && slot
+      && state.caseContextPendingSequence === slot.submission_sequence) {
+    setComposerContextPending(null, null);
+  }
+  return next;
+}
+
+function renderCaseRelation(node, d, outcomeView = null) {
+  const el = node.querySelector(".case-relation-note");
+  if (!el) return;
+  if ((outcomeView && outcomeView.safeStop) && hasPreGovernanceHardStop(d)) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  const view = caseRelationView(d);
+  if (!view) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  el.className = "case-relation-note relation-" + view.relation;
+  el.textContent = "";
+  const label = document.createElement("strong");
+  label.textContent = view.label;
+  const message = document.createElement("span");
+  message.textContent = view.message
+    + (view.reason ? " Evidence: " + view.reason + "." : "");
+  el.appendChild(label);
+  el.appendChild(message);
+  el.title = view.details;
+  el.hidden = false;
+}
+
 async function startTask(options = {}) {
+  if (state.caseContextPendingSequence !== null) return;
   const goalEl = $("#goal");
   let goal = goalEl.value.trim();
   if (!goal && !state.attachments.length) return;
+  const parentTaskId = state.activeCaseTaskId;
+  const activeWorkflowId = state.activeWorkflowId;
+  const submissionSequence = beginTaskSubmission();
 
   // weave attachment context into the goal text so the agent sees the
   // uploaded files alongside the user's words
@@ -185,7 +412,6 @@ async function startTask(options = {}) {
   autoSizeTextarea(goalEl);
   state.attachments = [];
   renderAttachments();
-  $("#run-btn").disabled = true;
 
   try {
     const r = await fetch("/api/tasks", {
@@ -193,9 +419,9 @@ async function startTask(options = {}) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         raw_goal: goal,
-        active_workflow_id: state.activeWorkflowId,
+        active_workflow_id: activeWorkflowId,
         scripted_workflow_id: options.scriptedWorkflowId || null,
-        parent_task_id: state.activeCaseTaskId,
+        parent_task_id: parentTaskId,
         interaction_mode: (
           options.direct === true || !state.liveSchoolInputs || !state.liveReady
             ? "direct" : "review_if_needed"
@@ -206,14 +432,13 @@ async function startTask(options = {}) {
     const { task_id } = await r.json();
     const node = appendAgentMessage(task_id);
     const handle = setInterval(() => pollTask(task_id, node), 500);
-    state.tasks[task_id] = { ui_node: node, poll_handle: handle };
+    registerSubmittedTask(task_id, node, handle, submissionSequence);
   } catch (e) {
+    finishFailedSubmission(submissionSequence);
     appendAgentError("Failed to start task: " + e.message);
-  } finally {
-    $("#run-btn").disabled = false;
-  }
 }
 
+}
 function hideWelcome() {
   const w = $("#welcome");
   if (w) w.style.display = "none";
@@ -298,6 +523,9 @@ function isVerifierSyntheticExecution(execution) {
 function isSchoolCoverSummary(text) {
   const value = String(text || "").trim();
   return /^I prepared \d+ governed Markdown drafts?:/i.test(value)
+    || /^Received a governed task(?: for)?(?: \d+)?(?: governed)? Markdown drafts?/i.test(value)
+    || /^Prepared(?: your)? \d+ governed Markdown drafts?/i.test(value)
+    || /^Saya (?:telah )?sediakan \d+ draf Markdown terkawal/i.test(value)
     || /^我已准备\s*\d+\s*份受治理的\s*Markdown\s*草稿/.test(value);
 }
 
@@ -334,9 +562,34 @@ function routeHistogram(decisions) {
   return counts;
 }
 
+function preGovernanceHardStopDecision(d) {
+  return ((d && d.decisions) || []).find(decision => {
+    if (String(decision && decision.action_id || "") === "pre_governance_hard_block") {
+      return true;
+    }
+    return (decision && Array.isArray(decision.reasons) ? decision.reasons : [])
+      .some(reason => /^pre_governance_hard_block:/i.test(String(reason || "")));
+  }) || null;
+}
+
+function hasPreGovernanceHardStop(d) {
+  return preGovernanceHardStopDecision(d) !== null;
+}
+
 function inputGovernanceFor(d) {
   const pack = d && d.response_pack;
   const boundary = pack && pack.input_governance;
+  if (hasPreGovernanceHardStop(d)) {
+    const route = String((d && d.final_route) || "").toUpperCase();
+    return {
+      decision: route === "INFEASIBLE" ? "INFEASIBLE" : "RED",
+      blocked_request: String((d && d.raw_goal) || "").trim() || true,
+      reasons: [
+        "The request was stopped by pre-governance before planning, file access, or external action.",
+      ],
+      safe_transformations: [],
+    };
+  }
   return boundary && typeof boundary === "object" ? boundary : null;
 }
 
@@ -382,6 +635,7 @@ function humanizeDecisionReason(decision, route) {
 const VERIFICATION_ISSUE_COPY = {
   "refusal_sniff": "The response contains refusal or generation-failure text instead of the requested work.",
   "artifact_failure_sniff": "A generated file contains internal generation-failure text.",
+  "school.goal_coverage": "One or more selected response-pack outputs are missing or failed.",
   "school.execution_completeness": "One or more governed outputs were not completed.",
   "school.artifact_contract": "A file does not match its intended school-document role.",
   "school.chat_companion_scope": "The reply does not accurately match the generated files.",
@@ -392,12 +646,23 @@ const VERIFICATION_ISSUE_COPY = {
 };
 
 function humanizeVerificationIssues(verification) {
-  if (!verification || verification.pass !== false) return [];
+  if (!verification) return [];
   const issues = [];
   const judge = verification.judge || null;
-  if (judge && judge.pass === false && Array.isArray(judge.issues)) {
+  const seriousDetails = judge && Array.isArray(judge.issue_details)
+    ? judge.issue_details.filter(item => item
+      && ["critical", "major"].includes(String(item.severity || "").toLowerCase()))
+    : [];
+  seriousDetails.forEach(item => {
+    const text = String(item.message || item.issue || item.code || "").trim();
+    if (text && !issues.includes(text)) issues.push(text);
+  });
+  if (judge && (judge.pass === false || seriousDetails.length)
+      && Array.isArray(judge.issues)) {
     judge.issues.forEach(issue => {
-      const text = String(issue || "").trim();
+      const text = typeof issue === "object"
+        ? String(issue.message || issue.issue || issue.code || "").trim()
+        : String(issue || "").trim();
       if (text && !issues.includes(text)) issues.push(text);
     });
   }
@@ -408,7 +673,9 @@ function humanizeVerificationIssues(verification) {
         || "A generated output did not pass the required quality checks.";
       if (!issues.includes(copy)) issues.push(copy);
     });
-  if (!issues.length) issues.push("The generated output needs repair before it can be used.");
+  if (verification.pass === false && !issues.length) {
+    issues.push("The generated output needs repair before it can be used.");
+  }
   return issues;
 }
 
@@ -417,11 +684,25 @@ function greenActionState(d) {
   const green = decisions.filter(decision =>
     String(decision.route || "").toUpperCase() === "GREEN");
   if (!green.length) return null;
-  if (d.status === "awaiting_approval" || (d.pending_approvals || []).length) return "pending";
+  const approvalStatus = decision => String(
+    decision && decision.approval_request && decision.approval_request.status || ""
+  ).toLowerCase();
+  if (d.status === "awaiting_approval" || (d.pending_approvals || []).length) {
+    return "pending";
+  }
   const executions = governedBusinessExecutions(d);
-  const approved = green.some(decision => executions.some(execution =>
-    execution.action_id === decision.action_id && execution.status === "success"));
-  return approved ? "approved" : "rejected";
+  const approved = green.some(decision => {
+    const executionSucceeded = executions.some(execution =>
+      execution.action_id === decision.action_id && execution.status === "success");
+    if (!executionSucceeded) return false;
+    if (approvalStatus(decision) === "approved") return true;
+    // Older deterministic records did not persist an approval_request object.
+    // A completed successful GREEN execution is their auditable approval signal.
+    return !decision.approval_request && d.status === "done";
+  });
+  if (approved) return "approved";
+  if (green.some(decision => approvalStatus(decision) === "rejected")) return "rejected";
+  return "pending";
 }
 
 function buildOutcomeView(d) {
@@ -431,6 +712,9 @@ function buildOutcomeView(d) {
   const files = governedArtifactFiles(d);
   const executions = governedVisibleExecutions(d);
   const verification = d && d.verification;
+  const grade = String((verification && verification.verification_grade) || "").toLowerCase();
+  const knownGrade = ["goal_complete", "safe_format_only", "partial", "safe_stop", "failed"]
+    .includes(grade);
   const verificationSkipped = !!(verification
     && typeof verification.summary === "string"
     && verification.summary.startsWith("skipped:"));
@@ -441,27 +725,33 @@ function buildOutcomeView(d) {
   const transformations = safeTransformationTexts(boundary);
   const hasSafeAction = files.length > 0 || executions.some(execution =>
     execution.status === "success");
-  const safeStop = (route === "RED" || route === "INFEASIBLE")
+  const legacySafeStop = (route === "RED" || route === "INFEASIBLE")
     && files.length === 0 && !hasSafeAction && transformations.length === 0;
-  const partial = (boundaryBlocks && (transformations.length > 0 || hasSafeAction))
+  const legacyPartial = (boundaryBlocks && (transformations.length > 0 || hasSafeAction))
     || (files.length > 0
       && Object.values(routes).filter(count => count > 0).length > 1);
-  const needsRepair = !!(verification && verification.enabled !== false
-    && verification.pass === false && !safeStop);
-  const verified = !!(verification && verification.enabled !== false
-    && verification.pass === true && !verificationSkipped
-    && ((verification.checks || []).length || verification.judge));
+  const safeStop = grade === "safe_stop" || (!knownGrade && legacySafeStop);
+  const partial = !safeStop && (grade === "partial" || (!knownGrade && legacyPartial));
+  const needsRepair = !safeStop && (grade === "failed" || !!(verification
+    && verification.enabled !== false && verification.pass === false)
+    || issues.length > 0);
+  const verified = !safeStop && !needsRepair && (grade === "goal_complete" || (!knownGrade
+    && !!(verification && verification.enabled !== false
+      && verification.pass === true && !verificationSkipped
+      && ((verification.checks || []).length || verification.judge))));
+  const safeFormatOnly = grade === "safe_format_only" && !needsRepair;
 
   let quality = "NONE";
   if (safeStop) quality = "SAFE_STOP";
   else if (needsRepair) quality = "NEEDS_REPAIR";
   else if (verified) quality = "VERIFIED";
   else if (partial) quality = "PARTIAL_GOVERNED";
+  else if (safeFormatOnly) quality = "SAFE_FORMAT_ONLY";
 
   return {
     route, routes, files, executions, verification, verificationSkipped,
-    issues, boundary, boundaryDecision, boundaryBlocks, transformations,
-    safeStop, partial, needsRepair, verified, quality,
+    grade, issues, boundary, boundaryDecision, boundaryBlocks, transformations,
+    safeStop, partial, needsRepair, verified, safeFormatOnly, quality,
     greenState: greenActionState(d),
   };
 }
@@ -483,11 +773,18 @@ function governedPrimaryAnswer(rawChatText, d, view) {
   }
   if (replaceCover && view.files.length) {
     const noun = view.files.length === 1 ? "draft" : "drafts";
-    const prefix = view.partial
-      ? "The safe parts of the request were completed; unsafe parts remained blocked. "
-      : "";
+    let prefix = "";
+    if (view.partial && view.greenState === "pending") {
+      prefix = "The safe drafts are ready; the external action is paused for your approval. ";
+    } else if (view.partial && view.greenState === "rejected") {
+      prefix = "The safe drafts were created; the external action was not approved and nothing was released. ";
+    } else if (view.partial) {
+      prefix = "The safe parts of the request were completed; higher-impact actions remained governed. ";
+    }
     return `${prefix}I prepared ${view.files.length} governed Markdown ${noun}. `
       + (view.verified ? "Verification passed. " : "")
+      + (view.safeFormatOnly
+        ? "Policy and file checks passed; semantic goal completion was not claimed. " : "")
       + "Nothing was sent or published.";
   }
   return raw;
@@ -716,6 +1013,8 @@ function renderGovPipeline(bubble, d, providedView) {
     verFail = true;
     verIssues = view.issues.slice(0, 3);
     verDet = `NEEDS REPAIR — ${view.issues.length} issue${view.issues.length === 1 ? "" : "s"} found`;
+  } else if (view.safeFormatOnly) {
+    verDet = "SAFE FORMAT ONLY ? policy, grounding and file checks passed; semantic goal completion was not proven";
   } else if (wfDetected) {
     if (gs === "pending") {
       verDet = "deferred — runs after you verify the high-impact step";
@@ -733,6 +1032,8 @@ function renderGovPipeline(bubble, d, providedView) {
     } else {
       verDet = "low-risk drafts — verified inline";
     }
+  } else if (view.partial) {
+    verDet = "PARTIAL GOVERNED ? safe outputs were checked; blocked or pending actions remain visible";
   } else if (route === "RED") {
     verDet = "n/a — nothing executed to verify";
   } else if (route === "INFEASIBLE") {
@@ -929,9 +1230,22 @@ function renderWorkflowPanel(bubble, d) {
   el.hidden = false;
 }
 
-function renderResponsePack(node, d) {
+function renderResponsePack(node, d, outcomeView = null) {
   const el = node.querySelector(".response-pack");
   if (!el) return;
+  // A pre-governance hard stop can still carry the compiler's provisional
+  // response-pack metadata for audit purposes. Do not present that proposal
+  // as a recommended/selected deliverable after governance has explicitly
+  // stopped the task before execution.
+  if ((outcomeView && outcomeView.safeStop)
+      || !["awaiting_clarification", "awaiting_approval", "done"].includes(
+        String((d && d.status) || "")
+      )) {
+    el.hidden = true;
+    el.innerHTML = "";
+    delete el.dataset.renderKey;
+    return;
+  }
   const pack = d.response_pack;
   if (!pack || !Array.isArray(pack.deliverables)) {
     el.hidden = true;
@@ -965,6 +1279,28 @@ function renderResponsePack(node, d) {
     + `<span class="response-pack-severity">${escapeHtml(pack.severity || "unknown")}</span>`;
   el.appendChild(head);
 
+  const intent = pack.intent_summary;
+  if (intent) {
+    const intentBox = document.createElement("div");
+    intentBox.className = "response-pack-intent";
+    const audiences = Array.isArray(intent.audiences)
+      ? intent.audiences.join(", ") : String(intent.audiences || "unknown");
+    const requestedCount = Number(intent.user_requested_count || 0);
+    const policyCount = Number(intent.policy_added_count || 0);
+    const rejected = Number(intent.rejected_expansions || 0);
+    intentBox.innerHTML = `<div class="response-pack-intent-head">`
+      + `<strong>Intent understood</strong>`
+      + `<span>${escapeHtml(intent.confirmation_state || "agent_inferred_for_review")}</span></div>`
+      + `<div>${escapeHtml(intent.outcome || "Recommend a governed response pack")}</div>`
+      + `<small>Authority: ${escapeHtml(intent.authority || "inferred from the request")}`
+      + ` · Audience: ${escapeHtml(audiences)}`
+      + ` · User requested: ${requestedCount}`
+      + ` · Policy added: ${policyCount}`
+      + (rejected ? ` · Blocked expansions: ${rejected}` : "")
+      + `</small>`;
+    el.appendChild(intentBox);
+  }
+
   // Layer 1 — govern the user's original request. This is deliberately
   // separate from the per-deliverable/action governance shown below.
   appendUserRequestBoundary(el, pack.input_governance, false);
@@ -976,9 +1312,18 @@ function renderResponsePack(node, d) {
     ? "Choose recommended outputs" : "Response-pack coverage";
   fieldset.appendChild(legend);
 
+  const coverageLedger = d.verification && Array.isArray(d.verification.coverage_ledger)
+    ? d.verification.coverage_ledger : [];
+  const coverageById = new Map(coverageLedger.map(item => [
+    String(item.deliverable_id || ""), item,
+  ]));
   for (const item of pack.deliverables) {
     const row = document.createElement("label");
     row.className = "response-pack-item";
+    const coverage = coverageById.get(String(item.deliverable_id || ""));
+    const coverageStatus = coverage ? String(coverage.status || "").toUpperCase()
+      : (item.selected === true ? "SELECTED" : "");
+    if (coverageStatus) row.classList.add(`coverage-${coverageStatus.toLowerCase()}`);
     const box = document.createElement("input");
     box.type = "checkbox";
     box.value = item.deliverable_id || "";
@@ -992,6 +1337,15 @@ function renderResponsePack(node, d) {
     meta.textContent = `${item.requirement || "recommended"} · ${item.mode || "draft"} · ${item.audience || "internal"}`;
     copy.appendChild(title);
     copy.appendChild(meta);
+    if (coverageStatus) {
+      const badge = document.createElement("span");
+      badge.className = `response-pack-status status-${coverageStatus.toLowerCase()}`;
+      badge.textContent = coverageStatus === "AWAITING_APPROVAL"
+        ? "AWAITING" : coverageStatus;
+      badge.title = coverage && coverage.detail
+        ? coverage.detail : "Selected response-pack output";
+      copy.appendChild(badge);
+    }
     row.appendChild(box);
     row.appendChild(copy);
     fieldset.appendChild(row);
@@ -1079,6 +1433,7 @@ async function submitResponsePack(node, d, proceedWithTbc) {
   }] : [];
   const buttons = el.querySelectorAll("button");
   buttons.forEach(button => { button.disabled = true; });
+  const submissionSequence = beginTaskSubmission();
   try {
     const r = await fetch(`/api/tasks/${encodeURIComponent(d.task_id)}/response-pack/confirm`, {
       method: "POST",
@@ -1097,20 +1452,23 @@ async function submitResponsePack(node, d, proceedWithTbc) {
     el.querySelector(".response-pack-actions").textContent = "Response pack confirmed. Starting independent governance checks…";
     const child = appendAgentMessage(out.task_id);
     const handle = setInterval(() => pollTask(out.task_id, child), 500);
-    state.tasks[out.task_id] = {ui_node: child, poll_handle: handle};
-    state.activeCaseTaskId = out.task_id;
+    registerSubmittedTask(out.task_id, child, handle, submissionSequence);
   } catch (err) {
+    finishFailedSubmission(submissionSequence);
     buttons.forEach(button => { button.disabled = false; });
     const actions = el.querySelector(".response-pack-actions");
     if (actions) actions.insertAdjacentHTML("beforeend", `<span class="pack-error">${escapeHtml(err.message)}</span>`);
   }
 }
 
-function renderAddMissingOutput(node, d) {
+function renderAddMissingOutput(node, d, outcomeView = null) {
   const el = node.querySelector(".add-output-card");
   if (!el) return;
-  if (d.status !== "done" || d.phase !== "complete" || !d.response_pack) {
+  if ((outcomeView && outcomeView.safeStop)
+      || d.status !== "done" || d.phase !== "complete" || !d.response_pack) {
     el.hidden = true;
+    el.innerHTML = "";
+    delete el.dataset.ready;
     return;
   }
   if (el.dataset.ready === "1") return;
@@ -1141,6 +1499,7 @@ async function submitAddedDeliverable(node, d) {
   const mode = el.querySelector(".add-output-mode").value || "draft";
   const button = el.querySelector(".add-output-submit");
   button.disabled = true;
+  const submissionSequence = beginTaskSubmission();
   try {
     const r = await fetch(`/api/tasks/${encodeURIComponent(d.task_id)}/deliverables`, {
       method: "POST",
@@ -1157,9 +1516,9 @@ async function submitAddedDeliverable(node, d) {
     el.querySelector(".add-output-status").textContent = "Added as a new governed task.";
     const child = appendAgentMessage(out.task_id);
     const handle = setInterval(() => pollTask(out.task_id, child), 500);
-    state.tasks[out.task_id] = {ui_node: child, poll_handle: handle};
-    state.activeCaseTaskId = out.task_id;
+    registerSubmittedTask(out.task_id, child, handle, submissionSequence);
   } catch (err) {
+    finishFailedSubmission(submissionSequence);
     button.disabled = false;
     el.querySelector(".add-output-status").textContent = err.message;
   }
@@ -1179,6 +1538,7 @@ function appendAgentMessage(task_id) {
       <section class="response-pack" hidden></section>
       <div class="summary">Thinking…</div>
       <div class="extra-card" hidden></div>
+      <div class="case-relation-note" hidden></div>
       <div class="route-row"></div>
       <div class="gov-pipeline" hidden></div>
       <div class="workflow-panel" hidden></div>
@@ -1232,26 +1592,9 @@ async function pollTask(task_id, node) {
     state_d = await r.json();
   } catch (e) { return; }
   renderAgentMessage(node, state_d);
-  // Establish case continuity as soon as the workflow is visible, including
-  // while its GREEN step is awaiting approval. A judge can therefore type a
-  // follow-up immediately; they do not have to finish the gate first.
-  const wf = state_d.workflow;
-  const detectedId = wf && wf.detected
-    ? (wf.workflow_id || (wf.resolution || {}).workflow_id)
-    : null;
-  if (detectedId && state.liveWorkflows.includes(detectedId)) {
-    state.activeWorkflowId = detectedId;
-  }
-  const sem = state_d.school_semantics || {};
-  if (state_d.school_situation && state_d.school_situation.active !== false) {
-    state.activeCaseTaskId = state_d.task_id;
-  }
-  if (sem.case_relation === "new_case" || sem.case_relation === "unrelated") {
-    state.activeWorkflowId = null;
-    if (sem.case_relation === "unrelated") state.activeCaseTaskId = null;
-  } else if (state_d.context_workflow_id) {
-    state.activeWorkflowId = state_d.context_workflow_id;
-  }
+  // Polls from older tasks may finish after the newest task. Only the latest
+  // submitted task is allowed to change the composer case context or unlock it.
+  applyCaseContinuityFromPoll(task_id, state_d);
   if (state_d.status === "done" || state_d.status === "error"
       || state_d.status === "awaiting_clarification") {
     const slot = state.tasks[task_id];
@@ -1272,8 +1615,9 @@ function renderAgentMessage(node, d) {
   else if (d.status === "error") bubble.classList.add("status-error");
   else bubble.classList.add("status-running");
 
-  renderResponsePack(node, d);
   const outcomeView = buildOutcomeView(d);
+  renderResponsePack(node, d, outcomeView);
+  renderCaseRelation(node, d, outcomeView);
 
   // "🔍 Searched the web" indicator. We surface this BEFORE the answer
   // so the user knows the reply is grounded in live results, not just
@@ -1492,6 +1836,12 @@ function renderAgentMessage(node, d) {
     chip.title = outcomeView.issues.slice(0, 3).join("\n")
       || "The output is held for repair before use.";
     routes.appendChild(chip);
+  } else if (outcomeView.safeFormatOnly) {
+    const chip = document.createElement("span");
+    chip.className = "chip SAFE-FORMAT";
+    chip.textContent = "SAFE FORMAT ONLY";
+    chip.title = "Policy, grounding and file checks passed; semantic goal completion was not claimed.";
+    routes.appendChild(chip);
   } else if (ver && ver.enabled !== false && !verSkipped
       && outcomeView.verified) {
     const chip = document.createElement("span");
@@ -1554,7 +1904,7 @@ function renderAgentMessage(node, d) {
 
   // approvals
   renderApprovals(bubble.querySelector(".approval-area"), d);
-  renderAddMissingOutput(node, d);
+  renderAddMissingOutput(node, d, outcomeView);
 
   // Module 109 reflection: surface what the agent decided to remember
   // (or rejected). Hidden when there's nothing to show.
@@ -2834,6 +3184,9 @@ if (typeof module !== "undefined" && module.exports) {
     governedArtifactFiles,
     humanizeVerificationIssues,
     humanizeBoundaryReason,
+    taskOwnsLatestSubmission,
+    caseRelationView,
+    deriveCaseContinuity,
   };
 }
 
