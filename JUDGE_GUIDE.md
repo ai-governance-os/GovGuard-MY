@@ -104,9 +104,11 @@ python -X utf8 scripts/verify_no_secrets.py   # secret scan
 
 ## Evidence
 
-- pytest: **1,432** collected across **98** files — **1,424 passed /
+- pytest: **1,847** collected across **112 test modules** — **1,839 passed /
   8 intentional/environment-dependent skipped / 0 failed** in the ordinary grouped run.
-- Conditional browser UI suite: **25 / 25 passed** when enabled.
+- The `tests/` directory contains **114 Python files** in total, including
+  `conftest.py` and `__init__.py`.
+- Browser UI contract suite: **20 / 20 passed** when enabled, including seven conditional browser cases.
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**.
 - Secret scan: **PASS**.
 
@@ -137,6 +139,14 @@ If the provider is rate-limited, unavailable, times out, or returns a malformed
 bundle, a task-local outage circuit prevents repeated calls and the governed
 role receives a complete deterministic Markdown fallback.
 
+Measured Mixed Live scope is English and Bahasa Melayu school-administration
+input. Two independent 19-case runs observed **74-84% complete output**, with
+**zero personal-data leakage, zero unauthorised external sending, and every
+unsuccessful case failing closed**. The pack creates governed Markdown drafts;
+PowerPoint and other Office export are not claimed. It also does not
+autonomously create student-health data collection fields: a non-medical
+consent draft or a human-approved school template must be used instead.
+
 For a confirmed out-of-domain request (for example, a FIFA World Cup report),
 GovGuard does not attempt a low-quality generic report. It returns a prepared
 BLUE capability-boundary answer, explicitly confirms that no student, parent,
@@ -163,5 +173,5 @@ python -X utf8 scripts/verify_competition_enhancements.py
 - Port 8765 busy → a stale server is running; stop it first.
 - If a full `pytest` run times out in a constrained environment, run it in file
   batches (e.g. `pytest tests/test_route_a_charity_bazaar.py tests/test_route_b_ad_hoc.py`).
-  All **97** test files were validated in bounded groups; a monolithic run may
-  exceed a constrained runner's time limit.
+  The accepted baseline is **1,847 tests across 112 test modules**; the
+  `tests/` directory has **114 Python files** including support files.

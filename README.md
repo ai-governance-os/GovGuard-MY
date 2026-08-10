@@ -4,21 +4,9 @@
 
 **GovGuard MY** · Powered by the TEOW-AGL Governance Runtime · MAIC Nexus Challenge 2026 · Track T5 (Public Services).
 
-## Quick start — no API key
-
-```powershell
-# Install once in a clean Python environment
-python -m pip install -e ".[dev]"
-
-# Start the deterministic competition demo
-python -X utf8 -m server.app
-# Open http://127.0.0.1:8765
-```
-
-The default is offline `smart_mock` with `MAIC_DEMO_MODE=1`; all external
-actions are simulated. Live API mode is optional and intended for later-stage
-live judging or technical evaluation. The same deterministic governance layer
-controls both modes.
+> **Quick start — no API key:** `python -X utf8 -m server.app` → open
+> <http://127.0.0.1:8765>. The default is offline `smart_mock`,
+> `MAIC_DEMO_MODE=1`, with every external action simulated.
 
 ## What this is
 
@@ -110,6 +98,12 @@ governed independently.
   requests remain separate GREEN actions and are simulated in demo mode.
 - Open case facts are task-local and never update `USER.md` or `MEMORY.md`.
   Reusable workflow SOP learning remains non-personal and owner-gated.
+- The School Administration Pack produces governed Markdown drafts. PowerPoint
+  and other Office-format export are outside this submission's claimed scope.
+- GovGuard will not autonomously create student-health data collection fields.
+  It may prepare a non-medical consent draft or use a human-approved school
+  template; deciding what protected health information to collect remains a
+  human responsibility.
 
 ## Governance model
 
@@ -152,6 +146,12 @@ school-case data was carried over; the generic planner is skipped. The UI mode
 badge states what is configured; each task's generation badge and audit trace
 state whether the provider was actually used or a deterministic fallback ran.
 
+Two independent 19-case English / Bahasa Melayu Mixed Live runs observed
+**74-84% complete output**. Across both runs there was **zero personal-data
+leakage, zero unauthorised external sending, and every unsuccessful case failed
+closed**. This is an observed competition test range, not a statistical
+confidence interval or a claim that every arbitrary prompt will be completed.
+
 For OpenAI, set `OPENAI_API_KEY` and `OPENAI_MODEL`. For DeepSeek's
 OpenAI-compatible API, keep the same variable names and additionally set
 `OPENAI_BASE_URL=https://api.deepseek.com/v1` and a `deepseek-*` model (for
@@ -171,10 +171,12 @@ python -X utf8 scripts/verify_openai_school_inputs.py --full
 
 ## Test evidence
 
-- **1,432** tests collected across **98** test files — **1,424 passed**,
+- **1,847** tests collected across **112** test modules — **1,839 passed**,
   **8 intentional/environment-dependent skipped**, **0 failed** in the ordinary grouped run
-- Conditional browser UI suite: **25 / 25 passed** when enabled (covering the
-  seven browser-dependent skips from the ordinary run)
+- The `tests/` directory contains **114 Python files** in total, including
+  `conftest.py` and `__init__.py`.
+- Browser UI contract suite: **20 / 20 passed** when enabled, including the
+  seven browser-dependent cases skipped in the ordinary run
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**
 - Secret scan: **PASS** (no secrets, no blocked files in the public surface)
 

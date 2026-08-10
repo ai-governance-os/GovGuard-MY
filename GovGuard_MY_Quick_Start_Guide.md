@@ -83,6 +83,13 @@ GovGuard returns its governed deterministic Markdown fallback. DeepSeek
 thinking is disabled by default; set `DEEPSEEK_THINKING=enabled` only when you
 intentionally want the extra latency/cost.
 
+Measured Mixed Live scope is English and Bahasa Melayu school-administration
+input. Two independent 19-case runs observed **74-84% complete output**, with
+zero personal-data leakage, zero unauthorised external sending, and fail-closed
+handling for every unsuccessful case. Open-input artifacts are Markdown-only.
+GovGuard does not autonomously create student-health data collection fields; use
+a non-medical consent draft or a human-approved school template instead.
+
 ## 6. Optional — clean rehearsal state
 
 ```powershell
@@ -98,9 +105,11 @@ first-run → approve → reuse lifecycle. Restart the server afterwards.
 python -X utf8 -m pytest -q
 ```
 
-Validated baseline: **1,432 collected across 98 files; 1,424 passed /
+Validated baseline: **1,847 collected across 112 test modules; 1,839 passed /
 8 intentional/environment-dependent skipped / 0 failed** in the ordinary grouped run.
-The conditional browser UI suite passes **25 / 25** when enabled.
+The `tests/` directory contains **114 Python files** in total, including
+`conftest.py` and `__init__.py`.
+The browser UI contract suite passes **20 / 20** when enabled, including seven conditional browser cases.
 
 ## 8. Run the enhancement checks
 

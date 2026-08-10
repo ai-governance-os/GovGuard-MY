@@ -53,9 +53,11 @@ cannot reproduce.
 
 Command: `python -X utf8 -m pytest -q`
 
-- **1,432** collected across **98** test files — **1,424 passed**,
+- **1,847** collected across **112 test modules** — **1,839 passed**,
   **8 intentional/environment-dependent skipped**, **0 failed** in the ordinary grouped run.
-- Conditional browser UI suite: **25 / 25 passed** when enabled.
+- The `tests/` directory contains **114 Python files** in total, including
+  `conftest.py` and `__init__.py`.
+- Browser UI contract suite: **20 / 20 passed** when enabled, including seven conditional browser cases.
 
 ## Claim 9 — Evaluation status
 
@@ -83,7 +85,7 @@ appropriate (provided separately, not in this repository). See
 
 The competition Mixed Live path keeps the core scripted demo deterministic and
 can attempt Route A/B, their continued questions, and new school-domain cases on
-the OpenAI API. `scripts/verify_competition_enhancements.py` independently checks
+a configured OpenAI-compatible provider. `scripts/verify_competition_enhancements.py` independently checks
 the closed semantic schema, deterministic concept policy, mandatory learning
 floor, live-tier selection, out-of-domain boundary, and browser continuity
 wire. The LLM is never the route authority. A private-key smoke test on
@@ -98,3 +100,10 @@ are not included in the clean public package. Re-run
 `python -X utf8 scripts/verify_openai_school_inputs.py --full` with the event
 key before presenting; the offline `smart_mock` path remains the reproducible
 fallback.
+
+Two independent 19-case English / Bahasa Melayu Mixed Live runs observed
+**74-84% complete output**, with **zero personal-data leakage, zero unauthorised
+external sending, and fail-closed handling for every unsuccessful case**. This
+is an observed range, not a statistical confidence interval. The claimed output
+surface is governed Markdown. PowerPoint / Office export and autonomous creation
+of student-health data collection fields are explicitly outside scope.

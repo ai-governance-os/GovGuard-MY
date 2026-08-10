@@ -1,11 +1,8 @@
 # GovGuard MY — MAIC Submission Brief
 
-[CI workflow](.github/workflows/ci.yml) — the public repository URL has not been assigned yet, so this submission build does not hard-code an owner or repository name.
+[![CI](https://github.com/ai-governance-os/GovGuard-MY/actions/workflows/ci.yml/badge.svg)](https://github.com/ai-governance-os/GovGuard-MY/actions/workflows/ci.yml)
 
 **GovGuard MY** · Powered by the TEOW-AGL Governance Runtime · MAIC Nexus Challenge 2026 · Track T5 (Public Services).
-
-`V3` appears in some historical commit messages as an internal build label; the
-product and competition entry are consistently named **GovGuard MY**.
 
 ## One-line summary
 
@@ -56,13 +53,31 @@ The landing console groups the four demo parts into a three-tier narrative
 1. **① National athletics workflow autonomy** — deep workflow + internal self-governance (RED self-block; GREEN protected-record verification). *(Tier 1)*
 2. **② User-input governance probes** — governance over the operator's later free-text requests. *(Tier 1)*
 3. **③ Open school input** — school-ready generalisation with Route B as the reproducible example and arbitrary typed cases in Mixed Live. *(Tier 2)*
+   The submission's measured open-input scope is English and Bahasa Melayu
+   school-administration cases. Chinese free-form input is not part of this
+   open-input claim; scripted routes may still produce deterministic
+   trilingual content.
 4. **④ Route A — real-case-derived charity bazaar** — realistic deployment over synthetic donor data. *(Tier 3, case study)*
+
+## Measured Mixed Live boundaries
+
+- Two independent 19-case English / Bahasa Melayu runs observed **74-84%
+  complete output**. Both runs had **zero personal-data leakage, zero
+  unauthorised external sending, and fail-closed handling for every unsuccessful
+  case**. The range is an observed result, not a statistical confidence interval.
+- The School Administration Pack produces governed Markdown drafts. PowerPoint
+  and other Office-format export are outside this submission's claimed scope.
+- GovGuard will not autonomously create student-health data collection fields.
+  It may prepare a non-medical consent draft or use a human-approved school
+  template; collection of protected health information remains a human decision.
 
 ## Evidence
 
-- pytest: **1,432** collected across **98** files — **1,424 passed /
+- pytest: **1,847** collected across **112 test modules** — **1,839 passed /
   8 intentional/environment-dependent skipped / 0 failed** in the ordinary grouped run.
-- Conditional browser UI suite: **25 / 25 passed** when enabled.
+- The `tests/` directory contains **114 Python files** in total, including
+  `conftest.py` and `__init__.py`.
+- Browser UI contract suite: **20 / 20 passed** when enabled, including seven conditional browser cases.
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**.
 - Secret scan: **PASS**.
 - Published regression evidence is offline / keyless
