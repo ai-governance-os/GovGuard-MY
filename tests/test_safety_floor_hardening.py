@@ -215,6 +215,83 @@ def test_fallback_preserves_explicit_bilingual_parent_notice_contract() -> None:
     assert [item["artifact_role"] for item in selected] == ["school_parent_notice"]
     assert selected[0]["requested_languages"] == ["en", "ms"]
 
+    source = (
+        "Draft a bilingual school notice in English and Malay to inform "
+        "parents that Recycling Day will be held this Friday from 8:00 a.m. "
+        "to 10:00 a.m. Students should bring clean paper, plastic bottles, "
+        "and aluminium cans. Do not send it."
+    )
+    compiled = SchoolSituationCompiler(POLICY).compile(source, semantics)
+    item = next(
+        candidate for candidate in compiled["response_pack"]["deliverables"]
+        if candidate.get("selected") and candidate.get("kind") == "artifact"
+    )
+    action = CandidateAction(
+        action_id="recycling_notice",
+        tool="fs",
+        operation="save_under_outputs",
+        target=item["filename"],
+        purpose="Prepare the bilingual parent notice",
+        metadata={
+            **item,
+            "school_output_contract": {"format": "markdown"},
+            "school_content_role": "artifact",
+            "source_request": source,
+            "school_case_summary": source,
+            "school_known_facts": [],
+            "school_unknowns": [],
+            "sibling_artifacts": [],
+        },
+    )
+    body = _school_response_pack_safe_fallback(action, source)
+    assert "Draft a bilingual school notice" not in body
+    assert (
+        "Recycling Day will be held this Friday from 8:00 a.m. "
+        "to 10:00 a.m."
+    ) in body
+    assert "Hari Kitar Semula akan diadakan Jumaat ini dari 8:00 a.m." in body
+    assert "hingga 10:00 a.m." in body
+    assert "kertas bersih, botol plastik, dan tin aluminium" in body
+    assert "Confirmed case facts available to this draft: TBC" not in body
+    assert "User-supplied notice content:" in body
+    assert "## English\n\n### Notice" in body
+
+
+def test_fallback_malay_notice_does_not_echo_drafting_command() -> None:
+    source = (
+        "Sediakan notis kepada ibu bapa untuk memaklumkan ibu bapa bahawa "
+        "Hari Sukan akan diadakan pada hari Jumaat dari 8:00 pagi hingga "
+        "11:00 pagi. Murid perlu membawa botol air. Jangan hantar notis ini."
+    )
+    compiled = _compile(source)
+    item = next(
+        candidate for candidate in compiled["response_pack"]["deliverables"]
+        if candidate.get("selected")
+        and candidate.get("artifact_role") == "private_parent_notice"
+    )
+    action = CandidateAction(
+        action_id="malay_parent_notice",
+        tool="fs",
+        operation="save_under_outputs",
+        target=item["filename"],
+        purpose="Sediakan notis ibu bapa",
+        metadata={
+            **item,
+            "school_output_contract": {"format": "markdown"},
+            "school_content_role": "artifact",
+            "source_request": source,
+            "school_case_summary": source,
+            "school_known_facts": [],
+            "school_unknowns": [],
+            "sibling_artifacts": [],
+        },
+    )
+    body = _school_response_pack_safe_fallback(action, source)
+    assert "Sediakan notis" not in body
+    assert "Jangan hantar" not in body
+    assert "Hari Sukan akan diadakan pada hari Jumaat" in body
+    assert "Murid perlu membawa botol air" in body
+
 
 def test_fallback_blocks_chinese_person_level_marks_to_all_parents() -> None:
     semantics = _sem()

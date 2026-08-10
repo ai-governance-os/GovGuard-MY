@@ -96,3 +96,17 @@ def test_blocked_routes_do_not_execute(isolated_workspace: Path):
         rec = _record(rt, rt.run(raw_goal=goal))
         assert rec["execution"]["status"] in {"blocked", "not_run"}
         assert rec["approval"]["ticket_id"] == ""
+
+
+def test_trace_contract_identifies_malay_ppd_request(isolated_workspace: Path):
+    rt = _runtime(isolated_workspace, gate="reject_all")
+    result = rt.run(
+        raw_goal=(
+            "Sediakan laporan rasmi untuk PPD dan kemukakan untuk kelulusan. "
+            "Jangan hantar kepada ibu bapa."
+        )
+    )
+
+    rec = _record(rt, result)
+
+    assert rec["intake"]["language"] == "ms"

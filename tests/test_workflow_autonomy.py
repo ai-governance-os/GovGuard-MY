@@ -57,7 +57,7 @@ def _capture(rt: Runtime) -> list[dict]:
     def cap(*a, **kw):
         ev = original(*a, **kw)
         captured.append({"module": ev.module, "event_type": ev.event_type,
-                         "summary": ev.summary})
+                         "summary": ev.summary, "details": ev.details})
         return ev
 
     rt.trace.emit = cap  # type: ignore[method-assign]
@@ -393,6 +393,7 @@ def test_workflow_contains_self_block_step(isolated_workspace: Path):
     """The headline workflow itself proposes an income-based personalisation and
     self-blocks it (RED) — 'AI governs its own actions', with no user prompt."""
     rt = _runtime(isolated_workspace)
+    cap = _capture(rt)
     res = rt.run(raw_goal=WORKFLOW_GOAL_CN)
     sb = next(a for a in res.plan.actions
               if a.metadata.get("workflow_step_id") == "consider_income_personalisation")
@@ -401,6 +402,13 @@ def test_workflow_contains_self_block_step(isolated_workspace: Path):
     assert sb.metadata.get("data_use_decision") == "RED"
     assert not [e for e in res.executions
                 if e.action_id == sb.action_id and getattr(e, "affected_resources", None)]
+    trace = next(
+        event for event in cap
+        if event["event_type"] == "governance_decision"
+        and event.get("details", {}).get("action_id") == sb.action_id
+    )
+    assert trace["details"]["route"] == "RED"
+    assert trace["details"]["reasons"]
     # workflow not derailed: the external release still reaches the human gate
     assert any(d.route == "GREEN" for d in res.decisions)
 

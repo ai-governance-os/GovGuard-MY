@@ -10,11 +10,17 @@ from teow_agl.models import (
     PreGovernanceAssessment, TaskEnvelope,
 )
 from teow_agl.modules.module_101d_data_use_guard import DataUseGuard
-from teow_agl.modules.module_102b_synthesizer import ContentSynthesizer
+from teow_agl.modules.module_102b_synthesizer import (
+    ContentSynthesizer,
+    _school_response_pack_safe_fallback,
+)
 from teow_agl.modules.module_105_human_gate import HumanGate
 from teow_agl.modules.module_school_artifact_guard import (
+    classify_school_validation_issues,
+    infer_artifact_role,
     normalize_school_markdown_plan,
     school_artifact_verification_checks,
+    strip_internal_release_control,
     validate_school_markdown,
 )
 from teow_agl.modules.module_school_input_semantics import SchoolInputSemantics
@@ -34,6 +40,144 @@ GOAL = (
     "verified. Mark all unknown information as TBC. Do not assign blame. "
     "Do not publish or send anything."
 )
+
+
+@pytest.mark.parametrize(
+    "role",
+    [
+        "speech_or_address", "meeting_minutes", "duty_roster",
+        "timetable_or_schedule", "curriculum_continuity_plan",
+        "user_titled_document",
+    ],
+)
+def test_first_class_school_roles_survive_markdown_normalisation(role: str) -> None:
+    action = CandidateAction(
+        action_id=f"role_{role}",
+        tool="fs",
+        operation="save_markdown",
+        target=f"{role}.md",
+        purpose="Prepare the requested school artifact.",
+        expected_effect="Create one draft.",
+        metadata={"artifact_role": role},
+    )
+    assert infer_artifact_role(action) == role
+
+
+def test_recipient_draft_cannot_embed_internal_release_approval() -> None:
+    action = CandidateAction(
+        action_id="parent_email",
+        tool="fs",
+        operation="save_under_outputs",
+        target="school_parent_notice_draft.md",
+        purpose="Draft an email to all parents.",
+        metadata={
+            "artifact_role": "school_parent_notice",
+            "audience": "school_community",
+            "coverage_source": "school_response_pack",
+        },
+    )
+    raw = """# Emergency closure notice
+
+Dear Parents and Guardians,
+
+The school will be closed tomorrow. The exact reopening date is TBC.
+
+## Proposed arrangements - subject to school approval
+
+- Communication channel: email to all parents - Proposed
+
+**Approval request:** We request approval from the school administration to
+send this email. Please review the draft before sending.
+
+---
+
+This is a draft and has not been sent.
+"""
+    raw_issues = validate_school_markdown(
+        action,
+        raw,
+        "Draft an email to all parents about the closure tomorrow, then "
+        "request approval to email it.",
+    )
+    assert (
+        "external_draft_contains_internal_release_control"
+        in raw_issues["policy"]
+    )
+
+    cleaned = strip_internal_release_control(action, raw)
+    assert "Dear Parents and Guardians" in cleaned
+    assert "closed tomorrow" in cleaned
+    assert "Approval request" not in cleaned
+    assert "request approval" not in cleaned.lower()
+    assert "Proposed arrangements" not in cleaned
+    assert "has not been sent" in cleaned
+
+
+def test_parent_notice_rejects_unowned_pickup_and_update_promises() -> None:
+    action = CandidateAction(
+        action_id="closure_notice",
+        tool="fs",
+        operation="save_under_outputs",
+        target="school_parent_notice_draft.md",
+        purpose="Draft the closure notice.",
+        metadata={
+            "artifact_role": "school_parent_notice",
+            "audience": "school_community",
+            "coverage_source": "school_response_pack",
+        },
+    )
+    body = """# School closure notice
+
+> **Status:** DRAFT - NOT SENT
+
+Dear Parents and Guardians,
+
+The school will close at 12:30 p.m. tomorrow because the water supply will
+be interrupted. Please make arrangements to collect your child at that time.
+
+Further details, if needed, will be provided by the school office.
+
+This draft is based only on the reported interruption. The exact official
+reference, reopening time, responsible officer and follow-up arrangements are
+TBC. An authorised school representative must verify the notice before use.
+
+Yours sincerely,
+
+TBC - authorised school representative
+"""
+    issues = validate_school_markdown(
+        action,
+        body,
+        "Draft an email to all parents stating that school will close at "
+        "12:30 p.m. tomorrow because the water supply will be interrupted.",
+    )
+    assert "family_collection_instruction_added" in issues["grounding"]
+    assert "future_update_commitment" in issues["grounding"]
+
+
+def test_parent_email_fallback_extracts_stated_notice_not_command() -> None:
+    goal = (
+        "Draft an email to all parents stating that school will close at "
+        "12:30 p.m. tomorrow because the water supply will be interrupted. "
+        "Then request human approval to email it."
+    )
+    action = CandidateAction(
+        action_id="closure_notice",
+        tool="fs",
+        operation="save_under_outputs",
+        target="school_parent_notice_draft.md",
+        purpose="Draft the closure notice.",
+        metadata={
+            "artifact_role": "school_parent_notice",
+            "audience": "school_community",
+            "channel": "email",
+            "coverage_source": "school_response_pack",
+        },
+    )
+    body = _school_response_pack_safe_fallback(action, goal)
+    assert "School will close at 12:30 p.m. tomorrow" in body
+    assert "Draft an email" not in body
+    assert "request human approval" not in body.lower()
 
 
 INTERNAL = """# Internal Incident Report
@@ -131,6 +275,10 @@ class _BundleLLM:
             return {
                 "score": 96, "issues": [], "suggestions": [],
                 "reasoning": "Each role-scoped artifact is grounded and separate.",
+                "artifact_results": [
+                    {"action_id": "internal1", "pass": True, "issues": []},
+                    {"action_id": "parent1", "pass": True, "issues": []},
+                ],
             }
         return {"artifacts": {"internal1": INTERNAL, "parent1": PARENT}}
 
@@ -285,6 +433,208 @@ def test_mixed_bundle_and_unsupported_facts_cannot_verify(tmp_path: Path):
     assert "incident_reported_to_school_claimed" in issues["grounding"]
     assert "review_or_verification_underway" in issues["grounding"]
     assert "future_update_commitment" in issues["grounding"]
+
+
+def test_external_stakeholder_letter_is_not_misclassified_as_parent_content():
+    action = CandidateAction(
+        action_id="organiser_letter",
+        tool="fs",
+        operation="save_under_outputs",
+        target="external_stakeholder_message.md",
+        purpose="Prepare a private message to the event organiser",
+        metadata={
+            "artifact_role": "external_stakeholder_message",
+            "audience": "private_recipient",
+            "coverage_source": "school_response_pack",
+        },
+    )
+    content = """# Message to the Event Organiser
+
+Dear Mr. Lee,
+
+The school is preparing the reported event arrangements. Please confirm the
+remaining logistical details before any external action is taken. Unknown
+details remain TBC and this draft has not been sent.
+
+Sincerely,
+
+Authorised school representative
+"""
+    issues = validate_school_markdown(
+        action,
+        content,
+        "Draft a private message to Mr Lee about the school event. Do not send it.",
+    )
+    assert "parent_letter_content_in_non_parent_artifact" not in issues["role"]
+
+
+def test_dot_separated_source_time_matches_colon_form_in_artifact():
+    action = CandidateAction(
+        action_id="event_plan",
+        tool="fs",
+        operation="save_under_outputs",
+        target="event_action_plan.md",
+        purpose="Prepare an event action plan",
+        metadata={
+            "artifact_role": "event_action_plan",
+            "audience": "internal",
+            "coverage_source": "school_response_pack",
+        },
+    )
+    content = """# Event Action Plan
+
+## Confirmed schedule
+
+The assembly begins at 7:45 am on Friday. Staff should use the confirmed
+schedule while all unspecified venue and staffing details remain TBC.
+
+## Governance boundary
+
+This draft does not authorise an external message or operational change.
+"""
+    issues = validate_school_markdown(
+        action,
+        content,
+        "Prepare the event plan. The assembly begins at 7.45am on Friday.",
+    )
+    assert not any(
+        item.startswith("unsupported_operational_time")
+        for item in issues["grounding"]
+    )
+
+
+def test_validation_disposition_never_softens_privacy_or_policy() -> None:
+    action = CandidateAction(
+        action_id="a_privacy", tool="fs", operation="save_under_outputs",
+        target="notice.md", metadata={"artifact_role": "school_parent_notice"},
+    )
+    disposition = classify_school_validation_issues(action, {
+        "hygiene": ["generic_bracket_placeholder_present"],
+        "role": ["broad_notice_contains_source_identifier"],
+        "grounding": ["unsupported_location"],
+        "policy": ["excluded_student_sensitive_data_reintroduced"],
+    })
+    assert "role:broad_notice_contains_source_identifier" in disposition["hard_block"]
+    assert "policy:excluded_student_sensitive_data_reintroduced" in disposition["hard_block"]
+    assert "hygiene:generic_bracket_placeholder_present" in disposition["repair_once"]
+    assert "grounding:unsupported_location" in disposition["repair_once"]
+
+
+def test_similarity_is_visible_review_note_not_a_privacy_bypass() -> None:
+    action = CandidateAction(
+        action_id="a_review", tool="fs", operation="save_under_outputs",
+        target="draft.md", metadata={"artifact_role": "meeting_minutes"},
+    )
+    marker = "cross_artifact_similarity:a_review:a_other:0.751"
+    disposition = classify_school_validation_issues(action, [marker])
+    assert disposition == {
+        "hard_block": [], "repair_once": [], "review_note": [marker],
+    }
+
+
+@pytest.mark.parametrize(
+    ("source_time", "draft_time"),
+    [("7am", "7:00 am"), ("10am", "10:00 a.m."), ("12pm", "12:00 pm")],
+)
+def test_bare_hour_source_time_matches_zero_filled_artifact_time(
+    source_time: str,
+    draft_time: str,
+):
+    action = CandidateAction(
+        action_id="notice",
+        tool="fs",
+        operation="save_under_outputs",
+        target="school_parent_notice_draft.md",
+        purpose="Prepare a school parent notice",
+        metadata={
+            "artifact_role": "school_parent_notice",
+            "audience": "school_community",
+            "coverage_source": "school_response_pack",
+        },
+    )
+    content = f"""# School Parent Notice
+
+> **Status:** DRAFT - NOT SENT
+
+The school activity begins at {draft_time}. All other operational details are TBC.
+"""
+    issues = validate_school_markdown(
+        action,
+        content,
+        f"Draft a parent notice. The school activity begins at {source_time}.",
+    )
+    assert not any(
+        item.startswith("unsupported_operational_time")
+        for item in issues["grounding"]
+    )
+
+
+def test_speech_may_use_today_as_delivery_language_but_report_may_not():
+    content = """# Welcome Speech
+
+> **Status:** DRAFT - NOT SENT
+
+Good morning. Today, we welcome pupils and families to the robotics showcase.
+The event is scheduled for 18 September at 9:30 a.m. in the school hall.
+This draft does not authorise any external action or publication.
+"""
+    source = (
+        "Write a welcome speech for the robotics showcase on 18 September "
+        "at 9:30 a.m. in the school hall. Draft only."
+    )
+    speech = CandidateAction(
+        action_id="speech",
+        tool="fs",
+        operation="save_under_outputs",
+        target="speech.md",
+        purpose="Write the headteacher welcome speech",
+        metadata={
+            "artifact_role": "school_document",
+            "coverage_source": "school_response_pack",
+            "requested_label": "Headteacher welcome speech",
+        },
+    )
+    report = CandidateAction(
+        action_id="report",
+        tool="fs",
+        operation="save_under_outputs",
+        target="report.md",
+        purpose="Write an internal report",
+        metadata={
+            "artifact_role": "school_document",
+            "coverage_source": "school_response_pack",
+        },
+    )
+    assert "unsupported_relative_date" not in validate_school_markdown(
+        speech, content, source
+    )["grounding"]
+    assert "unsupported_relative_date" in validate_school_markdown(
+        report, content, source
+    )["grounding"]
+
+
+def test_reported_location_qualifier_is_not_treated_as_a_new_place():
+    action = CandidateAction(
+        action_id="incident_report",
+        tool="fs",
+        operation="save_under_outputs",
+        target="internal_incident_report.md",
+        purpose="Prepare an internal incident report",
+        metadata={"artifact_role": "internal_incident_report"},
+    )
+    source = (
+        "A stray macaque entered the school canteen and scratched one pupil."
+    )
+    body = (
+        "# Internal Incident Report\n\n"
+        "DRAFT - NOT SENT\n\n"
+        "## Reported facts\n\n"
+        "- Location: School canteen (reported)\n"
+        "- A pupil was scratched by a stray macaque.\n"
+    )
+    assert "unsupported_location" not in validate_school_markdown(
+        action, body, source,
+    )["grounding"]
 
 
 def test_private_parent_send_is_green_but_public_health_post_is_red():
@@ -490,6 +840,69 @@ def test_public_semantics_tighten_generic_notice_before_file_write(tmp_path: Pat
                  if a.metadata.get("school_content_role") == "chat_companion")
     assert "nothing has been created" in cover.metadata["body"].lower()
     assert "I prepared" not in cover.metadata["body"]
+
+
+def test_response_pack_safe_public_replacement_is_governed_on_its_own_body(
+    tmp_path: Path,
+):
+    envelope = _envelope(tmp_path)
+    envelope.raw_goal = envelope.normalized_goal = (
+        "Publish a Facebook post naming Amir, his ADHD diagnosis and his "
+        "failed BM mark."
+    )
+    envelope.metadata["school_semantics"].update({
+        "requested_action": "publish", "audience": "public",
+    })
+    plan = CandidatePlan(
+        task_id=envelope.task_id,
+        planner_id="test",
+        planning_mode="direct",
+        actions=[CandidateAction(
+            action_id="safe_public",
+            tool="fs",
+            operation="save_under_outputs",
+            target=str(tmp_path / "outputs" / "public_communication_draft.md"),
+            purpose="Name Amir and disclose his ADHD diagnosis in public",
+            expected_effect=(
+                "Tell the public that Amir has ADHD and failed BM"
+            ),
+            metadata={
+                "coverage_source": "school_response_pack",
+                "artifact_role": "public_communication_draft",
+                "audience": "public",
+                "safe_transformation": (
+                    "Prepare an anonymous class-level notice without any "
+                    "person-level result, diagnosis or identifier."
+                ),
+                "excluded_data_concepts": [
+                    "public_pii", "health_or_discipline",
+                    "student_sensitive_data", "individual_marks",
+                ],
+                "response_pack_data_use_concepts": [],
+                "content": (
+                    "# Privacy-safe Public Draft\n\n"
+                    "The school supports every learner through respectful, "
+                    "private and evidence-based channels. No pupil name, "
+                    "diagnosis, mark or weakness is shared. This draft "
+                    "excludes health and discipline details."
+                ),
+            },
+        )],
+    )
+
+    normalize_school_markdown_plan(plan, envelope)
+    artifact = next(
+        action for action in plan.actions
+        if action.metadata.get("school_content_role") == "artifact"
+    )
+    assessed = DataUseGuard().assess(artifact)
+    assert artifact.metadata["safe_replacement_contract"] is True
+    assert "Amir" not in artifact.purpose
+    assert "ADHD" not in artifact.purpose
+    assert "Amir" not in artifact.expected_effect
+    assert "ADHD" not in artifact.expected_effect
+    assert artifact.metadata["data_use_concepts"] == []
+    assert assessed["decision"] == "NO_OVERRIDE"
 
 
 def test_sensitive_mention_failsafe_does_not_gate_contract_local_drafts(

@@ -20,6 +20,9 @@ os.environ.setdefault(
     "TEOW_AGL_COST_LEDGER",
     str(Path(tempfile.gettempdir()) / f"teow_test_cost_{uuid.uuid4().hex[:8]}.json"),
 )
+# A developer's ignored `.env` must never alter deterministic unit tests or
+# spend API credit. Individual provider tests opt in with monkeypatch.
+os.environ.setdefault("TEOW_AGL_SKIP_DOTENV", "1")
 
 from teow_agl.adapters.mock_planner import MockPlanner  # noqa: E402
 from teow_agl.modules.module_105_human_gate import HumanGate  # noqa: E402

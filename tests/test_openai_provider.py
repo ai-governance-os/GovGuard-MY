@@ -31,6 +31,7 @@ def test_dotenv_fills_missing_values_without_overriding_current_shell(
     )
     monkeypatch.setattr(opi, "__file__", str(fake_module))
     monkeypatch.setattr(opi, "_DOTENV_LOADED", False)
+    monkeypatch.delenv("TEOW_AGL_SKIP_DOTENV", raising=False)
     monkeypatch.setenv("OPENAI_MODEL", "current-shell-model")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 

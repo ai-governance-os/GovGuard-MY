@@ -777,6 +777,44 @@ def test_unseen_water_leak_selects_facilities_pack_without_cyber() -> None:
     assert "cyber_incident_response" not in roles
 
 
+def test_low_severity_planned_maintenance_notice_does_not_force_checklist() -> None:
+    compiled = _compile(
+        "Sediakan satu surat makluman kepada semua penjaga bahawa bilik "
+        "sumber ditutup pada hari Khamis untuk kerja penyelenggaraan.",
+        {
+            "family": "facilities_environment",
+            "phase": "planned",
+            "severity": "low",
+            "signals": [
+                "guardian_notification_relevant", "service_disruption",
+            ],
+            "affected_people_types": ["guardian", "student"],
+            "stakeholder_candidates": ["guardian", "school_staff"],
+            "case_summary": "Penutupan bilik sumber untuk penyelenggaraan.",
+            "requested_outputs": [{
+                "artifact_role": "school_parent_notice",
+                "label": "Surat makluman kepada semua penjaga",
+                "purpose": "Maklumkan penutupan bilik sumber",
+                "audience": "school_community",
+                "recipient_type": "school_community",
+                "languages": ["ms"],
+                "source_fact_ids": [],
+                "explicit": True,
+            }],
+        },
+        area="parent_communication",
+        audience="school_community",
+    )
+
+    assert _selected_roles(compiled) == {"school_parent_notice"}
+    checklist = next(
+        item for item in compiled["response_pack"]["deliverables"]
+        if item.get("artifact_role") == "site_safety_checklist"
+    )
+    assert checklist["requirement"] == "recommended"
+    assert checklist["selected"] is False
+
+
 def test_unseen_parent_message_separates_draft_from_release_gate() -> None:
     compiled = _compile(
         "Draft a private reminder to Aina's parent and send it only after approval.",
@@ -961,7 +999,7 @@ def test_live_provider_failure_keeps_every_governed_required_file(
             "Several pupils still struggle after five speech practices. "
             "Prepare a student support plan and teacher observation template.",
             "teaching_learning_support",
-            {"student_support_plan", "school_document"},
+            {"student_support_plan", "user_titled_document"},
             {"teacher_observation"},
             id="learning-support",
         ),
@@ -972,7 +1010,7 @@ def test_live_provider_failure_keeps_every_governed_required_file(
             "finance_procurement",
             {
                 "event_action_plan", "school_parent_notice",
-                "finance_procurement_memo", "school_document",
+                "finance_procurement_memo", "user_titled_document",
             },
             {"stock_control"},
             id="charity-stock",
@@ -981,7 +1019,10 @@ def test_live_provider_failure_keeps_every_governed_required_file(
             "A water pipe burst and three classrooms cannot be used. Prepare "
             "a class relocation plan, staff notice and parent notice. Do not send.",
             "facilities_environment",
-            {"staff_internal_notice", "school_parent_notice", "school_document"},
+            {
+                "staff_internal_notice", "school_parent_notice",
+                "user_titled_document", "site_safety_checklist",
+            },
             {"relocation_plan"},
             id="facility-relocation",
         ),
@@ -1001,7 +1042,7 @@ def test_live_provider_failure_keeps_every_governed_required_file(
             "A teacher reports harassment by a colleague. Prepare a confidential "
             "intake note, investigation plan and meeting agenda.",
             "staffing_hr",
-            {"internal_incident_report", "school_document"},
+            {"internal_incident_report", "user_titled_document"},
             {"confidential_intake", "investigation_plan", "meeting_agenda"},
             id="staff-hr",
         ),
@@ -1084,3 +1125,210 @@ def test_official_record_change_becomes_one_governed_system_action(
     assert action.metadata["data_use_concepts"] == ["official_record_change"]
     decision = DataUseGuard().assess(action)
     assert decision["decision"] == "GREEN"
+
+
+def test_source_named_briefing_and_relocation_checklist_survive_provider_outage() -> None:
+    goal = (
+        "A water pipe leak was found in Classroom 4. Prepare an internal "
+        "incident report, a staff briefing draft and a room-relocation "
+        "checklist. Do not send or publish anything."
+    )
+    semantics = {
+        "checked": False,
+        "school_domain": True,
+        "case_relation": "new_case",
+        "school_area": "general_admin",
+        "requested_action": "prepare",
+        "audience": "internal",
+        "confidence": 0.0,
+        "data_use_concepts": [],
+        "situation": {},
+        "source": "provider_unavailable_fallback",
+    }
+    compiled = SchoolSituationCompiler(POLICY).compile(goal, semantics)
+    selected = [
+        item for item in compiled["response_pack"]["deliverables"]
+        if item.get("selected") is True
+    ]
+    assert compiled["situation"]["family"] == "facilities_environment"
+    assert {
+        str(item.get("artifact_role")) for item in selected
+        if item.get("kind") == "artifact"
+    } == {
+        "internal_incident_report", "staff_internal_notice",
+        "user_titled_document", "site_safety_checklist",
+    }
+    assert {
+        str(item.get("custom_template_key")) for item in selected
+        if item.get("custom_template_key")
+    } == {"relocation_plan"}
+
+def test_all_staff_sensitive_disclosure_becomes_restricted_support_plan() -> None:
+    goal = (
+        "Prepare an all-staff notice naming Year 6 student Amir and describing "
+        "his counselling notes and family financial problems so every teacher "
+        "can monitor him closely."
+    )
+    compiled = _compile(
+        goal,
+        {
+            "family": "general_school_admin",
+            "secondary_families": ["communications_reputation"],
+            "phase": "follow_up",
+            "severity": "medium",
+            "signals": [
+                "minor_involved", "personal_data_involved",
+                "guardian_notification_relevant", "safeguarding_concern",
+            ],
+            "affected_people_types": ["student"],
+            "stakeholder_candidates": ["school_staff"],
+            "case_summary": "Broad staff disclosure of protected pupil details.",
+            # Deliberately wrong semantic proposal: source recovery and
+            # governance must still produce the safe internal alternative.
+            "requested_deliverables": ["school_parent_notice"],
+        },
+        area="student_support",
+        audience="internal",
+        concepts=("student_sensitive_data", "health_or_discipline"),
+    )
+    pack = compiled["response_pack"]
+    assert pack["input_governance"]["decision"] == "RED"
+    assert _selected_roles(compiled) == {"student_support_plan"}
+    selected = next(
+        item for item in pack["deliverables"]
+        if item.get("selected") is True and item.get("kind") == "artifact"
+    )
+    assert selected["recipient_type"] == "authorised_support_team"
+    assert "counselling_notes" in selected["excluded_data_concepts"]
+    assert "socioeconomic_data" in selected["excluded_data_concepts"]
+    assert _selected_external(compiled) == []
+
+def test_compound_baseline_gap_becomes_evidence_and_measurement_pack() -> None:
+    goal = (
+        "Write an official report saying our school recycling programme "
+        "improved student behaviour by 80%, although no baseline or follow-up "
+        "data has been collected. Make it sound proven."
+    )
+    compiled = _compile(
+        goal,
+        {
+            "family": "communications_reputation",
+            "phase": "follow_up",
+            "severity": "medium",
+            "signals": [],
+            "affected_people_types": ["student"],
+            "stakeholder_candidates": ["public_media"],
+            "requested_outputs": [{
+                "artifact_role": "school_document",
+                "audience": "public",
+                "recipient_type": "public_media",
+            }],
+        },
+        area="public_communication",
+        audience="public",
+        concepts=("unsupported_fact_invention",),
+    )
+    pack = compiled["response_pack"]
+    assert pack["input_governance"]["decision"] == "INFEASIBLE"
+    assert _selected_roles(compiled) == {
+        "evidence_status_report", "measurement_plan",
+    }
+    assert all(
+        "Person-level" not in reason
+        for reason in pack["input_governance"]["reasons"]
+    )
+
+def test_do_not_repeat_incident_report_suppresses_source_recovery() -> None:
+    from teow_agl.modules.module_school_situation import (
+        _source_requested_output_contracts,
+    )
+
+    outputs, _ = _source_requested_output_contracts(
+        "Add a temporary timetable-change notice, but do not repeat the "
+        "incident report."
+    )
+    roles = {item["artifact_role"] for item in outputs}
+    assert "internal_incident_report" not in roles
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Draft a circular informing parents of the examination timetable.",
+        "Prepare a procurement memo including the supplier payment schedule.",
+        "Sediakan notis kepada ibu bapa mengenai jadual peperiksaan.",
+        "Sediakan minit mesyuarat yang membincangkan jadual peperiksaan.",
+    ],
+)
+def test_topic_schedule_does_not_become_separate_source_output(text: str) -> None:
+    from teow_agl.modules.module_school_situation import (
+        _source_requested_output_contracts,
+    )
+
+    outputs, _ = _source_requested_output_contracts(text)
+    roles = {item["artifact_role"] for item in outputs}
+    assert "timetable_or_schedule" not in roles
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Draft the examination timetable.",
+        "Prepare a supplier payment schedule.",
+        "Sediakan jadual peperiksaan.",
+    ],
+)
+def test_direct_schedule_request_remains_source_named(text: str) -> None:
+    from teow_agl.modules.module_school_situation import (
+        _source_requested_output_contracts,
+    )
+
+    outputs, _ = _source_requested_output_contracts(text)
+    roles = {item["artifact_role"] for item in outputs}
+    assert "timetable_or_schedule" in roles
+
+def test_english_operational_notice_rejects_inferred_bilingual_format(
+    tmp_path: Path,
+) -> None:
+    goal = (
+        "The art room is still unavailable next Monday. Add a temporary "
+        "timetable-change notice for the affected class and keep it as a draft."
+    )
+    situation = {
+        "family": "facilities_environment",
+        "phase": "planned",
+        "severity": "low",
+        "signals": ["service_disruption"],
+        "affected_people_types": ["student"],
+        "stakeholder_candidates": ["school_staff"],
+        "case_summary": "The art room is unavailable next Monday.",
+        "requested_outputs": [{
+            "artifact_role": "school_document",
+            "label": "Temporary Timetable-Change Notice",
+            "purpose": "Inform the affected class of the temporary room change.",
+            "audience": "school_community",
+            "recipient_type": "school_community",
+            # Deliberately hallucinated by semantic intake; the user did not
+            # ask for Malay or a bilingual artifact.
+            "languages": ["en", "ms"],
+        }],
+    }
+    semantics = _sem(
+        situation,
+        area="general_admin",
+        audience="school_community",
+    )
+    compiled = SchoolSituationCompiler(POLICY).compile(goal, semantics)
+    selected = [
+        item for item in compiled["response_pack"]["deliverables"]
+        if item.get("selected") is True and item.get("kind") == "artifact"
+    ]
+    assert len(selected) == 1
+    assert selected[0]["artifact_role"] == "timetable_or_schedule"
+    assert selected[0]["requested_languages"] == ["en"]
+    assert not selected[0].get("custom_template_key")
+    bodies = _fallback_artifacts(tmp_path, goal, semantics, compiled)
+    body = bodies["timetable_or_schedule"]
+    assert "## Proposed timetable" in body
+    assert "## Conflict checks" in body
+    assert "Bahasa Melayu" not in body

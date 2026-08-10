@@ -107,7 +107,7 @@ def test_live_build_overrides_env_then_restores(monkeypatch):
     monkeypatch.setattr(appmod, "_build_runtime", fake_build)
     rt, mode = appmod._make_runtime_for_goal(ROUTE_B_GOAL)
     assert mode == "live"
-    assert seen == {"planner": "openai", "chat": "openai"}
+    assert seen == {"planner": "smart_mock", "chat": "openai"}
     # restored after the build (we cleared them above → gone again)
     assert os.environ.get("TEOW_AGL_PLANNER") is None
     assert os.environ.get("TEOW_AGL_CHAT_LLM") is None
@@ -157,3 +157,53 @@ def test_failed_semantic_preflight_never_stacks_more_live_timeouts(monkeypatch):
         "A snake bit a student. Prepare the school response pack.",
         school_semantics=fallback,
     ) is False
+
+
+def test_live_fast_path_can_be_explicitly_disabled(monkeypatch):
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("TEOW_AGL_LIVE_WORKFLOWS", "ad_hoc_school_event_reporting")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
+    monkeypatch.setenv("TEOW_AGL_LIVE_FAST_PATH", "0")
+    seen: dict = {}
+
+    def fake_build():
+        seen["planner"] = os.environ.get("TEOW_AGL_PLANNER")
+        seen["chat"] = os.environ.get("TEOW_AGL_CHAT_LLM")
+        return object()
+
+    monkeypatch.setattr(appmod, "_build_runtime", fake_build)
+    _, mode = appmod._make_runtime_for_goal(ROUTE_B_GOAL)
+    assert mode == "live"
+    assert seen == {"planner": "openai", "chat": "openai"}
+
+
+def test_fast_path_marks_only_the_live_runtime(monkeypatch):
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("TEOW_AGL_LIVE_WORKFLOWS", "ad_hoc_school_event_reporting")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
+
+    class Holder:
+        pass
+
+    built = Holder()
+    built.synthesizer = Holder()
+    built.skill_distiller = object()
+    monkeypatch.setattr(appmod, "_build_runtime", lambda: built)
+
+    rt, mode = appmod._make_runtime_for_goal(ROUTE_B_GOAL)
+    assert mode == "live"
+    assert rt.live_fast_path is True
+    assert rt.synthesizer.live_fast_path is True
+    assert rt.skill_distiller is None
+    assert os.environ.get("TEOW_AGL_PLANNER") is None
+    assert os.environ.get("TEOW_AGL_CHAT_LLM") is None
+
+
+def test_config_discloses_fast_path(monkeypatch):
+    from fastapi.testclient import TestClient
+    _clear_env(monkeypatch)
+    body = TestClient(appmod.app).get("/api/config").json()
+    assert body["live_fast_path"] is True
+    monkeypatch.setenv("TEOW_AGL_LIVE_FAST_PATH", "0")
+    body = TestClient(appmod.app).get("/api/config").json()
+    assert body["live_fast_path"] is False

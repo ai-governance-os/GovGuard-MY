@@ -237,9 +237,11 @@ def verify_out_of_domain_boundary() -> None:
 
 def verify_frontend_continuity_wire() -> None:
     source = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
-    assert "active_workflow_id: state.activeWorkflowId" in source
-    assert "state_d.context_workflow_id" in source
-    assert "state.liveWorkflows.includes(detectedId)" in source
+    assert "const activeWorkflowId = state.activeWorkflowId" in source
+    assert "active_workflow_id: activeWorkflowId" in source
+    assert "applyCaseContinuityFromPoll(task_id, state_d)" in source
+    assert "if (d.context_workflow_id) activeWorkflowId = d.context_workflow_id" in source
+    assert "base.liveWorkflows.includes(detectedId)" in source
     runtime_source = (ROOT / "teow_agl" / "runtime.py").read_text(encoding="utf-8")
     assert 'not envelope.metadata.get("school_semantics_checked")' in runtime_source
     assert 'leaf_meta[key] = envelope.metadata[key]' in runtime_source

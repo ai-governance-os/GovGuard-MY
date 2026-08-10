@@ -16,6 +16,9 @@ from teow_agl.modules.module_school_artifact_guard import (
     normalize_school_markdown_plan,
     validate_school_markdown,
 )
+from teow_agl.modules.module_school_privacy import (
+    source_has_individual_sensitive_detail,
+)
 from teow_agl.modules.module_110_verifier import VerifierModule
 from teow_agl.runtime import Runtime
 
@@ -119,6 +122,102 @@ def test_live_style_prepare_action_does_not_add_generic_incident_document():
         "medical_handover_script", "site_safety_checklist",
         "emergency_contact_script", "student_accountability_checklist",
     }.issubset(roles)
+
+
+@pytest.mark.parametrize(
+    ("text", "role"),
+    [
+        ("Prepare minutes of the PTA meeting.", "meeting_minutes"),
+        ("Prepare next week's teacher duty roster.", "duty_roster"),
+        ("Draft the examination timetable.", "timetable_or_schedule"),
+        (
+            "Prepare a curriculum continuity plan because the mathematics "
+            "teacher will be absent next week.",
+            "curriculum_continuity_plan",
+        ),
+    ],
+)
+def test_common_school_documents_have_first_class_roles(text: str, role: str):
+    semantics = _semantics({
+        "family": "general_school_admin",
+        "phase": "planned",
+        "severity": "low",
+        "signals": [],
+        "affected_people_types": ["staff"],
+        "stakeholder_candidates": ["school_leadership"],
+        "known_facts": [],
+        "unknowns": [],
+        "requested_outputs": [],
+    })
+    semantics["requested_action"] = "prepare"
+    compiled = SchoolSituationCompiler(POLICY).compile(text, semantics)
+    selected = {
+        item["artifact_role"]
+        for item in compiled["response_pack"]["deliverables"]
+        if item.get("selected") and item.get("kind") == "artifact"
+    }
+    assert role in selected
+    assert "school_document" not in selected
+
+
+def test_declared_intent_can_select_internal_work_but_not_expand_audience():
+    compiler = SchoolSituationCompiler(POLICY)
+    compiled = compiler.compile(
+        "Prepare support arrangements for one student; keep this internal.",
+        _semantics({
+            "family": "teaching_learning_support",
+            "phase": "planned",
+            "severity": "low",
+            "signals": [],
+            "affected_people_types": ["student"],
+            "stakeholder_candidates": ["school_leadership"],
+            "known_facts": [], "unknowns": [], "requested_outputs": [],
+        }),
+        declared_intent={
+            "outcome_mode": "prepare_selected_documents",
+            "authority_mode": "draft_only",
+            "intended_audiences": ["public"],
+            "selected_artifact_roles": [
+                "curriculum_continuity_plan", "school_parent_notice",
+            ],
+        },
+    )
+    contract = compiled["response_pack"]["intent_contract"]
+    assert contract["schema_version"] == "school_intent_contract.v2"
+    assert "curriculum_continuity_plan" in contract["declaration"]["selected_artifact_roles"]
+    assert "school_parent_notice" not in contract["declaration"]["selected_artifact_roles"]
+    assert contract["rejected_declarations"]["audiences"] == ["public"]
+    assert not any(
+        item.get("artifact_role") == "external_release_gate"
+        for item in compiled["response_pack"]["deliverables"]
+    )
+
+
+def test_missing_referenced_payload_blocks_release_only_not_draft():
+    semantics = _semantics({
+        "family": "general_school_admin", "phase": "planned",
+        "severity": "low", "signals": [],
+        "affected_people_types": [],
+        "stakeholder_candidates": ["school_community"],
+        "known_facts": [], "unknowns": [], "requested_outputs": [],
+    })
+    semantics.update({
+        "requested_action": "send", "audience": "school_community",
+    })
+    compiled = SchoolSituationCompiler(POLICY).compile(
+        "Send this timetable to all parents.", semantics,
+    )
+    items = compiled["response_pack"]["deliverables"]
+    assert any(
+        item.get("artifact_role") == "timetable_or_schedule"
+        and item.get("selected") is True
+        for item in items
+    )
+    release = next(
+        item for item in items
+        if item.get("artifact_role") == "external_release_gate"
+    )
+    assert release["release_prerequisite_missing"] is True
 
 
 def test_response_pack_prunes_uncontracted_chat_release_proposal(tmp_path: Path):
@@ -401,6 +500,25 @@ def test_source_spreadsheet_mention_is_not_misread_as_requested_xlsx_output():
     ) == "xlsx"
 
 
+def test_prize_presentation_topic_does_not_require_pptx():
+    goal = (
+        "Prepare a duty roster covering assembly, first aid and prize "
+        "presentation."
+    )
+    verifier = VerifierModule(rules={
+        "format_check": {
+            "enabled": True,
+            "extension_patterns": {"pptx": r"\bpresentation\b"},
+        }
+    })
+    assert verifier._extensions_from_intent(goal) == []
+    assert Runtime._detect_target_tool(goal) == ""
+
+    explicit = "Prepare a presentation about the prize-giving ceremony."
+    assert verifier._extensions_from_intent(explicit) == ["pptx"]
+    assert Runtime._detect_target_tool(explicit) == "pptx"
+
+
 def test_llm_judge_skips_intentional_school_domain_boundary():
     class MustNotBeCalled:
         def chat_json(self, *args, **kwargs):
@@ -649,6 +767,469 @@ def test_cross_domain_source_facts_add_required_coverage():
         "cyber_incident_response", "evidence_preservation_log",
         "regulatory_notification_assessment",
     }.issubset(selected)
+
+
+def test_single_explicit_speech_does_not_expand_into_event_pack():
+    text = (
+        "Write a short speech for the headmaster to deliver at the annual "
+        "prize giving ceremony."
+    )
+    compiler = SchoolSituationCompiler(POLICY)
+    compiled = compiler.compile(text, {
+        "checked": True,
+        "school_domain": True,
+        "case_relation": "new_case",
+        "school_area": "school_event",
+        "requested_action": "draft",
+        "audience": "internal",
+        "confidence": 0.96,
+        "data_use_concepts": [],
+        "source": "test_semantic_llm",
+        "situation": {
+            "family": "events_cocurricular",
+            "phase": "planned",
+            "severity": "low",
+            "signals": ["event_operation"],
+            "affected_people_types": ["staff", "student"],
+            "stakeholder_candidates": ["school_leadership"],
+            "case_summary": "The headmaster needs a prize giving speech.",
+            "known_facts": [],
+            "unknowns": [],
+            "requested_outputs": [{
+                "artifact_role": "school_document",
+                "label": "Headmaster's speech for prize giving ceremony",
+                "purpose": "Provide the requested prize giving speech",
+                "audience": "internal",
+                "recipient_type": "school_leadership",
+                "languages": ["en"],
+                "source_fact_ids": [],
+            }],
+        },
+    })
+
+    selected = {
+        item["artifact_role"]
+        for item in compiled["response_pack"]["deliverables"]
+        if item.get("selected") is True and item.get("kind") == "artifact"
+    }
+    assert selected == {"speech_or_address"}
+    speech = next(
+        item for item in compiled["response_pack"]["deliverables"]
+        if item.get("artifact_role") == "speech_or_address"
+    )
+    assert speech["selection_origin"] == "explicit_request"
+    assert compiled["situation"]["intent_contract"]["explicit_count"] == 1
+    assert compiled["response_pack"]["intent_coverage"][
+        "unrequested_deliverable_ids"
+    ] == []
+
+
+def test_source_minutes_for_meeting_replaces_generic_semantic_document():
+    text = (
+        "Prepare concise internal minutes for a sudden staff coordination "
+        "meeting about a temporary library closure."
+    )
+    compiled = SchoolSituationCompiler(POLICY).compile(text, _semantics({
+        "family": "facilities_environment",
+        "phase": "planned",
+        "severity": "low",
+        "signals": ["service_disruption"],
+        "requested_outputs": [{
+            "artifact_role": "school_document",
+            "label": "Internal meeting record",
+            "purpose": "Record the meeting",
+            "audience": "internal",
+            "recipient_type": "school_staff",
+        }],
+    }))
+    selected = {
+        item["artifact_role"] for item in compiled["response_pack"]["deliverables"]
+        if item.get("selected") is True and item.get("kind") == "artifact"
+    }
+    assert selected == {"meeting_minutes"}
+
+
+def test_provider_extra_event_plan_cannot_impersonate_explicit_duty_roster_request():
+    text = "Prepare a teacher duty roster for the sports day on 25 October."
+    semantics = _semantics({
+        "family": "events_cocurricular",
+        "phase": "planned",
+        "severity": "low",
+        "signals": ["event_operation"],
+        "affected_people_types": ["staff", "student"],
+        "stakeholder_candidates": ["school_staff"],
+        "case_summary": "Sports day duty coverage is required.",
+        "known_facts": [],
+        "unknowns": [],
+        "requested_outputs": [
+            {
+                "artifact_role": "event_action_plan",
+                "label": "Sports day event action plan",
+                "purpose": "Coordinate the whole event",
+                "audience": "internal",
+                "recipient_type": "school_staff",
+                "explicit": True,
+            },
+            {
+                "artifact_role": "duty_roster",
+                "label": "Teacher duty roster",
+                "purpose": "Assign teacher duty coverage",
+                "audience": "internal",
+                "recipient_type": "school_staff",
+                "explicit": True,
+            },
+        ],
+    })
+    semantics.update({"requested_action": "draft", "data_use_concepts": []})
+
+    compiled = SchoolSituationCompiler(POLICY).compile(text, semantics)
+    selected = {
+        item["artifact_role"]
+        for item in compiled["response_pack"]["deliverables"]
+        if item.get("selected") is True and item.get("kind") == "artifact"
+    }
+
+    assert selected == {"duty_roster"}
+    assert compiled["situation"]["intent_contract"]["explicit_count"] == 1
+
+
+def test_marks_submission_memo_is_not_student_results_broadcast():
+    text = (
+        "Sediakan memo dalaman kepada semua guru mengenai penghantaran "
+        "markah ujian bulanan sebelum 25 Oktober."
+    )
+    assert source_has_individual_sensitive_detail(text) is False
+    semantics = _semantics({
+        "family": "general_school_admin",
+        "phase": "planned",
+        "severity": "low",
+        "signals": [],
+        "affected_people_types": ["staff"],
+        "stakeholder_candidates": ["school_staff"],
+        "case_summary": "Guru perlu menghantar markah sebelum tarikh akhir.",
+        "known_facts": [],
+        "unknowns": [],
+        "requested_outputs": [{
+            "artifact_role": "staff_internal_notice",
+            "label": "Memo kepada guru tentang penghantaran markah",
+            "purpose": "Mengingatkan guru tentang tarikh akhir penghantaran",
+            "audience": "school_community",
+            "recipient_type": "school_community",
+            "languages": ["ms"],
+            "explicit": True,
+        }],
+    })
+    semantics.update({
+        "requested_action": "draft",
+        "audience": "school_community",
+        "data_use_concepts": ["student_sensitive_data"],
+    })
+
+    compiled = SchoolSituationCompiler(POLICY).compile(text, semantics)
+    pack = compiled["response_pack"]
+    selected = {
+        item["artifact_role"]
+        for item in pack["deliverables"]
+        if item.get("selected") is True and item.get("kind") == "artifact"
+    }
+
+    assert pack["input_governance"]["decision"] == "NO_OVERRIDE"
+    assert selected == {"staff_internal_notice"}
+
+
+def test_named_student_marks_in_all_teacher_memo_remain_red():
+    text = (
+        "Sediakan memo kepada semua guru yang menyenaraikan nama murid, "
+        "markah mereka dan murid yang gagal."
+    )
+    semantics = _semantics({
+        "family": "teaching_learning_support",
+        "phase": "planned",
+        "severity": "medium",
+        "signals": [],
+        "affected_people_types": ["student", "staff"],
+        "stakeholder_candidates": ["school_staff"],
+        "case_summary": "A broad teacher memo would list pupil results.",
+        "known_facts": [],
+        "unknowns": [],
+        "requested_outputs": [{
+            "artifact_role": "staff_internal_notice",
+            "label": "Memo markah murid kepada semua guru",
+            "purpose": "Senaraikan nama dan markah murid",
+            "audience": "school_community",
+            "recipient_type": "school_community",
+            "languages": ["ms"],
+            "explicit": True,
+        }],
+    })
+    semantics.update({
+        "requested_action": "draft",
+        "audience": "school_community",
+        "data_use_concepts": ["student_sensitive_data", "individual_marks"],
+    })
+
+    compiled = SchoolSituationCompiler(POLICY).compile(text, semantics)
+
+    assert compiled["response_pack"]["input_governance"]["decision"] == "RED"
+
+
+def test_pta_minutes_fund_topic_does_not_force_separate_finance_memo():
+    text = (
+        "Write up the minutes for the PTA meeting about the school garden "
+        "project and the year-end fund."
+    )
+    semantics = _semantics({
+        "family": "finance_procurement",
+        "phase": "planned",
+        "severity": "low",
+        "signals": ["financial_value_involved"],
+        "affected_people_types": ["staff"],
+        "stakeholder_candidates": ["school_leadership"],
+        "case_summary": "The PTA discussed the garden and year-end fund.",
+        "known_facts": [],
+        "unknowns": [],
+        "requested_outputs": [{
+            "artifact_role": "meeting_minutes",
+            "label": "PTA meeting minutes",
+            "purpose": "Record the PTA discussion",
+            "audience": "internal",
+            "recipient_type": "school_leadership",
+            "explicit": True,
+        }],
+    })
+    semantics.update({"requested_action": "draft", "data_use_concepts": []})
+
+    compiled = SchoolSituationCompiler(POLICY).compile(text, semantics)
+    selected = {
+        item["artifact_role"]
+        for item in compiled["response_pack"]["deliverables"]
+        if item.get("selected") is True and item.get("kind") == "artifact"
+    }
+
+    assert selected == {"meeting_minutes"}
+
+
+def test_open_response_pack_delegation_does_not_create_generic_extra_file():
+    text = (
+        "A swarm of bees appeared beside the sports field and two pupils were "
+        "reportedly stung. Prepare the school response pack."
+    )
+    compiled = SchoolSituationCompiler(POLICY).compile(text, _semantics({
+        "family": "health_medical",
+        "phase": "just_occurred",
+        "severity": "high",
+        "signals": [
+            "injury_or_illness", "minor_involved", "active_danger",
+        ],
+        "affected_people_types": ["student"],
+        "requested_deliverables": ["school_document"],
+        "requested_outputs": [{
+            "artifact_role": "school_document",
+            "label": "School response pack",
+            "purpose": "Prepare the appropriate response pack",
+            "audience": "internal",
+            "recipient_type": "school_staff",
+        }],
+    }))
+    selected = {
+        item["artifact_role"] for item in compiled["response_pack"]["deliverables"]
+        if item.get("selected") is True and item.get("kind") == "artifact"
+    }
+    assert "school_document" not in selected
+    assert "user_titled_document" not in selected
+    assert {"internal_incident_report", "site_safety_checklist"}.issubset(
+        selected
+    )
+
+
+def test_baseline_or_outcome_data_gap_selects_truthful_replacements():
+    text = (
+        "Write an official report claiming our reading app improved Year 4 "
+        "comprehension by 73 percent, although no baseline or outcome data "
+        "has been collected."
+    )
+    compiled = SchoolSituationCompiler(POLICY).compile(text, _semantics({
+        "family": "teaching_learning_support",
+        "phase": "follow_up",
+        "severity": "low",
+        "signals": [],
+        "requested_outputs": [{
+            "artifact_role": "school_document",
+            "label": "Official reading app outcome report",
+            "purpose": "Report the claimed improvement",
+            "audience": "internal",
+            "recipient_type": "school_leadership",
+        }],
+    }))
+    pack = compiled["response_pack"]
+    assert pack["input_governance"]["decision"] == "INFEASIBLE"
+    selected = {
+        item["artifact_role"] for item in pack["deliverables"]
+        if item.get("selected") is True and item.get("kind") == "artifact"
+    }
+    assert selected == {"evidence_status_report", "measurement_plan"}
+
+
+def test_privacy_only_broadcast_does_not_invent_safeguarding_incident():
+    text = (
+        "Create a WhatsApp message for all parents naming every pupil who "
+        "received counselling, their family debt and the referral reason."
+    )
+    compiled = SchoolSituationCompiler(POLICY).compile(text, _semantics({
+        "family": "safeguarding_welfare",
+        "phase": "follow_up",
+        "severity": "high",
+        "signals": [
+            "safeguarding_concern", "personal_data_involved", "minor_involved",
+        ],
+        "affected_people_types": ["student"],
+        "requested_outputs": [{
+            "artifact_role": "school_parent_notice",
+            "label": "WhatsApp parent message",
+            "purpose": "Inform all parents",
+            "audience": "school_community",
+            "recipient_type": "school_community",
+        }],
+    }))
+    pack = compiled["response_pack"]
+    assert pack["input_governance"]["decision"] == "RED"
+    selected = {
+        item["artifact_role"] for item in pack["deliverables"]
+        if item.get("selected") is True and item.get("kind") == "artifact"
+    }
+    assert selected == {"school_parent_notice"}
+
+
+def test_request_approval_to_email_adds_external_release_gate():
+    text = (
+        "Draft an email to all parents about the science fair. Then request "
+        "approval to email it."
+    )
+    compiled = SchoolSituationCompiler(POLICY).compile(text, _semantics({
+        "family": "events_cocurricular",
+        "phase": "planned",
+        "severity": "low",
+        "signals": ["event_operation"],
+        "stakeholder_candidates": ["guardian"],
+        "requested_outputs": [{
+            # Deliberately narrower semantic interpretation: deterministic
+            # source parsing must restore the user's "all parents" audience.
+            "artifact_role": "private_parent_notice",
+            "label": "Science fair parent email",
+            "purpose": "Inform all parents",
+            "audience": "private_recipient",
+            "recipient_type": "guardian",
+        }],
+    }))
+    selected = [
+        item for item in compiled["response_pack"]["deliverables"]
+        if item.get("selected") is True
+    ]
+    artifacts = [item for item in selected if item.get("kind") == "artifact"]
+    releases = [
+        item for item in selected if item.get("kind") == "external_action"
+    ]
+    assert len(artifacts) == 1
+    assert len(releases) == 1
+    artifact = artifacts[0]
+    assert artifact["artifact_role"] == "school_parent_notice"
+    assert artifact["channel"] == "email"
+    release = releases[0]
+    assert release["recipient_type"] == "school_community"
+    assert release["channel"] == "email"
+
+
+def test_planned_water_interruption_does_not_force_extra_safety_file():
+    text = (
+        "Draft an email to all parents stating that school will close at "
+        "12:30 p.m. tomorrow because the water supply will be interrupted. "
+        "Then request human approval to email it."
+    )
+    compiled = SchoolSituationCompiler(POLICY).compile(text, _semantics({
+        "family": "facilities_environment",
+        "phase": "planned",
+        "severity": "medium",
+        "signals": [
+            "guardian_notification_relevant", "service_disruption",
+        ],
+        "affected_people_types": ["guardian", "student"],
+        "stakeholder_candidates": [
+            "guardian", "school_leadership", "school_staff",
+        ],
+        "requested_outputs": [{
+            "artifact_role": "school_parent_notice",
+            "label": "Water interruption closure email",
+            "purpose": "Inform all parents of the planned closure.",
+            "audience": "school_community",
+            "recipient_type": "school_community",
+            "explicit": True,
+        }],
+    }))
+    selected = [
+        item for item in compiled["response_pack"]["deliverables"]
+        if item.get("selected") is True
+    ]
+    assert [
+        item["artifact_role"] for item in selected
+        if item.get("kind") == "artifact"
+    ] == ["school_parent_notice"]
+    releases = [
+        item for item in selected if item.get("kind") == "external_action"
+    ]
+    assert len(releases) == 1
+    assert releases[0]["channel"] == "email"
+    optional_checklist = next(
+        item for item in compiled["response_pack"]["deliverables"]
+        if item.get("artifact_role") == "site_safety_checklist"
+    )
+    assert optional_checklist["requirement"] == "recommended"
+    assert optional_checklist["selected"] is False
+
+
+def test_explicit_transport_vendor_email_does_not_expand_safe_breakdown_case():
+    text = (
+        "Draft one formal email to the bus company asking for confirmation "
+        "of a replacement bus after a breakdown. All pupils are safe. Do not "
+        "prepare an incident report and do not send the email."
+    )
+    semantics = _semantics({
+        "family": "transport_travel",
+        "phase": "ongoing",
+        "severity": "medium",
+        "signals": ["transport_operation", "guardian_notification_relevant"],
+        "affected_people_types": ["student"],
+        "stakeholder_candidates": ["transport_provider", "guardian"],
+        "case_summary": "A school bus broke down and all pupils are safe.",
+        "known_facts": [],
+        "unknowns": [],
+        "requested_outputs": [{
+            "artifact_role": "external_stakeholder_message",
+            "label": "Replacement bus confirmation email",
+            "purpose": "Ask the transport provider to confirm replacement transport",
+            "audience": "private_recipient",
+            "recipient_type": "transport_provider",
+            "languages": ["en"],
+            "source_fact_ids": [],
+        }],
+    })
+    semantics.update({
+        "school_area": "transport",
+        "requested_action": "draft",
+        "audience": "private_recipient",
+    })
+    compiled = SchoolSituationCompiler(POLICY).compile(text, semantics)
+
+    selected = {
+        item["artifact_role"]
+        for item in compiled["response_pack"]["deliverables"]
+        if item.get("selected") is True and item.get("kind") == "artifact"
+    }
+    assert selected == {"external_stakeholder_message"}
+    message = next(
+        item for item in compiled["response_pack"]["deliverables"]
+        if item.get("artifact_role") == "external_stakeholder_message"
+    )
+    assert message["selection_origin"] == "explicit_request"
 
 
 @pytest.mark.parametrize(

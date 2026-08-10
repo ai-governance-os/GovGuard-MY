@@ -33,6 +33,28 @@ def test_config_includes_planner_and_workspace():
     assert isinstance(cfg["workspace_roots"], list)
 
 
+def test_partial_governance_reconstructs_open_task_pipeline():
+    from server.app import _partial_governance_from_events
+
+    events = [
+        {
+            "module": "103", "event_type": "governance_decision",
+            "details": {"action_id": "draft", "route": "BLUE"},
+        },
+        {
+            "module": "103", "event_type": "governance_decision",
+            "details": {
+                "action_id": "release", "route": "GREEN",
+                "approval_required": True,
+                "approval_request": {"status": "pending"},
+            },
+        },
+    ]
+    decisions, route = _partial_governance_from_events(events)
+    assert [item["action_id"] for item in decisions] == ["draft", "release"]
+    assert route == "GREEN"
+
+
 def test_task_lifecycle_blue_goal():
     c = _client()
     r = c.post("/api/tasks", json={"raw_goal": "Make a docx summarizing project X"})
@@ -64,6 +86,74 @@ def test_red_goal_routes_red_via_api():
         time.sleep(0.2)
     assert state["status"] == "done"
     assert state["final_route"] == "RED"
+
+
+def test_school_authority_release_waits_for_human_approval_via_api():
+    c = _client()
+    response = c.post(
+        "/api/tasks",
+        json={
+            "interaction_mode": "review_if_needed",
+            "raw_goal": (
+                "Prepare a formal report for PPD. Email it to PPD only "
+                "after I approve."
+            )
+        },
+    )
+    assert response.status_code == 200
+    task_id = response.json()["task_id"]
+    deadline = time.time() + 12
+    state = None
+    while time.time() < deadline:
+        state = c.get(f"/api/tasks/{task_id}").json()
+        if state["status"] in {"awaiting_approval", "done", "error"}:
+            break
+        time.sleep(0.1)
+    assert state is not None
+    assert state["status"] == "awaiting_approval", state
+    assert len(state["pending_approvals"]) == 1
+    assert any(
+        decision.get("route") == "BLUE"
+        for decision in state.get("decisions") or []
+    )
+    green = next(
+        decision for decision in state.get("decisions") or []
+        if decision.get("route") == "GREEN"
+    )
+    assert green["approval_required"] is True
+    assert any(
+        path.endswith("education_authority_report_draft.md")
+        for execution in state.get("executions") or []
+        for path in execution.get("affected_resources") or []
+    )
+    assert not any(
+        execution.get("action_id") == green["action_id"]
+        and execution.get("status") == "success"
+        for execution in state.get("executions") or []
+    )
+
+    approval_id = state["pending_approvals"][0]["approval_id"]
+    rejected = c.post(
+        f"/api/tasks/{task_id}/decide",
+        json={
+            "approval_id": approval_id,
+            "status": "rejected",
+            "note": "test rejection",
+        },
+    )
+    assert rejected.status_code == 200
+    deadline = time.time() + 8
+    while time.time() < deadline:
+        state = c.get(f"/api/tasks/{task_id}").json()
+        if state["status"] in {"done", "error"}:
+            break
+        time.sleep(0.1)
+    assert state["status"] == "done", state
+    assert not any(
+        execution.get("action_id") == green["action_id"]
+        and execution.get("status") == "success"
+        for execution in state.get("executions") or []
+    )
 
 
 def test_patch_endpoints_smoke():

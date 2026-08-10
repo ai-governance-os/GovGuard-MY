@@ -85,6 +85,24 @@ def _exec(action: CandidateAction, *, status: str = "success",
     )
 
 
+def _school_action(action_id: str, deliverable_id: str) -> CandidateAction:
+    return CandidateAction(
+        action_id=action_id, tool="fs", operation="write_text",
+        target=f"outputs/{deliverable_id}.md", purpose=f"Draft {deliverable_id}",
+        expected_effect="Create a governed Markdown draft",
+        reversibility="high", uncertainty="low", risk_factors=[],
+        requires_governance=True,
+        metadata={
+            "body": f"# {deliverable_id}\n\nConfirmed case-specific content.",
+            "school_output_contract": True,
+            "school_content_role": "artifact",
+            "artifact_role": deliverable_id,
+            "deliverable_id": deliverable_id,
+            "audience": "internal",
+        },
+    )
+
+
 # ===========================================================================
 # Disabled / skipped paths (no LLM call)
 # ===========================================================================
@@ -303,6 +321,103 @@ def test_judge_clamps_issues_and_suggestions():
     assert len(out["suggestions"]) <= 8
     for s in out["suggestions"]:
         assert len(s) <= 200
+
+
+def test_critical_failure_survives_minor_issue_cap() -> None:
+    llm = _StubChatLLM({
+        "score": 99,
+        "issues": [
+            {"severity": "minor", "code": f"minor_{i}", "message": f"minor {i}"}
+            for i in range(20)
+        ],
+        "critical_failures": ["The artifact fabricates a confirmed injury."],
+        "suggestions": [],
+    })
+    v = VerifierModule(rules=_load_real_rules(),
+                       rubrics=_load_real_rubrics(), chat_llm=llm)
+    a = _action("chat", body="A polished but fabricated answer.")
+    out = v.llm_judge(
+        envelope=_envelope("Write only confirmed facts"), plan_actions=[a],
+        executions=[_exec(a, summary="A polished but fabricated answer.")],
+        final_route="BLUE", task_category="unknown",
+    )
+    assert out["pass"] is False
+    assert out["issue_details"][0]["severity"] == "critical"
+    assert any(item.startswith("critical:") for item in out["hard_failures"])
+
+
+def test_single_string_critical_failure_is_not_split_into_characters() -> None:
+    llm = _StubChatLLM({
+        "score": 99, "issues": "minor wording issue",
+        "critical_failures": "Unsupported claim presented as confirmed fact",
+        "suggestions": [],
+    })
+    v = VerifierModule(rules=_load_real_rules(),
+                       rubrics=_load_real_rubrics(), chat_llm=llm)
+    a = _action("chat", body="Unsupported claim.")
+    out = v.llm_judge(
+        envelope=_envelope("Use confirmed facts"), plan_actions=[a],
+        executions=[_exec(a, summary="Unsupported claim.")],
+        final_route="BLUE", task_category="unknown",
+    )
+    assert out["pass"] is False
+    assert any(
+        item["message"] == "Unsupported claim presented as confirmed fact"
+        for item in out["issue_details"]
+    )
+
+
+def test_governed_school_judge_requires_result_for_every_marked_artifact() -> None:
+    first = _school_action("draft_a", "internal_report")
+    second = _school_action("draft_b", "parent_notice")
+    llm = _StubChatLLM({
+        "score": 95, "issues": [], "suggestions": [],
+        "dimensions": {
+            "relevance": 95, "completeness": 95, "factuality": 95,
+            "governance": 95, "usability": 95,
+        },
+        "artifact_results": [
+            {"action_id": "draft_a", "pass": True, "issues": []},
+        ],
+    })
+    v = VerifierModule(rules=_load_real_rules(),
+                       rubrics=_load_real_rubrics(), chat_llm=llm)
+    out = v.llm_judge(
+        envelope=_envelope("Prepare an internal report and private parent notice"),
+        plan_actions=[first, second],
+        executions=[_exec(first, summary="created"), _exec(second, summary="created")],
+        final_route="BLUE", task_category="report_generation",
+    )
+    assert out["pass"] is False
+    assert out["required_artifact_result_ids"] == ["draft_a", "draft_b"]
+    assert out["missing_artifact_result_ids"] == ["draft_b"]
+    assert "artifact_result_missing:draft_b" in out["hard_failures"]
+
+
+def test_governed_school_judge_accepts_complete_boolean_artifact_results() -> None:
+    first = _school_action("draft_a", "internal_report")
+    second = _school_action("draft_b", "parent_notice")
+    llm = _StubChatLLM({
+        "score": 95, "issues": [], "suggestions": [],
+        "dimensions": {
+            "relevance": 95, "completeness": 95, "factuality": 95,
+            "governance": 95, "usability": 95,
+        },
+        "artifact_results": [
+            {"action_id": "draft_a", "pass": True, "issues": []},
+            {"action_id": "draft_b", "pass": True, "issues": []},
+        ],
+    })
+    v = VerifierModule(rules=_load_real_rules(),
+                       rubrics=_load_real_rubrics(), chat_llm=llm)
+    out = v.llm_judge(
+        envelope=_envelope("Prepare an internal report and private parent notice"),
+        plan_actions=[first, second],
+        executions=[_exec(first, summary="created"), _exec(second, summary="created")],
+        final_route="BLUE", task_category="report_generation",
+    )
+    assert out["pass"] is True
+    assert out["missing_artifact_result_ids"] == []
 
 
 # ===========================================================================

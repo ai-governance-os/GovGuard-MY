@@ -11,12 +11,43 @@ import pytest
 from teow_agl.modules.module_school_release_intent import (
     EXTERNAL_RECIPIENTS,
     infer_explicit_external_recipients,
+    internal_school_repository_write_requested,
     negated_external_recipients,
     recipients_in_release_text,
     release_clauses,
     release_is_globally_negated,
     requests_external_release,
 )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Write an explanation of API keys, then upload it to the school staff guide.",
+        "Upload the completed report to the school intranet.",
+        "Save this procedure in the internal staff knowledge base.",
+    ],
+)
+def test_internal_school_repository_write_is_not_external_release(
+    text: str,
+) -> None:
+    assert internal_school_repository_write_requested(text) is True
+    assert release_clauses(text) == ([], [])
+    assert infer_explicit_external_recipients(text) == set()
+    assert requests_external_release({}, text) is False
+
+
+def test_negated_internal_repository_write_is_not_requested() -> None:
+    text = "Prepare the staff guide, but do not upload it to the school intranet."
+    assert internal_school_repository_write_requested(text) is False
+    assert infer_explicit_external_recipients(text) == set()
+
+
+def test_public_website_upload_remains_an_external_release() -> None:
+    text = "Upload the completed report to the public school website."
+    assert internal_school_repository_write_requested(text) is False
+    assert infer_explicit_external_recipients(text) == {"public_media"}
+    assert requests_external_release({}, text) is True
 
 
 @pytest.mark.parametrize(
@@ -36,6 +67,8 @@ from teow_agl.modules.module_school_release_intent import (
         "Students share ideas in class.",
         "Write text about safety for the lesson.",
         "Teachers circulate around the classroom during supervision.",
+        "Investigate why students post videos on Facebook during lessons.",
+        "Prepare a post-exam review for the school leadership team.",
     ],
 )
 def test_content_creation_and_speech_delivery_do_not_request_release(
@@ -111,6 +144,14 @@ def test_global_negation_has_no_positive_release_and_covers_every_route() -> Non
     ) is False
 
 
+def test_send_nothing_is_a_global_release_negation() -> None:
+    text = "Prepare the private parent draft, but send nothing."
+    assert release_clauses(text) == ([], ["send nothing"])
+    assert release_is_globally_negated(text) is True
+    assert negated_external_recipients(text) == EXTERNAL_RECIPIENTS
+    assert requests_external_release({}, text) is False
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -135,11 +176,21 @@ def test_recipient_negation_does_not_erase_a_different_positive_route() -> None:
     assert negated_external_recipients(text) == {"guardian"}
 
 
-def test_anything_to_named_recipient_is_scoped_not_global() -> None:
-    text = "Do not send anything to parents; submit the report to PPD."
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Do not send anything to parents; submit the report to PPD.",
+        "Do not send anything to parents, just submit report to PPD.",
+    ],
+)
+def test_anything_to_named_recipient_is_scoped_not_global(text: str) -> None:
+    positive, negative = release_clauses(text)
+    assert positive
+    assert negative
     assert infer_explicit_external_recipients(text) == {"education_authority"}
     assert negated_external_recipients(text) == {"guardian"}
     assert release_is_globally_negated(text) is False
+    assert requests_external_release({}, text) is True
 
 
 def test_public_negation_and_private_release_remain_separate() -> None:
@@ -158,12 +209,102 @@ def test_conditional_approval_phrase_retains_the_release_gate() -> None:
     assert infer_explicit_external_recipients(text) == {"guardian"}
 
 
+def test_approval_before_passive_parent_send_retains_the_release_gate() -> None:
+    text = (
+        "Prepare a private parent WhatsApp draft. Request human approval "
+        "before any parent message is sent."
+    )
+    positive, negative = release_clauses(text)
+    assert positive == ["request human approval before any parent message is sent"]
+    assert negative == []
+    assert infer_explicit_external_recipients(
+        text,
+        requested_outputs=[{
+            "artifact_role": "private_parent_notice",
+            "recipient_type": "guardian",
+        }],
+    ) == {"guardian"}
+
+
+def test_request_approval_to_email_pronoun_retains_parent_gate() -> None:
+    text = (
+        "Draft an email to all parents about the science fair. "
+        "Then request approval to email it."
+    )
+    positive, negative = release_clauses(text)
+    assert positive == ["request approval to email it"]
+    assert negative == []
+    assert infer_explicit_external_recipients(
+        text,
+        requested_audience="school_community",
+        requested_outputs=[
+            {"artifact_role": "school_parent_notice",
+             "recipient_type": "school_community"},
+            {"artifact_role": "private_parent_notice",
+             "recipient_type": "guardian"},
+        ],
+    ) == {"school_community"}
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (
+            "Prepare a formal report for PPD. Email it to PPD only after I approve.",
+            {"education_authority"},
+        ),
+        (
+            "Draft a private parent notice. Do not send it until I approve.",
+            {"guardian"},
+        ),
+        (
+            "Draft a private update for Ali's parent. "
+            "WhatsApp it to the parent after I approve.",
+            {"guardian"},
+        ),
+    ],
+)
+def test_pronoun_release_after_draft_keeps_conditional_gate(
+    text: str,
+    expected: set[str],
+) -> None:
+    positive, negative = release_clauses(text)
+    assert positive
+    assert negative == []
+    assert infer_explicit_external_recipients(
+        text,
+        requested_outputs=[
+            {
+                "artifact_role": "private_parent_notice",
+                "recipient_type": "guardian",
+            }
+        ],
+    ) == expected
+
+
+def test_coordinated_private_and_public_release_keeps_both_recipients() -> None:
+    text = (
+        "Prepare a private parent update and a public Facebook holding "
+        "statement about tomorrow's school closure. Send the parent update "
+        "and publish the Facebook post only after separate approval."
+    )
+    positive, negative = release_clauses(text)
+    assert positive
+    assert negative == []
+    # The shared parser conservatively reports the explicit public route;
+    # the situation compiler separately retains the action-scoped guardian
+    # release rather than letting the public destination erase it.
+    assert "public_media" in infer_explicit_external_recipients(text)
+
+
 def test_all_parents_is_one_school_community_route() -> None:
     assert recipients_in_release_text("send this to all parents") == {
         "school_community"
     }
     assert infer_explicit_external_recipients(
         "Send this notice to the parent group."
+    ) == {"school_community"}
+    assert infer_explicit_external_recipients(
+        "Share the anonymous class average with all school parents."
     ) == {"school_community"}
 
 
@@ -207,6 +348,14 @@ def test_positive_clause_order_is_stable() -> None:
         ("Hubungi hospital.", {"medical_services"}),
         ("Maklumkan semua ibu bapa.", {"school_community"}),
         ("Siarkan notis ini di Facebook.", {"public_media"}),
+        (
+            "Serahkan laporan kepada Pejabat Pendidikan Daerah untuk kelulusan.",
+            {"education_authority"},
+        ),
+        (
+            "Kemukakan laporan kepada PPD untuk kelulusan.",
+            {"education_authority"},
+        ),
     ],
 )
 def test_malay_release_verbs_are_recognised(

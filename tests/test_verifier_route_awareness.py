@@ -287,6 +287,49 @@ def test_successful_green_execution_does_not_manufacture_approval(
     assert "execution_before_approval:safe_report" in authority["reason"]
 
 
+def test_successful_execution_of_blocked_action_is_audit_failure(
+    tmp_path: Path,
+) -> None:
+    envelope, plan = _case(tmp_path)
+    plan.actions = [
+        action for action in plan.actions
+        if action.action_id in {"cover", "safe_report"}
+    ]
+    by_id = {action.action_id: action for action in plan.actions}
+    blocked = by_id["safe_report"]
+    blocked.metadata["content"] = INTERNAL
+    Path(blocked.target).write_text(INTERNAL, encoding="utf-8")
+
+    for route in ("RED", "INFEASIBLE"):
+        result = VerifierModule(rules=_rules()).verify(
+            envelope=envelope,
+            plan_actions=plan.actions,
+            executions=[
+                _success(by_id["cover"]),
+                _success(blocked, [blocked.target]),
+            ],
+            governance_decisions=[
+                _decision("cover", "BLUE"),
+                _decision("safe_report", route),
+            ],
+            final_route=route,
+        )
+
+        assert result["pass"] is False
+        assert result["verification_status"] == "failed"
+        assert result["audit_failure"] is True
+        assert result["scope"]["execution_of_blocked_action_ids"] == [
+            "safe_report"
+        ]
+        authority = next(
+            check for check in result["checks"]
+            if check["name"] == "governance.execution_authority"
+        )
+        assert (
+            "execution_of_blocked_action:safe_report" in authority["reason"]
+        )
+
+
 def test_approved_green_success_is_eligible_for_verification(
     tmp_path: Path,
 ) -> None:
@@ -420,7 +463,12 @@ class _JudgeLLM:
 
     def chat_json(self, *, system: str, user: str, max_tokens: int) -> dict:
         self.user_prompt = user
-        return {"score": 95, "issues": [], "suggestions": []}
+        return {
+            "score": 95, "issues": [], "suggestions": [],
+            "artifact_results": [
+                {"action_id": "safe_report", "pass": True, "issues": []},
+            ],
+        }
 
 
 def test_llm_judge_scores_safe_sibling_on_mixed_red_route(tmp_path: Path) -> None:
@@ -517,3 +565,43 @@ def test_generation_failure_is_not_misreported_as_governed_partial(
     )
     assert result["pass"] is False
     assert result["verification_status"] == "failed"
+
+
+def test_broken_external_gate_link_is_a_contract_failure() -> None:
+    envelope = TaskEnvelope(
+        task_id="broken_gate", session_id="s1", user_id="u1",
+        raw_goal="Submit the report.", normalized_goal="Submit the report.",
+        metadata={"school_response_pack": {"deliverables": [{
+            "deliverable_id": "external_release_authority",
+            "artifact_role": "external_release_gate",
+            "kind": "external_action",
+            "selected": True,
+            "requirement": "explicit_user_request",
+        }]}},
+    )
+    gate = CandidateAction(
+        action_id="release_gate", tool="chat", operation="answer",
+        purpose="Request approval before release",
+        metadata={
+            "deliverable_id": "external_release_authority",
+            "artifact_role": "external_release_gate",
+        },
+    )
+    decision = GovernanceDecision(
+        task_id=envelope.task_id, action_id=gate.action_id,
+        route="INFEASIBLE",
+        reasons=[
+            "linked_artifact_not_available",
+            "required_deliverable:education_authority_request",
+        ],
+        ticket_required=False, approval_required=False,
+    )
+    coverage = VerifierModule._response_pack_coverage(
+        envelope=envelope,
+        plan_actions=[gate],
+        executions=[],
+        governance_decisions=[decision],
+    )
+    assert coverage["complete"] is False
+    assert coverage["status_counts"] == {"FAILED": 1}
+    assert coverage["items"][0]["detail"] == "technical_contract_failure"

@@ -68,7 +68,7 @@ def test_cjk_persist_cue_keeps_the_preference():
 
 def test_durable_facts_survive_even_when_a_style_line_is_dropped():
     updates = [
-        _u("User is a teacher at Johor SJK(C) Primary School"),
+        _u("User is a teacher at a Johor SJK(C) primary school"),
         _u("User prefers warmer tone"),               # task-local → dropped
     ]
     kept, dropped = ReflectorModule._drop_task_local_style(

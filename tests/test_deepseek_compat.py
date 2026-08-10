@@ -221,7 +221,7 @@ def test_server_config_and_mixed_runtime_disclose_deepseek(monkeypatch):
         school_semantics=semantics,
     )
     assert mode == "live"
-    assert seen == {"planner": "deepseek", "chat": "deepseek"}
+    assert seen == {"planner": "smart_mock", "chat": "deepseek"}
 
 
 def test_globally_live_deepseek_runtime_is_labelled_live(monkeypatch):
@@ -232,3 +232,147 @@ def test_globally_live_deepseek_runtime_is_labelled_live(monkeypatch):
     _, mode = appmod._make_runtime_for_goal("Prepare a school report.")
 
     assert mode == "live"
+
+
+
+def test_deepseek_v4_empty_thinking_json_recovers_once(monkeypatch):
+    """Reasoning may consume a short JSON call's entire output budget."""
+    _configure_exact_user_deepseek_startup(monkeypatch)
+    monkeypatch.setenv("OPENAI_MODEL", "deepseek-v4-pro")
+    monkeypatch.setenv("DEEPSEEK_THINKING", "enabled")
+    seen: list[dict] = []
+    responses = [
+        _Resp({
+            "choices": [{
+                "finish_reason": "length",
+                "message": {
+                    "content": "",
+                    "reasoning_content": "private reasoning is never parsed",
+                },
+            }],
+        }),
+        _Resp(_chat_body('{"category": "report_generation"}')),
+    ]
+
+    def _capture(url, *, headers, json, timeout):
+        seen.append(json)
+        return responses.pop(0)
+
+    with patch("httpx.post", side_effect=_capture):
+        out = opi.openai_chat_json(
+            "Return JSON for this school task.", "Prepare a report.",
+            max_tokens=350,
+        )
+
+    assert out == {"category": "report_generation"}
+    assert len(seen) == 2
+    assert seen[0]["thinking"] == {"type": "enabled"}
+    assert seen[1]["thinking"] == {"type": "disabled"}
+    assert seen[1]["max_tokens"] >= 4096
+    assert "JSON RECOVERY" in seen[1]["messages"][-1]["content"]
+
+
+def test_deepseek_recovery_never_parses_reasoning_content(monkeypatch):
+    _configure_exact_user_deepseek_startup(monkeypatch)
+    monkeypatch.setenv("OPENAI_MODEL", "deepseek-v4-pro")
+    monkeypatch.setenv("DEEPSEEK_THINKING", "enabled")
+    body = {
+        "choices": [{
+            "message": {
+                "content": "",
+                "reasoning_content": '{"unsafe": "not application output"}',
+            },
+        }],
+    }
+    with patch("httpx.post", side_effect=[_Resp(body), _Resp(body)]):
+        assert opi.openai_chat_json("Return JSON.", "school task") == {}
+
+
+def test_deepseek_json_transport_failure_does_not_start_recovery(monkeypatch):
+    _configure_exact_user_deepseek_startup(monkeypatch)
+    with patch.object(
+        opi, "_post_with_retry", return_value=None
+    ) as post:
+        assert opi.openai_chat_json("Return JSON.", "school task") == {}
+
+    assert post.call_count == 1
+
+
+def test_deepseek_json_recovery_disables_another_transient_retry(monkeypatch):
+    _configure_exact_user_deepseek_startup(monkeypatch)
+    empty = _chat_body("")
+    recovered = _chat_body('{"route": "recovered"}')
+    with patch.object(
+        opi, "_post_with_retry", side_effect=[empty, recovered]
+    ) as post:
+        assert opi.openai_chat_json("Return JSON.", "school task") == {
+            "route": "recovered"
+        }
+
+    assert post.call_count == 2
+    assert post.call_args_list[1].kwargs["retry_on_transient"] is False
+
+
+def test_deepseek_planner_recovers_from_empty_thinking_content(monkeypatch):
+    _configure_exact_user_deepseek_startup(monkeypatch)
+    monkeypatch.setenv("OPENAI_MODEL", "deepseek-v4-pro")
+    monkeypatch.setenv("DEEPSEEK_THINKING", "enabled")
+    seen: list[dict] = []
+    plan = {
+        "planning_mode": "direct",
+        "actions": [{"action_id": "a1", "tool": "report"}],
+    }
+    responses = [
+        _Resp({"choices": [{"message": {
+            "content": "", "reasoning_content": "private",
+        }}]}),
+        _Resp(_chat_body(json.dumps(plan))),
+    ]
+
+    def _capture(url, *, headers, json, timeout):
+        seen.append(json)
+        return responses.pop(0)
+
+    planner = opi.OpenAIPlanner(provider="deepseek")
+    with patch("httpx.post", side_effect=_capture):
+        out = planner.plan({"task_id": "task_ds_recovery"}, "Return JSON.")
+
+    assert out["actions"][0]["action_id"] == "a1"
+    assert seen[0]["thinking"] == {"type": "enabled"}
+    assert seen[1]["thinking"] == {"type": "disabled"}
+
+
+def test_school_fallback_preflight_preserves_outage_circuit(monkeypatch):
+    _configure_exact_user_deepseek_startup(monkeypatch)
+    monkeypatch.setenv("OPENAI_MODEL", "deepseek-v4-pro")
+    monkeypatch.setenv("TEOW_AGL_LIVE_SCHOOL_INPUTS", "1")
+    semantics = {
+        "checked": False,
+        "school_domain": True,
+        "case_relation": "new_case",
+        "source": "fallback",
+    }
+    assert appmod._goal_runs_live(
+        "Prepare three internal school documents.",
+        school_semantics=semantics,
+    ) is False
+
+
+def test_deepseek_artifact_mapping_accepts_safe_compatible_wrappers():
+    from teow_agl.modules.module_102b_synthesizer import ContentSynthesizer
+
+    wrapped = {
+        "result": {
+            "artifacts": [{
+                "action_id": "act_123",
+                "markdown": "# Draft\n\nDRAFT - NOT SENT",
+            }],
+        },
+    }
+    assert ContentSynthesizer._school_artifact_mapping(wrapped) == {
+        "act_123": "# Draft\n\nDRAFT - NOT SENT",
+    }
+    direct = {"act_456": {"text": "# Briefing\n\nInternal draft"}}
+    assert ContentSynthesizer._school_artifact_mapping(direct) == {
+        "act_456": "# Briefing\n\nInternal draft",
+    }

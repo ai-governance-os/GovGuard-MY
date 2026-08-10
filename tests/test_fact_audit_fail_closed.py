@@ -59,3 +59,40 @@ def test_semantic_fact_audit_never_discards_a_reported_polarity_error(source, cl
     result = _audit(payload, source=source, artifact=claim)
     assert result["pass"] is False
     assert any(claim in issue for issue in result["issues"])
+
+
+def test_semantic_fact_audit_accepts_source_grounded_negative_paraphrase():
+    payload = {
+        "pass": False,
+        "unsupported_claims": [{
+            "action_id": "a1",
+            "claim": "Maintenance contacted: No (as of time of report)",
+            "reason": "Not supported",
+        }],
+    }
+    result = _audit(
+        payload,
+        source="Maintenance has not yet been contacted.",
+        artifact="Maintenance contacted: No (as of time of report)",
+    )
+    assert result == {"pass": True, "issues": []}
+
+
+def test_semantic_fact_audit_keeps_proposals_under_parent_heading():
+    payload = {
+        "pass": False,
+        "unsupported_claims": [{
+            "action_id": "a1",
+            "claim": "Identify an alternative room such as the library or hall.",
+            "reason": "The source did not assign a room.",
+        }],
+    }
+    artifact = (
+        "# Relocation checklist\n\n"
+        "## Proposed arrangements - subject to school approval\n\n"
+        "### Before relocation\n\n"
+        "- Identify an alternative room such as the library or hall.\n"
+    )
+    assert _audit(payload, source="Prepare a relocation checklist.", artifact=artifact) == {
+        "pass": True, "issues": [],
+    }

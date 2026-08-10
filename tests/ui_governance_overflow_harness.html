@@ -46,6 +46,16 @@
                   </span>
                 </div>
               </section>
+              <section class="approval-card" aria-label="Approval request">
+                <div class="summary" data-marker="approval-summary" data-must-wrap>Request official_submission release to education_authority_with_a_deliberately_long_unbroken_recipient_identifier_0123456789_END</div>
+                <div class="reasons" data-marker="approval-reasons" data-must-wrap>risk_recommended:GREEN · external_release_requires_human_approval_before_any_outside_action_ABCDEFGHIJKLMNOPQRSTUVWXYZ_END</div>
+                <div class="actions">
+                  <input type="text" value="" placeholder="Optional note with a safely wrapping control">
+                  <button class="approve">Approve</button>
+                  <button class="reject">Reject</button>
+                </div>
+                <div class="approval-status status-pending" data-marker="approval-status">Pending authorised human decision — nothing has been sent or published.</div>
+              </section>
             </div>
           </div>
         </div>
@@ -53,31 +63,38 @@
     </div>
   </div>
   <script>
-    window.addEventListener("load", () => {
       const requested = Number(new URLSearchParams(location.search).get("testWidth")) || window.innerWidth;
       const viewport = document.getElementById("test-viewport");
       viewport.style.width = `${requested}px`;
       viewport.style.maxWidth = "100%";
 
-      requestAnimationFrame(() => {
         const pipeline = document.querySelector(".gov-pipeline");
+        const approval = document.querySelector(".approval-card");
         const pipelineRect = pipeline.getBoundingClientRect();
+        const approvalRect = approval.getBoundingClientRect();
         const targets = [
           viewport,
           document.querySelector(".msg"),
           document.querySelector(".bubble"),
           pipeline,
-          ...pipeline.querySelectorAll(".gp-title,.gp-step,.gp-det,.gp-note,.gp-issues,.gp-issues li,code")
+          ...pipeline.querySelectorAll(".gp-title,.gp-step,.gp-det,.gp-note,.gp-issues,.gp-issues li,code"),
+          approval,
+          ...approval.querySelectorAll(".summary,.reasons,.actions,input,button,.approval-status")
         ];
         const overflow = targets.filter((node) => {
           if (!node) return false;
           const rect = node.getBoundingClientRect();
           const parentRect = pipeline.contains(node) && node !== pipeline
             ? pipelineRect
-            : viewport.getBoundingClientRect();
+            : approval.contains(node) && node !== approval
+              ? approvalRect
+              : viewport.getBoundingClientRect();
           return node.scrollWidth > node.clientWidth + 1 || rect.right > parentRect.right + 1;
         });
-        const clipped = [...pipeline.querySelectorAll(".gp-det,.gp-note,.gp-issues,.gp-issues li,code")]
+        const clipped = [
+          ...pipeline.querySelectorAll(".gp-det,.gp-note,.gp-issues,.gp-issues li,code"),
+          ...approval.querySelectorAll(".summary,.reasons,.approval-status")
+        ]
           .filter((node) => {
             const style = getComputedStyle(node);
             const hidden = ["hidden", "clip"].includes(style.overflowX)
@@ -86,7 +103,10 @@
             const clamped = style.webkitLineClamp && style.webkitLineClamp !== "none";
             return hidden || ellipsis || clamped;
           });
-        const wrapped = [...pipeline.querySelectorAll("[data-must-wrap]")]
+        const wrapped = [
+          ...pipeline.querySelectorAll("[data-must-wrap]"),
+          ...approval.querySelectorAll("[data-must-wrap]")
+        ]
           .filter((node) => {
             const style = getComputedStyle(node);
             const lineHeight = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.2;
@@ -94,6 +114,11 @@
           });
         const markers = ["english", "token", "chinese", "mixed", "note"];
         const missing = markers.filter((name) => !pipeline.querySelector(`[data-marker="${name}"]`)?.innerText.trim());
+
+        for (const name of ["approval-summary", "approval-reasons", "approval-status"]) {
+          const selector = '[data-marker="' + name + '"]';
+          if (!approval.querySelector(selector)?.innerText.trim()) missing.push(name);
+        }
 
         document.body.dataset.overflowCount = String(overflow.length);
         document.body.dataset.overflowElements = overflow
@@ -103,8 +128,6 @@
         document.body.dataset.missingCount = String(missing.length);
         document.body.dataset.viewportWidth = String(requested);
         document.body.dataset.ready = "true";
-      });
-    });
   </script>
 </body>
 </html>
