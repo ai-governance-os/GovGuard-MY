@@ -88,6 +88,9 @@ def test_fallback_body_is_english_for_english_intent():
     body = _fallback_body("write a report on AI", "docx")
     assert not _text_has_cjk(body)
     assert "Sorry" in body or "couldn't" in body.lower()
+    assert "rate-limit" not in body.lower()
+    assert "busy" not in body.lower()
+    assert "does not assume why" in body
 
 
 def test_fallback_body_mentions_the_artifact_kind():

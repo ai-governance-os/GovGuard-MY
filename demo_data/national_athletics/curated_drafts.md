@@ -188,6 +188,6 @@ Prepared only. The protected student-record database has not been changed.
 ## [apply_database_update]
 Protected student-record update — awaiting human verification
 
-A Database Update Notice for **Mei Xin** is ready: personal_best 4.65m → **4.82m**, national_record_status false → **true**, plus the new achievement and Singapore follow-up. Because writing to the **protected student-record database** is a high-impact, largely irreversible action, I cannot apply it autonomously — an educator must **verify the official result sheet and approve** first. The protected student-record database is unchanged in demo mode.
+A Database Update Notice for **Mei Xin** is ready: personal_best 4.65m → **4.82m**, national_record_status false → **true**, plus the new achievement and Singapore follow-up. Because writing to the **protected student-record database** is a high-impact, largely irreversible action, the runtime will not apply it autonomously — an educator must **verify the official result sheet and approve** first. The protected student-record database is unchanged in demo mode.
 
 Workflow complete. Generated outputs: Internal Activity Report · Parent Notice — Mei Xin / Xiao Le / Ali · Public Facebook Post Draft · Data-Selection Audit · Database Update Notice — Mei Xin. Governance: low-risk drafts auto-run; 1 unsafe status-based data-use proposal RED-blocked; 1 protected student-record update awaiting human verification.

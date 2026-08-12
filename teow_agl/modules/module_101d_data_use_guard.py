@@ -155,6 +155,21 @@ def _norm_list(values: Any) -> str:
     return str(values or "").lower()
 
 
+def _semantic_target(value: Any) -> str:
+    """Keep a logical target, but never scan an absolute host path as data.
+
+    Generated artifacts are rewritten to an absolute path below ``outputs``.
+    Date-stamped extraction folders can accidentally resemble phone numbers,
+    even though that host path is not part of the proposed document or data
+    use. Preserve only the filename for absolute Windows/UNC targets; relative
+    logical targets remain available to the deterministic guard.
+    """
+    target = str(value or "").strip()
+    if re.match(r"(?i)^[a-z]:[\\/]", target) or target.startswith("\\\\"):
+        return re.split(r"[\\/]", target)[-1]
+    return target
+
+
 def _contains_asserted_sensitive_term(text: str, terms: tuple[str, ...]) -> bool:
     """True only when a sensitive term is asserted, not explicitly excluded.
 
@@ -318,7 +333,7 @@ class DataUseGuard:
         text = _normalize(" ".join((
             str(getattr(action, "purpose", "")),
             str(getattr(action, "expected_effect", "")),
-            str(getattr(action, "target", "")),
+            _semantic_target(getattr(action, "target", "")),
             str(md.get("data_use_purpose", "")),
             shared_user_intent,
             _norm_list(md.get("data_categories")),

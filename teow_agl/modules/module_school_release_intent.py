@@ -35,7 +35,8 @@ _RECIPIENT_PATTERNS: tuple[tuple[str, str], ...] = (
     (
         "school_community",
         r"\b(?:all\s+(?:school\s+)?parents|parents\s+group|parent\s+group|school\s+community|"
-        r"all\s+staff|whole\s+school)\b|"
+        r"all\s+staff|whole\s+school|(?:year\s+\d+\s+)?class\s+"
+        r"(?:whatsapp\s+)?group)\b|"
         r"全体家长|全體家長|家长群|家長群|semua\s+ibu\s+bapa",
     ),
     (
@@ -88,6 +89,7 @@ _RECIPIENT_PATTERNS: tuple[tuple[str, str], ...] = (
 
 _RECIPIENT_WORDS = (
     r"all\s+(?:school\s+)?parents|parents?|guardians?|family|all\s+staff|school\s+community|"
+    r"(?:year\s+\d+\s+)?class\s+(?:whatsapp\s+)?group|"
     r"semua\s+ibu\s+bapa|ibu\s+bapa|penjaga|"
     r"district\s+education\s+office|education\s+authority|education\s+office|"
     r"district\s+office|ministry(?:\s+of\s+education)?|ppd|jpn|moe|"

@@ -45,6 +45,8 @@ from typing import Any
 from ..adapters.chat_llm import ChatLLM
 from ..models import CandidateAction
 from .module_school_artifact_guard import (
+    SCHOOL_OPERATOR_CLAUSE_SPLIT,
+    SCHOOL_OPERATOR_COMMAND_PREFIX,
     artifact_similarity,
     classify_school_validation_issues,
     requires_restricted_staff_boundary,
@@ -355,15 +357,15 @@ def _fallback_body(user_intent: str, kind: str) -> str:
     if is_cjk:
         return (
             f"很抱歉,我这次没能完整生成这份{nice}的内容。"
-            f"可能的原因是模型暂时繁忙或额度紧张。"
-            f"请稍等片刻再让我重做一次,或把要求说得更具体一些。\n\n"
+            f"内容生成器没有返回可用草稿；系统不会臆测原因。"
+            f"没有发送或发布任何内容。请重试,或补充必要资料。\n\n"
             f"你的原始请求:\n{user_intent[:300]}"
         )
     return (
-        f"Sorry — I couldn't generate the full {nice_en} content this "
-        f"time, likely because the model was rate-limited or busy. "
-        f"Please retry the task in a minute, or restate the request "
-        f"with a little more detail.\n\n"
+        f"Sorry — I couldn't generate a usable {nice_en} draft for this "
+        f"request. The content generator returned no usable draft; the system "
+        f"does not assume why. Nothing was sent or published. Please retry, "
+        f"or provide the missing source details.\n\n"
         f"Your original request:\n{user_intent[:300]}"
     )
 
@@ -499,31 +501,44 @@ def _school_response_pack_safe_fallback(
     def source_factual_summary(value: str) -> str:
         """Extract factual clauses without copying the user's command."""
         facts: list[str] = []
-        command_start = re.compile(
-            r"(?i)^(?:please\s+)?(?:draft|write|prepare|create|produce|make|"
-            r"send|publish|contact|submit|revise|update|edit|translate|"
-            r"ignore|reveal|sediakan|tulis|hantar|siarkan|hubungi)\b"
-        )
         release_instruction = re.compile(
             r"(?i)^(?:do\s+not|don't|jangan)\s+"
             r"(?:send|publish|contact|submit|reveal|mention)\b"
         )
         for sentence in re.split(r"(?<=[.!?])\s+", str(value or "")):
-            candidate = sentence.strip()
-            if not candidate:
-                continue
-            if command_start.search(candidate):
-                marker = re.search(r"(?i)\b(?:that|bahawa)\b\s*", candidate)
-                if not marker:
+            # Commands commonly follow a real fact in the same sentence:
+            # ``The nurse was late, so leave that out``.  Evaluate each
+            # connective clause independently rather than trusting the first
+            # word of the whole sentence.
+            clauses = SCHOOL_OPERATOR_CLAUSE_SPLIT.split(sentence)
+            for clause in clauses:
+                candidate = clause.strip()
+                if not candidate:
                     continue
-                candidate = candidate[marker.end():].strip()
-            if release_instruction.search(candidate):
-                continue
-            if command_start.search(candidate):
-                continue
-            cleaned = clean(candidate, 800)
-            if cleaned:
-                facts.append(cleaned)
+                if SCHOOL_OPERATOR_COMMAND_PREFIX.search(candidate):
+                    marker = re.search(
+                        r"(?i)\b(?:that|bahawa)\b\s*", candidate,
+                    )
+                    if marker:
+                        candidate = candidate[marker.end():].strip()
+                    else:
+                        # A colon followed by whitespace is an explicit body
+                        # delimiter, not a clock time. Preserve the supplied
+                        # payload from requests such as ``Send this message to
+                        # the District Education Office: our school completed
+                        # the pilot today``. The second command-prefix check
+                        # below still rejects ``Draft a report: include ...``.
+                        body_delimiter = re.search(r":\s+(?=\S)", candidate)
+                        if not body_delimiter:
+                            continue
+                        candidate = candidate[body_delimiter.end():].strip()
+                if release_instruction.search(candidate):
+                    continue
+                if SCHOOL_OPERATOR_COMMAND_PREFIX.search(candidate):
+                    continue
+                cleaned = clean(candidate, 800)
+                if cleaned:
+                    facts.append(cleaned)
         return " ".join(facts)[:1800]
 
     excluded_concepts = {
@@ -538,15 +553,47 @@ def _school_response_pack_safe_fallback(
         item.casefold() for item in excluded_known_fact_values(action)
     }
 
+    outward_audience = audience in {
+        "private_recipient", "external_agency", "public", "school_community",
+    }
+    outward_role = role in {
+        "private_parent_notice", "school_parent_notice",
+        "public_communication_draft", "external_stakeholder_message",
+        "education_authority_request", "education_authority_report",
+        "medical_handover_script", "emergency_contact_script",
+        "fire_rescue_contact_script",
+    }
+    contract_action = action
+    if outward_audience or outward_role:
+        # Outward prose is minimum-necessary by default.  This is an artifact
+        # boundary, not a new governance decision: the original action route
+        # remains unchanged, while status data and discriminatory instructions
+        # cannot be copied into a parent, agency, medical or public draft.
+        contract_action = action.model_copy(deep=True)
+        contract_meta = contract_action.metadata
+        contract_meta["excluded_data_concepts"] = sorted(
+            excluded_concepts | {"socioeconomic_data", "differential_treatment"}
+        )
+
     def allowed_by_action_contract(value: str) -> bool:
         if not value:
             return False
         return not school_policy_contract_issues(
-            action,
+            contract_action,
             value.replace("_", " "),
             source_goal,
             include_boundary=False,
         )
+
+    def contract_safe_summary(value: str) -> str:
+        """Keep safe factual clauses instead of dropping an entire summary."""
+        kept: list[str] = []
+        for sentence in re.split(r"(?<=[.!?])\s+", str(value or "")):
+            for clause in SCHOOL_OPERATOR_CLAUSE_SPLIT.split(sentence):
+                candidate = clause.strip()
+                if candidate and allowed_by_action_contract(candidate):
+                    kept.append(candidate)
+        return " ".join(kept)[:1800]
 
     # A semantic contract may paraphrase the source, but it must not smuggle a
     # hallucinated place, person or event into the fallback.  Source grounding
@@ -554,13 +601,24 @@ def _school_response_pack_safe_fallback(
     # use, so every candidate summary also passes the deterministic exclusion
     # contract before it can be echoed.
     summary = grounded(meta.get("school_case_summary"))
+    if summary:
+        factual_summary = source_factual_summary(summary)
+        if factual_summary:
+            summary = factual_summary
+        elif re.search(
+            r"(?i)\b(?:draft|write|prepare|create|produce|make|send|publish|"
+            r"contact|submit|tell|estimate|calculate|predict|give|provide)\b",
+            summary,
+        ):
+            # The case summary is the raw request by design. If it is only an
+            # operator instruction/question, do not paste it into a parent
+            # letter as if it were a case fact.
+            summary = ""
     wrapper_summary = owned_followup_summary(raw_source_text)
-    if not summary and wrapper_summary and allowed_by_action_contract(
-        wrapper_summary
-    ):
-        summary = wrapper_summary
-    if summary and not allowed_by_action_contract(summary):
-        summary = ""
+    if not summary and wrapper_summary:
+        summary = contract_safe_summary(wrapper_summary)
+    if summary:
+        summary = contract_safe_summary(summary)
     if restricted_internal:
         summary = (
             "A student conduct matter was reported and requires a restricted, "
@@ -581,11 +639,9 @@ def _school_response_pack_safe_fallback(
             part.casefold() in source.casefold() for part in factual_parts
         ):
             factual_candidate = ""
-        summary = (
-            factual_candidate
-            if factual_candidate
-            and allowed_by_action_contract(factual_candidate)
-            else "A school matter requiring a governed, fact-limited response."
+        factual_candidate = contract_safe_summary(factual_candidate)
+        summary = factual_candidate or (
+            "A school matter requiring a governed, fact-limited response."
         )
     restricted_broad = requires_broad_redaction(
         source,
@@ -628,13 +684,33 @@ def _school_response_pack_safe_fallback(
                     "verified by this system"
                 )
     unknowns: list[str] = []
+
+    def unknown_label(value: Any) -> str:
+        raw = clean(value or "case_detail", 100).strip().lower()
+        if re.fullmatch(r"(?:f|fact|unknown)\d+", raw) or raw in {
+            "fact", "unknown", "case_detail",
+        }:
+            return "Additional case detail"
+        labels = {
+            "urgent_help_or_danger_still_present": (
+                "Whether immediate danger or unmet urgent help remains"
+            ),
+            "current_status": "Current status",
+            "exact_location": "Exact location",
+            "incident_time": "Incident time",
+            "incident_date": "Incident date",
+            "external_recipient": "Confirmed external recipient",
+        }
+        if raw in labels:
+            return labels[raw]
+        return re.sub(r"_+", " ", raw).strip().capitalize()
+
     for item in (meta.get("school_unknowns") or [])[:10]:
         if isinstance(item, dict):
-            fact_id = clean(item.get("fact_id") or "case_detail", 100)
-            impact = clean(item.get("impact") or "content", 80)
-            candidate = f"{fact_id} {impact}"
+            fact_id = unknown_label(item.get("fact_id"))
+            candidate = fact_id
             if allowed_by_action_contract(candidate):
-                unknowns.append(f"- {fact_id}: TBC — impact: {impact}")
+                unknowns.append(f"- {fact_id}: TBC")
         elif str(item).strip():
             candidate = clean(item, 180)
             if allowed_by_action_contract(candidate):
@@ -889,6 +965,8 @@ def _school_response_pack_safe_fallback(
             "- Child's present condition: TBC\n- Care or assistance provided: TBC\n"
             "- Exact date, time and location: TBC\n"
             "- School contact person and return number: TBC\n\n"
+            "## Missing or unverified case details\n\n"
+            + unknowns_block + "\n\n"
             "Please use the confirmed school contact channel for urgent questions. "
             "This text is a preparation draft only; it does not claim that a "
             "message, call or update has already been made.\n\n"
@@ -3168,8 +3246,9 @@ class ContentSynthesizer:
             "or second report. Begin with exactly one '# ' H1; use '## ' for "
             "subsections; no code fences. Include a visible status line such as "
             "'DRAFT - NOT SENT' and the correct audience boundary. Use TBC for "
-            "missing or unverified facts; write 'TBC - authorised school "
-            "representative' rather than a name placeholder. Do not use square "
+            "missing or unverified facts. Use a field-specific value such as "
+            "'TBC - time' or 'TBC - diagnosis'; use 'TBC - authorised school "
+            "representative' only in a signatory/name field. Do not use square "
             "brackets, [Your Name], [Parent Name], TODO, TBD, sample, or other "
             "generic placeholders.\n\n"
             "QUALITY RULE: make each file usable by a first school operator, "
@@ -4649,7 +4728,10 @@ class ContentSynthesizer:
             "unless supplied. "
             "Recommendations must be "
             "future/proposed actions. Do not assign blame. Do not use square "
-            "brackets or generic placeholders; write plain 'TBC - ...' fields. "
+            "brackets or generic placeholders; write field-specific 'TBC - ...' "
+            "values. Use 'TBC - authorised school representative' only for a "
+            "signatory/name field, never for a date, time, place, diagnosis or "
+            "other fact. "
             "A private parent notice must not contain "
             "internal-report sections; an internal report must not contain a "
             "parent-letter salutation or sign-off. An internal incident report "

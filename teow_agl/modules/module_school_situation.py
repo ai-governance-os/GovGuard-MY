@@ -17,7 +17,10 @@ import uuid
 from typing import Any
 
 from ..models import CandidateAction, CandidatePlan, TaskEnvelope
-from .module_school_artifact_guard import infer_artifact_role
+from .module_school_artifact_guard import (
+    SCHOOL_OPERATOR_COMMAND_PREFIX,
+    infer_artifact_role,
+)
 from .module_school_case_context import merge_followup_situation
 from .module_deliverable_mentions import is_requested_output_mention
 from .module_school_intent_contract import (
@@ -1001,6 +1004,41 @@ def _socioeconomic_differential_harm(text: str, concepts: set[str]) -> bool:
     )
 
 
+def _status_based_content_manipulation(text: str) -> bool:
+    """Block requests to alter records because of rank or committee status."""
+    value = str(text or "")
+    status = re.compile(
+        r"\b(?:dato['â€™]?|datuk|datin|tan\s+sri|tunku)\b|"
+        r"\bPIBG\b[^.!?;\n]{0,60}\b(?:chair(?:man|person)?|president|"
+        r"committee\s+member|member)\b|"
+        r"\b(?:chair(?:man|person)?|president|committee\s+member|member)\b"
+        r"[^.!?;\n]{0,60}\bPIBG\b",
+        re.IGNORECASE,
+    )
+    manipulation = re.compile(
+        r"\b(?:soften|tone\s+down|omit|remove|exclude|hide|suppress|withhold|"
+        r"leave\s+out|play\s+down|downplay|make\s+(?:it\s+)?(?:gentler|"
+        r"warmer|less\s+serious))\b|"
+        r"\b(?:lembutkan|kurangkan|tinggalkan|keluarkan|sembunyikan)\b",
+        re.IGNORECASE,
+    )
+    safe_prohibition = re.compile(
+        r"\b(?:do\s+not|don't|never|must\s+not|should\s+not|cannot)\b"
+        r"[^.!?;]{0,70}\b(?:soften|omit|remove|exclude|hide|suppress|"
+        r"withhold|leave\s+out|downplay)\b",
+        re.IGNORECASE,
+    )
+    if safe_prohibition.search(value):
+        return False
+    status_matches = list(status.finditer(value))
+    return any(
+        min(abs(change.start() - item.end()), abs(item.start() - change.end()))
+        <= 260
+        for change in manipulation.finditer(value)
+        for item in status_matches
+    )
+
+
 _EXTERNAL_RECIPIENT_PATTERNS = {
     "guardian": r"\b(?:parents?|guardians?|family)\b|家长|家長|监护人|監護人|ibu bapa|penjaga",
     "education_authority": (
@@ -1017,7 +1055,11 @@ _EXTERNAL_RECIPIENT_PATTERNS = {
     "vendor": r"\b(?:vendor|supplier|contractor)\b|供应商|供應商|pembekal",
     "transport_provider": r"\b(?:transport\s+provider|bus\s+operator|bus\s+company)\b",
     "public_media": r"\b(?:facebook|public|publicly|media|website|social\s+media)\b|公开|公開|脸书|臉書",
-    "school_community": r"\b(?:all\s+parents|parent\s+group|school\s+community|all\s+staff)\b|全体家长|全體家長|家长群|家長群",
+    "school_community": (
+        r"\b(?:all\s+parents|parent\s+group|school\s+community|all\s+staff|"
+        r"(?:year\s+\d+\s+)?class\s+(?:whatsapp\s+)?group)\b|"
+        r"全体家长|全體家長|家长群|家長群"
+    ),
 }
 _RELEASE_ACTION_PATTERN = re.compile(
     r"\b(?:send|publish|submit|release|email|contact|notify|call|forward|"
@@ -2296,6 +2338,7 @@ class SchoolSituationCompiler:
                 recipients.add("public_media")
             elif re.search(
                 r"\b(?:all\s+parents|parent\s+group|school\s+community|"
+                r"(?:year\s+\d+\s+)?class\s+(?:whatsapp\s+)?group|"
                 r"semua\s+ibu\s+bapa)\b|家长群|家長群|全体家长|全體家長",
                 answer,
             ):
@@ -2449,6 +2492,26 @@ class SchoolSituationCompiler:
                 )
                 if not lexical_support:
                     continue
+                # A command can contain a grammatical presupposition without
+                # supplying evidence for it ("state the exact time the
+                # ambulance arrived" / "give the doctor's diagnosis").  A
+                # semantic model may rewrite that into a declarative fact.
+                # Only an assertion before the command may support a fact.
+                # "Please write that an ambulance arrived" is still an
+                # instruction, not evidence.
+                directive_match = SCHOOL_OPERATOR_COMMAND_PREFIX.search(segment)
+                if directive_match:
+                    asserted_prefix = segment[:directive_match.start()].strip()
+                    colon_index = segment.find(":", directive_match.end())
+                    stated_payload = (
+                        segment[colon_index + 1:].strip()
+                        if colon_index >= 0 else ""
+                    )
+                    if (
+                        fact_norm not in asserted_prefix
+                        and fact_norm not in stated_payload
+                    ):
+                        continue
                 # Bag-of-words overlap cannot turn "not injured" into
                 # "injured", "not contacted" into "contacted", or invert
                 # closure/breach assertions. Polarity must agree in the same
@@ -2873,6 +2936,7 @@ class SchoolSituationCompiler:
         explicit_broad_parent_audience = bool(re.search(
             r"\b(?:all|every)\s+parents?\b|\bparent\s+(?:group|community)\b|"
             r"\bschool\s+community\b|\b(?:all|whole)\s+school\b|"
+            r"\b(?:year\s+\d+\s+)?class\s+(?:whatsapp\s+)?group\b|"
             r"\b(?:semua|seluruh)\s+ibu\s+bapa\b|\bkumpulan\s+ibu\s+bapa\b|"
             r"\bkomuniti\s+sekolah\b|"
             r"(?:家长群|家長群|全体家长|全體家長|所有家长|所有家長|全校通知)",
@@ -2980,6 +3044,11 @@ class SchoolSituationCompiler:
             or output_roles.intersection({
                 "school_parent_notice", "public_communication_draft",
             })
+            or re.search(
+                r"\b(?:(?:public|school|community)\s+)?newsletter\b|"
+                r"\b(?:public|school)\s+(?:bulletin|website|facebook\s+page)\b",
+                lower_text,
+            )
         )
         unsupported_evidence_contradiction = (
             _unsupported_claim_without_evidence(lower_text)
@@ -3068,7 +3137,10 @@ class SchoolSituationCompiler:
         # supportive aid/tutoring is allowed, while status-based punishment,
         # labelling and surveillance are blocked. Closed semantic concepts are
         # retained as a second signal when the model explicitly identifies both.
-        status_bias = _socioeconomic_differential_harm(lower_text, concepts)
+        status_bias = bool(
+            _socioeconomic_differential_harm(lower_text, concepts)
+            or _status_based_content_manipulation(source_text)
+        )
         aggregate_only = bool(re.search(
             r"\b(?:class|cohort|school|grade|year)\s+(?:average|aggregate|overall)\b|"
             r"\b(?:anonymous|anonymised|anonymized|aggregate)\s+(?:results?|marks?|data)\b|"
@@ -3943,6 +4015,52 @@ class SchoolSituationCompiler:
                     "excluded_data_concepts": sorted(exclusions),
                     "claim_policy": "anonymous_aggregate_or_general_support_only",
                     "action_data_use_concepts": [],
+                })
+
+        # A pure broad-release request with no separately requested internal
+        # document used to receive both the privacy-safe companion notice and
+        # a generic ``user_titled_document`` inserted by the family default.
+        # That redundant internal fallback could echo the very PII rejected
+        # from the community draft. Keep only the governed safe companion and
+        # its release gate; explicit internal reports remain untouched.
+        if (
+            sensitive_broadcast
+            and not has_explicit_outputs
+            and external_requests.intersection({
+                "school_community", "public_media",
+            })
+        ):
+            generic_entry = entries.get("user_titled_document")
+            if generic_entry and str(
+                generic_entry["contract"].get("selection_origin") or ""
+            ) == "policy_required":
+                entries.pop("user_titled_document", None)
+
+        # Policy-required incident, guardian and medical artifacts may be
+        # inserted after semantic requested-output reconciliation.  Apply the
+        # same status-manipulation contract to every resulting artifact so a
+        # late-added internal report cannot retain ``Dato'/PIBG`` or the
+        # instruction to soften/omit facts merely because it was not one of
+        # the model's original output objects.
+        if status_bias or safe_status_constraint:
+            for entry in entries.values():
+                contract = entry["contract"]
+                exclusions = set(contract.get("excluded_data_concepts") or [])
+                exclusions.update({"socioeconomic_data", "differential_treatment"})
+                existing_transform = str(
+                    contract.get("safe_transformation") or ""
+                ).strip()
+                boundary_transform = (
+                    status_transform if status_bias else
+                    "Honor the user's explicit prohibition on status-based treatment."
+                )
+                contract.update({
+                    "safe_transformation": " ".join(
+                        item for item in (
+                            existing_transform, boundary_transform,
+                        ) if item
+                    ),
+                    "excluded_data_concepts": sorted(exclusions),
                 })
 
         requested_pack_languages: list[str] = []

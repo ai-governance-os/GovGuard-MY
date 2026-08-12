@@ -237,8 +237,15 @@ def verify_out_of_domain_boundary() -> None:
 
 def verify_frontend_continuity_wire() -> None:
     source = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
-    assert "const activeWorkflowId = state.activeWorkflowId" in source
+    # Free-typed follow-ups preserve normal case continuity.  The five fixed
+    # competition probe buttons are intentionally detached so a stale case or
+    # workflow cannot replay the full scripted workflow or contaminate their
+    # labelled BLUE/GREEN/RED/INFEASIBLE result.
+    assert "options.detachWorkflowContext === true" in source
+    assert "detachWorkflowContext: !isWorkflowEntry" in source
+    assert "const parentTaskIdForRequest" in source
     assert "active_workflow_id: activeWorkflowId" in source
+    assert "parent_task_id: parentTaskIdForRequest" in source
     assert "applyCaseContinuityFromPoll(task_id, state_d)" in source
     assert "if (d.context_workflow_id) activeWorkflowId = d.context_workflow_id" in source
     assert "base.liveWorkflows.includes(detectedId)" in source

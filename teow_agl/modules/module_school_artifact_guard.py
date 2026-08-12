@@ -38,6 +38,38 @@ from .module_school_privacy import (
 _TEXT_FILE_TOOLS = {"docx", "report", "fs"}
 _GENERIC_STEMS = {"doc", "document", "report", "draft", "output", "file"}
 
+# User instructions are not case facts.  Keep one anchored command grammar for
+# semantic fact grounding and deterministic artifact fallback so the two
+# layers cannot drift.  The prefix is deliberately anchored: words such as
+# ``state`` and ``make`` remain valid nouns/verbs inside a factual sentence,
+# while ``State ...`` and ``Make ...`` at the start of an operator clause are
+# instructions.  Connectors cover later clauses such as ``..., so omit ...``
+# and ``Also add ...`` after a factual first clause.
+_SCHOOL_OPERATOR_COMMANDS = (
+    "add", "append", "attach", "calculate", "confirm", "contact",
+    "create", "draft", "edit", "estimate", "exclude", "give", "ignore",
+    "include", "leave out", "list", "make", "mention", "omit", "post",
+    "predict", "prepare", "produce", "provide", "publish", "put", "remove",
+    "reveal", "revise", "say", "send", "show", "soften", "specify",
+    "state", "stating", "submit", "tell", "translate", "update", "write",
+    "sediakan", "tulis", "hasilkan", "masukkan", "tambah", "nyatakan",
+    "keluarkan", "hantar", "siarkan", "hubungi", "beritahu", "anggarkan",
+)
+_SCHOOL_OPERATOR_COMMAND_PATTERN = "|".join(
+    sorted((re.escape(item) for item in _SCHOOL_OPERATOR_COMMANDS),
+           key=len, reverse=True)
+)
+SCHOOL_OPERATOR_COMMAND_PREFIX = re.compile(
+    r"(?i)^(?:(?:based\s+on|according\s+to)\b[^,;]{0,100}[,;]\s*)?"
+    r"(?:(?:also|and|then|next|so|but|dan|juga|jadi|lalu)\s+)?"
+    r"(?:please\s+)?(?:" + _SCHOOL_OPERATOR_COMMAND_PATTERN + r")\b"
+)
+SCHOOL_OPERATOR_CLAUSE_SPLIT = re.compile(
+    r"\s*;\s*|,\s*(?=(?:so|and|also|then|but|dan|jadi|lalu)\s+"
+    r"(?:please\s+)?(?:" + _SCHOOL_OPERATOR_COMMAND_PATTERN + r")\b)",
+    re.IGNORECASE,
+)
+
 # Pseudonymous initials are deliberately not treated as ordinary names by the
 # general privacy extractor.  For broad outputs they are identifiers all the
 # same, and exact medication/result literals must not survive an anonymous
@@ -413,6 +445,20 @@ _POLICY_SOCIOECONOMIC_DETAIL = re.compile(
     re.IGNORECASE,
 )
 
+# Malaysian social-title / committee-role facts are also status attributes
+# when a per-action contract excludes socioeconomic or differential treatment.
+# The matcher is intentionally consulted only under that explicit contract, so
+# an ordinary institutional reference to PIBG remains available elsewhere.
+_POLICY_STATUS_ATTRIBUTE_DETAIL = re.compile(
+    r"\b(?:dato['’]?|datuk|datin|tan\s+sri|tunku)\b|"
+    r"\bPIBG\b[^.!?;\n]{0,60}\b(?:chair(?:man|person)?|president|"
+    r"committee\s+member|member)\b|"
+    r"\b(?:chair(?:man|person)?|president|committee\s+member|member)\b"
+    r"[^.!?;\n]{0,60}\bPIBG\b|"
+    r"\b(?:major|generous|large)\s+(?:donor|supporter)\b",
+    re.IGNORECASE,
+)
+
 _POLICY_DIFFERENTIAL_ACTION = re.compile(
     r"\b(?:monitor|watch|track|observe|supervise|check\s+on)\b"
     r"[^.!?;\n]{0,55}\b(?:more\s+closely|closely|more\s+strictly|strictly|"
@@ -520,12 +566,17 @@ def _contains_excluded_socioeconomic_detail(text: str) -> bool:
     return False
 
 
-_EXCLUDED_FACT_ID_HINT = re.compile(
-    r"(?:student|pupil|child|person|name|identifier|family|household|"
-    r"socio|economic|income|welfare|benefit|housing|ppr|occupation|"
-    r"financial|guardian|parent)",
-    re.IGNORECASE,
-)
+def _contains_excluded_status_attribute(text: str) -> bool:
+    """Detect person-level status facts while allowing a generic prohibition."""
+    for clause in _policy_clauses(text):
+        if not _POLICY_STATUS_ATTRIBUTE_DETAIL.search(clause):
+            continue
+        generic_prohibition = bool(_POLICY_PROHIBITION.search(clause))
+        person_specific = bool(_POLICY_PERSON_SPECIFIC.search(clause))
+        if generic_prohibition and not person_specific:
+            continue
+        return True
+    return False
 
 
 def excluded_known_fact_values(action: CandidateAction) -> set[str]:
@@ -555,7 +606,7 @@ def excluded_known_fact_values(action: CandidateAction) -> set[str]:
             continue
         fact_id = str(item.get("fact_id") or "")
         value = str(item.get("value") or "").strip()
-        if not value or not _EXCLUDED_FACT_ID_HINT.search(fact_id):
+        if not value:
             continue
         lowered_id = fact_id.casefold()
         is_person = bool(re.search(
@@ -572,6 +623,9 @@ def excluded_known_fact_values(action: CandidateAction) -> set[str]:
             })
         ) or (
             is_status and "socioeconomic_data" in excluded
+        ) or (
+            "socioeconomic_data" in excluded
+            and _POLICY_STATUS_ATTRIBUTE_DETAIL.search(value)
         ):
             values.add(value)
     return values
@@ -661,10 +715,28 @@ def school_policy_contract_issues(
     ):
         found.append("excluded_socioeconomic_data_reintroduced")
     if (
+        "socioeconomic_data" in excluded
+        and _contains_excluded_status_attribute(text)
+    ):
+        found.append("excluded_status_attribute_reintroduced")
+    if (
         "differential_treatment" in excluded
         and _has_nonnegated_policy_match(_POLICY_DIFFERENTIAL_ACTION, text)
     ):
         found.append("excluded_differential_treatment_reintroduced")
+
+    # A signatory placeholder must never be substituted into a date, time,
+    # place, diagnosis or other fact field.  This is a formatting/epistemic
+    # failure regardless of audience or exclusion concepts.
+    if re.search(
+        r"(?im)^(?:[-*]\s*)?(?:date|time|location|venue|diagnosis|condition|"
+        r"arrival(?:\s+time)?|contact(?:\s+time)?)[^\n:]{0,50}:?\s*"
+        r"TBC\s*-\s*authorised\s+school\s+representative\b|"
+        r"\b(?:date|time|location|venue|diagnosis|condition|arrival)\b"
+        r"[^.!?;\n]{0,80}\bTBC\s*-\s*authorised\s+school\s+representative\b",
+        text,
+    ):
+        found.append("misplaced_authorised_representative_placeholder")
 
     restricted = requires_restricted_staff_boundary(
         source_goal, role=role, metadata=meta,

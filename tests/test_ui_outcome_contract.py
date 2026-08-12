@@ -109,6 +109,17 @@ assert.deepEqual(view.issues, ["The notice exposes individual results."]);
     )
 
 
+def test_dual_governance_headline_names_red_request_and_safe_output_route() -> None:
+    source = APP_JS.read_text(encoding="utf-8")
+    route_section = source[
+        source.index("// route chips"):
+        source.index("// mark CACHE")
+    ]
+    assert "USER REQUEST ${outcomeView.boundaryDecision" in route_section
+    assert "SAFE OUTPUTS ${d.final_route}" in route_section
+    assert "PARTIAL GOVERNED" in route_section
+
+
 def test_pending_green_cover_says_paused_not_unsafe_or_completed() -> None:
     _run_node_assertions(
         r"""

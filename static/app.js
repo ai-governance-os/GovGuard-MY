@@ -395,7 +395,12 @@ async function startTask(options = {}) {
   let goal = goalEl.value.trim();
   if (!goal && !state.attachments.length) return;
   const parentTaskId = state.activeCaseTaskId;
-  const activeWorkflowId = state.activeWorkflowId;
+  const activeWorkflowId = options.detachWorkflowContext === true
+    ? null
+    : (options.contextWorkflowId || state.activeWorkflowId);
+  const parentTaskIdForRequest = options.detachWorkflowContext === true
+    ? null
+    : parentTaskId;
   const submissionSequence = beginTaskSubmission();
 
   // weave attachment context into the goal text so the agent sees the
@@ -421,11 +426,11 @@ async function startTask(options = {}) {
         raw_goal: goal,
         active_workflow_id: activeWorkflowId,
         scripted_workflow_id: options.scriptedWorkflowId || null,
-        parent_task_id: parentTaskId,
-        interaction_mode: (
-          options.direct === true || !state.liveSchoolInputs || !state.liveReady
-            ? "direct" : "review_if_needed"
-        ),
+        parent_task_id: parentTaskIdForRequest,
+        // Open typed input always gets the deterministic school-domain review,
+        // even with no API key.  Only explicit demo buttons choose the direct
+        // route.  Provider use remains independently opt-in and key-gated.
+        interaction_mode: options.direct === true ? "direct" : "review_if_needed",
       }),
     });
     if (!r.ok) throw new Error(await r.text());
@@ -751,7 +756,7 @@ function buildOutcomeView(d) {
   return {
     route, routes, files, executions, verification, verificationSkipped,
     grade, issues, boundary, boundaryDecision, boundaryBlocks, transformations,
-    safeStop, partial, needsRepair, verified, safeFormatOnly, quality,
+    hasSafeAction, safeStop, partial, needsRepair, verified, safeFormatOnly, quality,
     greenState: greenActionState(d),
   };
 }
@@ -1752,6 +1757,14 @@ function renderAgentMessage(node, d) {
             : "");
       routes.appendChild(chip);
     } else if (outcomeView.partial) {
+      if (outcomeView.boundaryBlocks && outcomeView.hasSafeAction
+          && ["BLUE", "GREEN"].includes(String(d.final_route).toUpperCase())) {
+        const actionChip = document.createElement("span");
+        actionChip.className = "chip " + d.final_route;
+        actionChip.textContent = `SAFE OUTPUTS ${d.final_route}`;
+        actionChip.title = "Layer 2: route of the independently governed safe replacement actions.";
+        routes.appendChild(actionChip);
+      }
       const chip = document.createElement("span");
       chip.className = "chip PARTIAL";
       chip.textContent = "PARTIAL GOVERNED";
@@ -3220,9 +3233,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if ($("#run-btn").disabled) return;
     $("#goal").value = b.dataset.prompt;
     autoSizeTextarea($("#goal"));
+    const isWorkflowEntry = b.classList.contains("example-main");
     startTask({
       direct: true,
-      scriptedWorkflowId: b.dataset.workflowId || null,
+      // Only the large entry button may force the configured workflow.
+      // The labelled probes are standalone deterministic governance checks;
+      // they must not inherit/replay a workflow or stale case snapshot.
+      // Free-typed follow-ups still retain normal case continuity.
+      scriptedWorkflowId: isWorkflowEntry ? (b.dataset.workflowId || null) : null,
+      contextWorkflowId: null,
+      detachWorkflowContext: !isWorkflowEntry,
     });
   });
   const dockToggle = $("#demo-dock-toggle");

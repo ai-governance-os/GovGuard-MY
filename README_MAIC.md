@@ -73,11 +73,11 @@ The landing console groups the four demo parts into a three-tier narrative
 
 ## Evidence
 
-- pytest: **1,847** collected across **112 test modules** — **1,839 passed /
+- pytest: **1,868** collected across **113 test modules** — **1,860 passed /
   8 intentional/environment-dependent skipped / 0 failed** in the ordinary grouped run.
-- The `tests/` directory contains **114 Python files** in total, including
+- The `tests/` directory contains **115 Python files** in total, including
   `conftest.py` and `__init__.py`.
-- Browser UI contract suite: **20 / 20 passed** when enabled, including seven conditional browser cases.
+- Browser UI contract suite: **21 / 21 passed** when enabled, including seven conditional browser cases.
 - Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**.
 - Secret scan: **PASS**.
 - Published regression evidence is offline / keyless
