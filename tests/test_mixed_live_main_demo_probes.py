@@ -24,7 +24,7 @@ PROBES = [
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, tmp_path):
     monkeypatch.setenv("TEOW_AGL_PLANNER", "smart_mock")
     monkeypatch.setenv("MAIC_DEMO_MODE", "1")
     monkeypatch.setenv("TEOW_AGL_DOMAIN_PACK", "public_school")
@@ -48,7 +48,43 @@ def client(monkeypatch):
     monkeypatch.setattr(httpx, "post", _forbidden, raising=True)
     monkeypatch.setattr(httpx, "get", _forbidden, raising=True)
     from server import app as server_app
-    return TestClient(server_app.app)
+
+    # Keep these HTTP integration tests hermetic.  Without closing TestClient
+    # and isolating the runtime paths, Linux CI can leave worker threads and
+    # repository state alive long enough to contaminate later governance
+    # tests, even though the individual probe assertions have completed.
+    state_dir = tmp_path / "state"
+    outputs_dir = tmp_path / "outputs"
+    traces_dir = tmp_path / "traces"
+    workspace_dir = tmp_path / "workspace"
+    for path in (state_dir, outputs_dir, traces_dir, workspace_dir):
+        path.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(server_app, "STATE_DIR", state_dir)
+    monkeypatch.setattr(server_app, "OUTPUTS_DIR", outputs_dir)
+    monkeypatch.setattr(server_app, "TRACE_DIR", traces_dir)
+    monkeypatch.setattr(server_app, "WORKSPACE_DIR", workspace_dir)
+    monkeypatch.setattr(
+        server_app, "SUBJECT_CONF_PATH", state_dir / "subject_confidence.jsonl",
+    )
+    monkeypatch.setattr(
+        server_app, "PLAN_CACHE_PATH", state_dir / "plan_cache.jsonl",
+    )
+    monkeypatch.setattr(server_app, "USER_MEMORY_DIR", state_dir / "memory")
+    monkeypatch.setattr(server_app, "SKILLS_DIR", state_dir / "skills")
+    monkeypatch.setattr(server_app, "_tasks_store", server_app.JsonlStore(
+        state_dir / "tasks.jsonl",
+    ))
+
+    with server_app._app_state["lock"]:
+        prior_tasks = dict(server_app._app_state["tasks"])
+    try:
+        with TestClient(server_app.app) as test_client:
+            yield test_client
+    finally:
+        with server_app._app_state["lock"]:
+            server_app._app_state["tasks"].clear()
+            server_app._app_state["tasks"].update(prior_tasks)
 
 
 def _run_probe(client: TestClient, goal: str) -> dict:
