@@ -9,6 +9,7 @@ import pytest
 from teow_agl.models import CandidateAction
 from teow_agl.modules.module_102b_synthesizer import (
     ContentSynthesizer,
+    _repair_bracket_placeholders,
     _school_response_pack_safe_fallback,
 )
 
@@ -142,7 +143,12 @@ class _CompleteBundleProvider:
             for action_id in action_ids
         }
         if self.deterministic_bad_action_id in bodies:
-            bodies[self.deterministic_bad_action_id] += "\n\n[Your Name]"
+            # A markdown code fence trips validate_school_markdown's hygiene
+            # check independently of the 2026-08-18 bracket-placeholder
+            # repair (module_102b_synthesizer._repair_bracket_placeholders),
+            # which now deliberately fixes a lone "[Your Name]" instead of
+            # failing the whole artifact.
+            bodies[self.deterministic_bad_action_id] += "\n\n```"
         return {
             "artifacts": bodies
         }
@@ -190,6 +196,14 @@ def test_large_pack_audits_complete_mapping_once(
 
 
 def test_bundle_level_gap_retains_clean_files_but_not_goal_complete() -> None:
+    repaired = _repair_bracket_placeholders(
+        "Dear [Parent Name],\nPrepared by [Your Name] on [Today's Date]."
+    )
+    assert "[" not in repaired
+    assert "TBC - parent name" in repaired
+    assert "TBC - authorised school representative" in repaired
+    assert "TBC - date" in repaired
+
     actions = [
         _artifact(index, role)
         for index, role in enumerate(ROLES[:7])

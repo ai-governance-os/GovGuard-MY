@@ -426,6 +426,7 @@ async function startTask(options = {}) {
         raw_goal: goal,
         active_workflow_id: activeWorkflowId,
         scripted_workflow_id: options.scriptedWorkflowId || null,
+        deterministic_demo_probe: options.deterministicDemoProbe === true,
         parent_task_id: parentTaskIdForRequest,
         // Open typed input always gets the deterministic school-domain review,
         // even with no API key.  Only explicit demo buttons choose the direct
@@ -3234,6 +3235,13 @@ document.addEventListener("DOMContentLoaded", () => {
     $("#goal").value = b.dataset.prompt;
     autoSizeTextarea($("#goal"));
     const isWorkflowEntry = b.classList.contains("example-main");
+    // deterministicDemoProbe is INDEPENDENT of scriptedWorkflowId: the latter
+    // forces the full configured workflow to replay (must stay off for these
+    // labelled buttons — see 8/11 review), while the former only pins the
+    // goal to the deterministic planner/mock chat-LLM so a Mixed Live config
+    // (DeepSeek + TEOW_AGL_LIVE_SCHOOL_INPUTS=1) can never reinterpret a
+    // fixed BLUE/RED/GREEN/INFEASIBLE probe and drift its route.
+    const isDemoProbe = b.dataset.demoProbe === "true";
     startTask({
       direct: true,
       // Only the large entry button may force the configured workflow.
@@ -3243,6 +3251,7 @@ document.addEventListener("DOMContentLoaded", () => {
       scriptedWorkflowId: isWorkflowEntry ? (b.dataset.workflowId || null) : null,
       contextWorkflowId: null,
       detachWorkflowContext: !isWorkflowEntry,
+      deterministicDemoProbe: isDemoProbe,
     });
   });
   const dockToggle = $("#demo-dock-toggle");

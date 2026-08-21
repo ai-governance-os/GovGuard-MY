@@ -18,6 +18,28 @@ from typing import Any
 from .module_deliverable_mentions import is_requested_output_mention
 
 
+# A custom (user-added, unlabeled-role) deliverable gets its role defaulted
+# independently in two places that never see each other's choice: this
+# module's own _normalise_role() falls back to "school_document" when the
+# caller sends no artifact_role, while module_school_situation.py's response-
+# pack builder falls back to "user_titled_document" for the same "no role
+# given" case. Both mean the same thing — "a generic document with no
+# catalog role" — so evaluate_deliverable_coverage() must treat them as one
+# bucket when matching an obligation to a deliverable, or a legitimately
+# fulfilled custom request reads as MISSING purely from a naming mismatch
+# (2026-08-18 fix; see CLAUDE_HANDOFF_MAIN_DEMO_DETERMINISTIC_PROBE_FIX_20260817.md §10).
+_GENERIC_DOCUMENT_ROLES = frozenset({"school_document", "user_titled_document"})
+
+
+def _roles_match(obligation_role: str, deliverable_role: str) -> bool:
+    if obligation_role == deliverable_role:
+        return True
+    return (
+        obligation_role in _GENERIC_DOCUMENT_ROLES
+        and deliverable_role in _GENERIC_DOCUMENT_ROLES
+    )
+
+
 _DEFAULT_AUDIENCE_BY_ROLE = {
     "private_parent_notice": "private_recipient",
     "school_parent_notice": "school_community",
@@ -599,7 +621,9 @@ def evaluate_deliverable_coverage(
         else:
             same_role = [
                 oid for oid in remaining_ids
-                if obligation_by_id[oid].get("artifact_role") == role
+                if _roles_match(
+                    str(obligation_by_id[oid].get("artifact_role") or ""), role,
+                )
             ]
             if same_role:
                 deliverable_label = (

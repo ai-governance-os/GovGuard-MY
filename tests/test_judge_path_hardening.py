@@ -158,7 +158,37 @@ def test_zero_key_out_of_domain_runs_truthful_http_boundary(monkeypatch):
 
 
 def test_detached_demo_probes_keep_their_labelled_routes_over_http(monkeypatch):
-    client = _keyless_http_client(monkeypatch)
+    # Mirror the Mixed Live launch configuration while proving that labelled
+    # Main Demo probes remain deterministic and never touch the provider.
+    monkeypatch.setenv("TEOW_AGL_PLANNER", "smart_mock")
+    monkeypatch.setenv("MAIC_DEMO_MODE", "1")
+    monkeypatch.setenv("TEOW_AGL_DOMAIN_PACK", "public_school")
+    monkeypatch.delenv("TEOW_AGL_CHAT_LLM", raising=False)
+    monkeypatch.setenv(
+        "OPENAI_API_KEY", "sk-fake-not-a-real-key-00000000000000000000",
+    )
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.deepseek.com/v1")
+    monkeypatch.setenv("OPENAI_MODEL", "deepseek-v4-flash")
+    monkeypatch.setenv("DEEPSEEK_THINKING", "disabled")
+    monkeypatch.setenv(
+        "TEOW_AGL_LIVE_WORKFLOWS",
+        "ad_hoc_school_event_reporting,school_charity_bazaar",
+    )
+    monkeypatch.setenv("TEOW_AGL_LIVE_SCHOOL_INPUTS", "1")
+
+    def _forbidden(*args, **kwargs):
+        raise AssertionError(
+            "a labelled Main Demo probe attempted a live provider call"
+        )
+
+    import httpx
+    monkeypatch.setattr(httpx, "post", _forbidden, raising=True)
+    monkeypatch.setattr(httpx, "get", _forbidden, raising=True)
+    from fastapi.testclient import TestClient
+    client = TestClient(appmod.app)
+    config = client.get("/api/config").json()
+    assert config.get("live_school_inputs") is True
+    assert config.get("live_provider") == "deepseek"
     cases = [
         ("BLUE", (
             "The Singapore Invitational schedule is now confirmed. Please update "
@@ -187,10 +217,13 @@ def test_detached_demo_probes_keep_their_labelled_routes_over_http(monkeypatch):
         started = client.post("/api/tasks", json={
             "interaction_mode": "direct", "raw_goal": goal,
             "active_workflow_id": None, "parent_task_id": None,
+            "deterministic_demo_probe": True,
         })
         assert started.status_code == 200
         state = _wait_http_task(client, started.json()["task_id"])
         assert state.get("final_route") == expected, state
+        assert state.get("planner_mode") == "deterministic", state
+        assert state.get("live_provider") == "deterministic", state
         if expected in {"RED", "INFEASIBLE"}:
             assert not any(
                 item.get("affected_resources")

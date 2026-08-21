@@ -229,6 +229,38 @@ def _repair_unowned_relative_dates(
     return body
 
 
+def _repair_bracket_placeholders(content: str) -> str:
+    """Replace an unfilled template bracket ('[Parent Name]', '[Date]', a
+    generic '[...]') with the field-specific TBC marker the system prompt
+    already requires elsewhere.
+
+    A narrow FORMAT repair, not fact generation: it never adds, removes, or
+    reinterprets a claim, only swaps a leftover template bracket for the TBC
+    convention. Runs before validate_school_markdown's hygiene check so a
+    live bundle that is otherwise well-grounded is not discarded over a
+    cosmetic habit the model falls back into despite being told not to use
+    square brackets at all (2026-08-18 fix — see hardening notes).
+    """
+    body = str(content or "")
+    named = (
+        (r"(?i)\[\s*your\s+name\s*\]", "TBC - authorised school representative"),
+        (r"(?i)\[\s*your\s+position\s*\]", "TBC - role"),
+        (r"(?i)\[\s*parent(?:'s)?\s+name\s*\]", "TBC - parent name"),
+        (r"(?i)\[\s*guardian\s+name\s*\]", "TBC - guardian name"),
+        (r"(?i)\[\s*school\s+name\s*\]", "TBC - school name"),
+        (r"(?i)\[\s*contact\s+information\s*\]", "TBC - contact"),
+        (r"(?i)\[\s*today(?:'s)?\s+date\s*\]", "TBC - date"),
+        (r"(?i)\[\s*insert[^\]]*\]", "TBC"),
+    )
+    for pattern, replacement in named:
+        body = re.sub(pattern, replacement, body)
+    # Anything still bracketed is, per the system prompt, never allowed in
+    # this output at all. Replace generically rather than reject the whole
+    # artifact over a leftover template habit.
+    body = re.sub(r"\[[^\]\n]{2,120}\]", "TBC", body)
+    return body
+
+
 def _audit_claim_is_grounded_or_proposed(
     claim: str, artifact: str, source_request: str,
 ) -> bool:
@@ -3416,6 +3448,7 @@ class ContentSynthesizer:
                         body,
                         source_by_id[action.action_id],
                     ).strip()
+                    body = _repair_bracket_placeholders(body)
                     body = strip_internal_release_control(action, body)
                     mapping[action.action_id] = body
                     checked = validate_school_markdown(
@@ -4790,6 +4823,7 @@ class ContentSynthesizer:
                 max_tokens=3500,
             ) or "").strip()
             body = strip_internal_release_control(action, body)
+            body = _repair_bracket_placeholders(body)
             if not body and _is_live_chat_backend(backend):
                 # Task-local outage circuit: one failed provider call is
                 # enough before the deterministic role fallback.

@@ -147,11 +147,11 @@
         "min_word_count": 30
       },
       "office_doc_generation": {
-        "_doc": "B1 §6 — Word / PowerPoint / Excel direct generation. The light length_check + format_check already verify file existence and word-count when the user asked for a specific length. These scenario sub-rules add: no placeholder text (multi-language), pptx deck has >= 3 slides, xlsx has >= 5 data rows.",
+        "_doc": "B1 §6 — Word / PowerPoint / Excel direct generation. The light length_check + format_check already verify file existence and word-count when the user asked for a specific length. These scenario sub-rules add: no placeholder text (multi-language), pptx deck has >= 3 slides, xlsx has >= 5 data rows. Bare 'placeholder' was dropped 2026-08-18 — it's a substring match with no word-boundary/context awareness, so it false-positived on an honest sentence like 'contains TBC placeholders' describing the draft's own unfilled fields. The remaining entries (lorem ipsum, fill in here, <content here>, …) are unambiguous unfilled-template tells that never appear in genuine prose.",
         "forbid_placeholders": [
           "<content here>", "<body here>", "to be filled",
           "sample text", "lorem ipsum", "tbd", "todo",
-          "placeholder", "generated content here", "fill in here",
+          "generated content here", "fill in here",
           "占位", "待补充", "待填写", "示例文本", "样例文本",
           "<内容>", "（请补充）", "（待补充）"
         ],
@@ -159,11 +159,11 @@
         "xlsx_min_rows": 5
       },
       "report_generation": {
-        "_doc": "Same rules as office_doc_generation — a 'report' task and an 'office_doc' task both produce a file via docx/pptx/xlsx; the distinction lives only in the classifier keywords.",
+        "_doc": "Same rules as office_doc_generation — a 'report' task and an 'office_doc' task both produce a file via docx/pptx/xlsx; the distinction lives only in the classifier keywords. Bare 'placeholder' dropped 2026-08-18 (see office_doc_generation._doc for why).",
         "forbid_placeholders": [
           "<content here>", "<body here>", "to be filled",
           "sample text", "lorem ipsum", "tbd", "todo",
-          "placeholder", "generated content here", "fill in here",
+          "generated content here", "fill in here",
           "占位", "待补充", "待填写", "示例文本", "样例文本",
           "<内容>", "（请补充）", "（待补充）"
         ],
@@ -215,7 +215,7 @@
         ],
         "forbid_placeholders": [
           "to be filled", "lorem ipsum", "tbd", "todo",
-          "placeholder", "fill in here",
+          "fill in here",
           "占位", "待补充", "待填写", "（待补充）"
         ],
         "min_word_count": 200
@@ -241,7 +241,7 @@
         ],
         "forbid_placeholders": [
           "to be filled", "lorem ipsum", "tbd", "todo",
-          "placeholder", "fill in here", "(source)", "(citation)",
+          "fill in here", "(source)", "(citation)",
           "[source]", "[citation needed]",
           "占位", "待补充", "待填写", "（待补充）"
         ],

@@ -1271,8 +1271,13 @@ class Runtime:
             else:
                 # _on_red appends decision to result.decisions internally
                 self._on_red(envelope, decision, result)
-            # record the category outcome
-            if self.subject_confidence is not None:
+            # record the category outcome — but never for a labelled Main
+            # Demo probe (2026-08-18 fix): a probe's RED/INFEASIBLE outcome
+            # must not feed subject_confidence, or repeated probe clicks
+            # alone could make a category "confident" and unlock a plan_cache
+            # read/write for a later, unrelated open-input request.
+            if (self.subject_confidence is not None
+                    and not envelope.metadata.get("deterministic_demo_probe")):
                 self.subject_confidence.record(
                     category=pre.task_category,
                     outcome="infeasible" if is_infeasible else "failure",
@@ -1539,6 +1544,11 @@ class Runtime:
             # cached answer here can answer a pupil-support question with an
             # unrelated prior shape, so always let the live planner see them.
             and not envelope.metadata.get("school_semantics_checked")
+            # A labelled Main Demo probe is a fixed governance contract test:
+            # it must always be planned fresh, never served from a cache
+            # entry another (possibly unrelated) task shape wrote earlier.
+            # 2026-08-18 fix — see handoff doc §11.
+            and not envelope.metadata.get("deterministic_demo_probe")
             and self.subject_confidence.is_confident(pre.task_category)
         ):
             cached = self.plan_cache.lookup(category=pre.task_category)
@@ -3710,6 +3720,10 @@ class Runtime:
         if (self.plan_cache is not None
                 and self.subject_confidence is not None
                 and not envelope.metadata.get("school_semantics_checked")
+                # Same probe isolation as the EXECUTE_DIRECT gate above —
+                # a probe's decomposition path must never be steered by
+                # another task shape's cache entry (2026-08-18 fix).
+                and not envelope.metadata.get("deterministic_demo_probe")
                 and self.subject_confidence.is_confident(pre.task_category)
                 and self.plan_cache.lookup(category=pre.task_category)):
             return False
@@ -3934,6 +3948,12 @@ class Runtime:
             return
         category = pre.task_category
         if not category:
+            return
+        # A labelled Main Demo probe never feeds subject_confidence or
+        # plan_cache (both are recorded further below in this same
+        # function) — see the EXECUTE_DIRECT read-gate for why (2026-08-18
+        # fix, handoff doc §11).
+        if envelope.metadata.get("deterministic_demo_probe"):
             return
 
         has_red = any(d.route == "RED" for d in result.decisions)

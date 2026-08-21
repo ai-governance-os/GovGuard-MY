@@ -449,13 +449,17 @@ def _school_semantics_for_goal(
     active_workflow_id: str | None = None,
     active_case_context: dict | None = None,
     scripted_workflow_id: str | None = None,
+    deterministic_demo_probe: bool = False,
     force_school_review: bool = False,
 ) -> dict:
     """Interpret an open school input once before choosing the planner tier."""
     # Judge-clicked scripted prompts deliberately keep the reproducible
     # configured workflow. Ordinary typed text must not be captured merely
     # because it contains one of that workflow's trigger phrases.
-    if scripted_workflow_id:
+    # A labelled Main Demo probe carries no scripted_workflow_id (it must
+    # not replay the full workflow) but still must not be handed to a live
+    # model for reinterpretation — deterministic_demo_probe covers that.
+    if scripted_workflow_id or deterministic_demo_probe:
         return {}
     if not (
         active_workflow_id
@@ -527,7 +531,13 @@ def _goal_runs_live(
     active_workflow_id: str | None = None,
     school_semantics: dict | None = None,
     scripted_workflow_id: str | None = None,
+    deterministic_demo_probe: bool = False,
 ) -> bool:
+    # A labelled Main Demo probe is a fixed governance contract test — it
+    # must never upgrade to a live planner/chat-LLM, regardless of Mixed
+    # Live config, or its route stops being reproducible for judges.
+    if deterministic_demo_probe:
+        return False
     live = _live_workflow_ids()
     if not live and not _live_school_inputs_enabled():
         return False
@@ -572,6 +582,7 @@ def _make_runtime_for_goal(
     active_workflow_id: str | None = None,
     school_semantics: dict | None = None,
     scripted_workflow_id: str | None = None,
+    deterministic_demo_probe: bool = False,
 ) -> tuple[Runtime, str]:
     """Build the per-task runtime, upgrading planner + chat LLM to the live
     API when the goal resolves to a live-listed workflow. ALL construction is
@@ -582,6 +593,7 @@ def _make_runtime_for_goal(
         active_workflow_id=active_workflow_id,
         school_semantics=school_semantics,
         scripted_workflow_id=scripted_workflow_id,
+        deterministic_demo_probe=deterministic_demo_probe,
     )
     with _RUNTIME_BUILD_LOCK:
         if not live:
@@ -724,6 +736,14 @@ class StartTaskRequest(BaseModel):
     backup_status: str | None = None
     active_workflow_id: str | None = None
     scripted_workflow_id: str | None = None
+    # Distinct from scripted_workflow_id: that field forces the FULL
+    # configured multi-step workflow to replay (module_102w). This flag
+    # only pins the goal to the deterministic planner/chat-LLM and skips
+    # live school-semantics reinterpretation — it does not touch workflow
+    # resolution. Used by the Main Demo's five labelled BLUE/RED/GREEN/
+    # INFEASIBLE probes so they stay reproducible under Mixed Live without
+    # replaying the whole scripted workflow (see 2026-08-17 routing fix).
+    deterministic_demo_probe: bool = False
     interaction_mode: str = "direct"
     parent_task_id: str | None = None
     clarification_answers: dict = Field(default_factory=dict)
@@ -953,6 +973,7 @@ def start_task(req: StartTaskRequest) -> dict:
                 active_workflow_id=req.active_workflow_id,
                 active_case_context=candidate_parent_context,
                 scripted_workflow_id=req.scripted_workflow_id,
+                deterministic_demo_probe=req.deterministic_demo_probe,
                 force_school_review=(
                     req.interaction_mode == "review_if_needed"
                 ),
@@ -987,6 +1008,7 @@ def start_task(req: StartTaskRequest) -> dict:
             active_workflow_id=req.active_workflow_id,
             school_semantics=school_semantics,
             scripted_workflow_id=req.scripted_workflow_id,
+            deterministic_demo_probe=req.deterministic_demo_probe,
         )
         probe_envelope = rt.intake.receive(
             raw_goal=req.raw_goal,
@@ -1070,6 +1092,14 @@ def start_task(req: StartTaskRequest) -> dict:
 
         try:
             metadata = {}
+            # A labelled Main Demo probe must never read from or write to
+            # plan_cache/subject_confidence — those learning stores are
+            # keyed by task_category, not by scripted-vs-open origin, so a
+            # probe run can otherwise silently replay (read) or pollute
+            # (write) the same cache an open-input request would later hit.
+            # See CLAUDE_HANDOFF_MAIN_DEMO_DETERMINISTIC_PROBE_FIX_20260817.md §11.
+            if req.deterministic_demo_probe:
+                metadata["deterministic_demo_probe"] = True
             if req.scripted_workflow_id:
                 metadata["forced_workflow_id"] = req.scripted_workflow_id
             if school_semantics:
