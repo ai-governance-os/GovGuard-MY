@@ -57,7 +57,10 @@ from .module_school_artifact_guard import (
 )
 from .module_school_privacy import requires_broad_redaction
 from .module_school_case_context import grounding_negation_consistent
-from .module_school_fallback_floors import deterministic_incident_facets
+from .module_school_fallback_floors import (
+    deterministic_incident_facets,
+    resolve_relative_date_phrase,
+)
 
 
 # Tools whose metadata is content-bearing. (tool, operation_prefix) match.
@@ -261,6 +264,416 @@ def _repair_bracket_placeholders(content: str) -> str:
     return body
 
 
+# 2026-08-21 fix: the deterministic safe-fallback template hardcoded "TBC"
+# for date/time regardless of whether the source actually gave one — even
+# though the same function already has a `grounded()` mechanism for other
+# fields. Location is deliberately left out: free-text location has no
+# reliable pattern, and a bad regex match reads worse than an honest TBC.
+_MONTH_NAMES_RE = (
+    r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|"
+    r"Nov(?:ember)?|Dec(?:ember)?"
+)
+_EXPLICIT_DATE_PATTERNS = (
+    # "20-22 June 2026" / "20 June 2026" — day (optionally a day range) + month + year.
+    re.compile(
+        rf"\b\d{{1,2}}(?:st|nd|rd|th)?(?:\s*[-–—]\s*\d{{1,2}}(?:st|nd|rd|th)?)?"
+        rf"\s+(?:{_MONTH_NAMES_RE})\s+\d{{4}}\b",
+        re.IGNORECASE,
+    ),
+    # "June 15, 2026" / "June 15 2026"
+    re.compile(
+        rf"\b(?:{_MONTH_NAMES_RE})\s+\d{{1,2}}(?:st|nd|rd|th)?,?\s+\d{{4}}\b",
+        re.IGNORECASE,
+    ),
+    # "15-6-2026" / "15/06/2026"
+    re.compile(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b"),
+)
+_TIME_PATTERN = re.compile(
+    r"\b(?:[01]?\d|2[0-3])[:.][0-5]\d\s*(?:[ap]\.?m\.?)?\b", re.IGNORECASE,
+)
+
+
+def _extract_time_field(source_text: str) -> str:
+    """A literal, reported time — never inferred, only echoed if present."""
+    match = _TIME_PATTERN.search(str(source_text or ""))
+    return f"{match.group(0).strip()} (reported)" if match else ""
+
+
+# 2026-08-21: "Location: TBC" directly under an Incident snapshot quoting
+# "part of ceiling in year 4 classroom" reads as a contradiction. Bounded
+# on purpose: it matches only a closed vocabulary of school place nouns, so
+# every value it can produce is a phrase literally present in the source —
+# which also keeps it inside validate_school_markdown's token-subset
+# grounding check. It cannot invent a place the source never named.
+_SCHOOL_PLACE_NOUNS = (
+    r"classroom|class\s*room|hall|dewan|field|padang|canteen|kantin|"
+    r"library|perpustakaan|laborator\w+|makmal|office|pejabat|"
+    r"staircase|stairs|tangga|corridor|koridor|playground|surau|"
+    r"gym\w*|toilet|tandas|car\s*park|assembly\s+area"
+)
+_LOCATION_QUALIFIER = (
+    r"(?:year\s*\d+|tahun\s*\d+|upper|lower|main|school|primary|secondary)\s+"
+)
+_LOCATION_PATTERN = re.compile(
+    rf"\b(?:in|at|inside|near|outside)\s+(?:the\s+)?"
+    rf"((?:{_LOCATION_QUALIFIER})*(?:{_SCHOOL_PLACE_NOUNS}))",
+    re.IGNORECASE,
+)
+
+
+_DATE_FIELD_LINE = re.compile(
+    # Label may be plain ("Date:"), bolded before the colon ("**Date**:")
+    # or bolded across it ("**Date:**"); the whole label including any
+    # closing markup stays in group 1 so only the VALUE is replaced.
+    r"(?mi)^(\s*(?:[-*]\s*)?(?:\*\*)?"
+    r"date(?:\s+of\s+(?:incident|the\s+incident))?"
+    r"(?:\*\*)?\s*:\s*(?:\*\*)?\s*)([^\n]+)$"
+)
+
+
+def _resolve_relative_dates_in_body(content: str, source_text: str) -> str:
+    """Fill the real calendar date into a date field the live model left as
+    a relative phrase ("Date: 2 days ago (reported; exact date TBC)").
+
+    Runs AFTER deterministic validation and the semantic audit have already
+    accepted the draft, deliberately: the model reliably declines to do this
+    arithmetic itself, and rewriting the value before the audit made the
+    LLM auditor flag its own system's resolved date as unsupported
+    (2026-08-21). Doing it last is safe by construction — it only rewrites a
+    line that is already a date field AND whose value literally contains the
+    relative phrase present in that artifact's own source, so it can never
+    introduce a date the source did not imply.
+    """
+    resolved = resolve_relative_date_phrase(source_text)
+    if not resolved:
+        return content
+    value, phrase = resolved
+    body = str(content or "")
+    if value.casefold() in body.casefold():
+        return body  # already carries the resolved date
+
+    def _fill(match: "re.Match[str]") -> str:
+        label, current = match.group(1), match.group(2)
+        if not re.search(rf"\b{re.escape(phrase)}\b", current, re.IGNORECASE):
+            return match.group(0)
+        return f"{label}{value} (resolved from '{phrase}')"
+
+    return _DATE_FIELD_LINE.sub(_fill, body)
+
+
+def _extract_location_field(source_text: str) -> str:
+    """Echo a school place phrase the source itself names. Returns "" when
+    the source names no recognised place, so the caller keeps TBC."""
+    text = str(source_text or "")
+    match = _LOCATION_PATTERN.search(text)
+    if not match:
+        # "part of ceiling in year 4 classroom fall" also appears without a
+        # leading preposition in terse operator notes.
+        bare = re.search(
+            rf"\b((?:year\s*\d+|tahun\s*\d+)\s+(?:{_SCHOOL_PLACE_NOUNS}))(?!\w)",
+            text, re.IGNORECASE,
+        )
+        if not bare:
+            return ""
+        value = bare.group(1)
+    else:
+        value = match.group(1)
+    value = re.sub(r"\s+", " ", value).strip()
+    return f"{value} (reported)" if value else ""
+
+
+def _extract_date_field(source_text: str) -> str:
+    """An explicit date if the source states one; otherwise a relative
+    phrase ('today' / 'yesterday' / 'N days ago') resolved against the
+    real current date. Both are objective — an explicit date is echoed
+    verbatim, a relative phrase is deterministic arithmetic on the actual
+    clock — never a guess, so this stays inside the same "only ground
+    truth, no invention" contract as the rest of this fallback template.
+    """
+    text = str(source_text or "")
+    for pattern in _EXPLICIT_DATE_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            return f"{match.group(0).strip()} (reported)"
+    resolved = resolve_relative_date_phrase(text)
+    if resolved:
+        value, phrase = resolved
+        return f"{value} (resolved from '{phrase}')"
+    return ""
+
+
+def _partial_date_time_location_bullet(
+    date_field: str, time_field: str, all_tbc_label: str, *,
+    location_field: str = "", include_status: bool = False,
+) -> str:
+    """One combined 'date, time and location' bullet. Falls back to the
+    original all-TBC wording verbatim when nothing was extracted, so an
+    empty result never LOOKS different from the pre-2026-08-21 behaviour."""
+    if not date_field and not time_field and not location_field:
+        return f"- {all_tbc_label}: TBC"
+    parts = [f"Date: {date_field or 'TBC'}", f"Time: {time_field or 'TBC'}",
+             f"Location: {location_field or 'TBC'}"]
+    if include_status:
+        parts.append("Current status: TBC")
+    return "- " + " · ".join(parts)
+
+
+def _today_display_date() -> str:
+    """Today's real date in the same format the fallback template uses, so
+    the live writer and the deterministic template can't disagree."""
+    from datetime import datetime
+    return datetime.now().strftime("%d %B %Y")
+
+
+# 2026-08-21: the retry feedback used to hand the model raw machine labels
+# ("act_x:grounding:emergency_services_contacted_or_arrived"). It could not
+# tell what to change, so attempt 2 reproduced attempt 1's exact mistake —
+# wasting a full API round-trip per artifact and still falling back. These
+# translations change NOTHING about what is rejected; they only say, in
+# plain language, which sentence to remove.
+_GROUNDING_ISSUE_GUIDANCE = {
+    "emergency_services_contacted_or_arrived":
+        "Remove every sentence claiming emergency services, an ambulance, "
+        "paramedics or first responders were contacted, called, arrived or "
+        "attended. The source never says this happened. Write "
+        "'Emergency services contacted: TBC' instead.",
+    "student_transported_or_admitted":
+        "Remove every claim that anyone was transported, taken to hospital "
+        "or admitted. The source never says this happened. Write "
+        "'Medical transport/admission: TBC' instead.",
+    "incident_reported_to_school_claimed":
+        "Remove every claim that the incident was already reported to the "
+        "school, a teacher or an administrator. The source never says this "
+        "happened. Write 'Reported to: TBC' instead.",
+    "information_gathering_already_underway":
+        "Remove every claim that information gathering, fact-finding or "
+        "statement collection is already in progress. Phrase it as a "
+        "proposed next step instead.",
+    "investigation_or_authority_coordination_underway":
+        "Remove every claim that an investigation or coordination with "
+        "authorities is already under way. Phrase it as a proposed next "
+        "step instead.",
+    "review_or_verification_underway":
+        "Remove every claim that a review or verification is already in "
+        "progress or 'ongoing'. Phrase it as a proposed next step instead.",
+    "necessary_steps_already_underway":
+        "Remove every claim that the school is already taking the necessary "
+        "steps. Phrase each step as proposed, subject to school approval.",
+    "future_update_commitment":
+        "Remove every promise that updates will be provided or that the "
+        "school will keep anyone informed. The source never asked for that "
+        "commitment.",
+    "unsupported_monitoring_commitment":
+        "Remove every promise to monitor or keep monitoring. The source "
+        "never asked for that commitment.",
+    "unsupported_relative_date":
+        "Remove the relative day word ('today' / 'earlier today') — it is "
+        "not in the source request.",
+    "unsupported_location":
+        "Remove the specific location you added; the source did not name "
+        "it. Write 'Location: TBC' instead.",
+    "unsupported_date_of_incident":
+        "Remove the incident date you added; the source did not state it. "
+        "Write 'Date of incident: TBC' instead.",
+    "unsupported_time_of_incident":
+        "Remove the incident time you added; the source did not state it. "
+        "Write 'Time of incident: TBC' instead.",
+    "unsupported_response_timing_adverb":
+        "Remove 'promptly' / 'immediately' from the reported action; the "
+        "source did not describe the timing that way.",
+    "square_bracket_placeholder_present":
+        "Remove every square-bracket placeholder such as [Parent Name]; "
+        "use a field-specific TBC value instead.",
+    "generic_bracket_placeholder_present":
+        "Remove every generic bracket placeholder; use a field-specific "
+        "TBC value instead.",
+}
+
+
+def _explain_validation_issues(issues: list[str]) -> str:
+    """Append plain-language repair instructions for any issue whose raw
+    label the model cannot be expected to interpret. Unknown labels are
+    passed through untouched, so this can never hide a rejection."""
+    seen: list[str] = []
+    for raw in issues:
+        # Labels arrive as "action_id:layer:label" or "layer:label".
+        key = str(raw).rsplit(":", 1)[-1].strip()
+        guidance = _GROUNDING_ISSUE_GUIDANCE.get(key)
+        if guidance and guidance not in seen:
+            seen.append(guidance)
+    if not seen:
+        return ""
+    return (
+        "\n\nWHAT TO CHANGE (plain language — the checks above are "
+        "mechanical, these are the actual edits required):\n- "
+        + "\n- ".join(seen)
+    )
+
+
+# Reader-facing counterpart of _GROUNDING_ISSUE_GUIDANCE above. That table
+# is phrased as retry instructions TO THE MODEL ("Remove X..."); this one is
+# phrased as an explanation TO A HUMAN reading the finished artifact of what
+# the AI's draft got wrong, sharing the same issue-label keys so the two
+# never drift apart.
+_GROUNDING_ISSUE_USER_EXPLANATION = {
+    "emergency_services_contacted_or_arrived":
+        "the draft said emergency services, an ambulance or first "
+        "responders had already been contacted or arrived, but the "
+        "original report never said that",
+    "student_transported_or_admitted":
+        "the draft said a student had already been transported or "
+        "admitted to hospital, but the original report never said that",
+    "incident_reported_to_school_claimed":
+        "the draft said the incident had already been reported to the "
+        "school or a teacher, but the original report never said that",
+    "information_gathering_already_underway":
+        "the draft said fact-finding was already under way, rather than "
+        "proposed as a next step",
+    "investigation_or_authority_coordination_underway":
+        "the draft said an investigation or authority coordination was "
+        "already under way, rather than proposed as a next step",
+    "review_or_verification_underway":
+        "the draft said a review or verification was already in "
+        "progress, rather than proposed as a next step",
+    "necessary_steps_already_underway":
+        "the draft said the school was already taking the necessary "
+        "steps, rather than proposing them subject to approval",
+    "future_update_commitment":
+        "the draft promised future updates that were never asked for",
+    "unsupported_monitoring_commitment":
+        "the draft promised ongoing monitoring that was never asked for",
+    "unsupported_relative_date":
+        "the draft used a relative day word such as 'today' that is not "
+        "in the original report",
+    "unsupported_location":
+        "the draft named a specific location the original report never "
+        "gave",
+    "unsupported_date_of_incident":
+        "the draft stated an incident date the original report never "
+        "gave",
+    "unsupported_time_of_incident":
+        "the draft stated an incident time the original report never "
+        "gave",
+    "unsupported_response_timing_adverb":
+        "the draft added timing words like 'promptly' or 'immediately' "
+        "that the original report never used",
+    "square_bracket_placeholder_present":
+        "the draft left an unfilled placeholder such as [Parent Name]",
+    "generic_bracket_placeholder_present":
+        "the draft left a generic unfilled placeholder",
+}
+
+
+def explain_school_generation_reason(validation: dict) -> str:
+    """Plain-language explanation of why ONE specific school artifact used
+    a safe/deterministic template instead of (or alongside) the live
+    model's own draft.
+
+    Reads the exact same ``school_generation_validation`` metadata that
+    ``_school_generation_mode()`` in server/app.py already aggregates
+    task-wide into one UI chip — this just does it per artifact, in prose,
+    for a human reader. It is purely a read of already-computed data: it
+    never mutates ``validation``, never re-runs a check, and never changes
+    which content was actually chosen for the artifact.
+
+    Returns "" when there is nothing to explain (the artifact was fully
+    live-verified, or the metadata is an internal transient state), so
+    callers can omit the badge entirely rather than show an empty one.
+    """
+    if not validation:
+        return ""
+    mode = str(validation.get("mode") or "")
+    if mode in {
+        "plan_level_action_id_mapping",
+        "plan_level_batched_action_id_mapping",
+        "plan_level_action_id_mapping_pending_bundle_audit",
+        # "partial_bundle_retained" keeps THIS file's own live draft as-is
+        # (only a cosmetic date substitution may run over it) — it is
+        # never itself a template, even when a sibling file elsewhere in
+        # the same pack caused a bundle-level completeness flag. Badging
+        # it "why a template?" would be false: this file is not one.
+        "partial_bundle_retained",
+    }:
+        return ""
+
+    # Issues attributed to THIS file's own draft (as opposed to a pack-
+    # level completeness gap in ``bundle_audit_issues`` below) — only these
+    # justify saying "the AI's own draft did not pass".
+    own_issues = list(
+        validation.get("live_bundle_issues") or validation.get("issues") or []
+    )
+    seen: list[str] = []
+    for raw in own_issues:
+        key = str(raw).rsplit(":", 1)[-1].strip()
+        guidance = _GROUNDING_ISSUE_USER_EXPLANATION.get(key)
+        if guidance and guidance not in seen:
+            seen.append(guidance)
+    if seen:
+        return (
+            "The AI's own draft did not pass an automatic accuracy check, "
+            "so a safe template was used instead — "
+            + "; ".join(seen) + "."
+        )
+    if own_issues:
+        # No plain-language mapping for these specific labels — show the
+        # raw machine checks rather than staying silent about them.
+        readable = [
+            str(item).rsplit(":", 1)[-1].replace("_", " ")
+            for item in own_issues[:5]
+        ]
+        return (
+            "The AI's own draft did not pass an automatic accuracy check, "
+            "so a safe template was used instead (checks: "
+            + ", ".join(readable) + ")."
+        )
+    if "similarity" in mode:
+        return (
+            "This file's draft was too similar to another file in the "
+            "same response pack, so a safe template was used to keep "
+            "every document distinct."
+        )
+    if mode in {"provider_circuit_fallback", "deterministic_fast_path_failure"}:
+        return (
+            "The live AI service was unavailable or failed, so a safe "
+            "template was used instead."
+        )
+    if "deterministic" in mode or "fallback" in mode:
+        return (
+            "This file did not pass an automatic accuracy check, so a "
+            "safe template was used instead of the AI's own wording."
+        )
+    return ""
+
+
+def _operator_representative_name() -> str:
+    """Optional per-deployment name for the 'authorised school
+    representative' signature / contact-person fields.
+
+    This system is single-operator by design (one instance per school), so
+    naming the actual person running this session is identifying the
+    operator, not fabricating a case fact — unlike the date/time fields
+    above, this is deployment config, not extracted from the request.
+    Unset by default: production/submission behaviour is unchanged (stays
+    "TBC - authorised school representative"). Set TEOW_AGL_OPERATOR_NAME
+    to override for a specific demo/pilot run.
+    """
+    return os.environ.get("TEOW_AGL_OPERATOR_NAME", "").strip()
+
+
+def _representative_signoff() -> str:
+    name = _operator_representative_name()
+    return f"{name}\nAuthorised school representative" if name \
+        else "TBC - authorised school representative"
+
+
+def _contact_person_bullet() -> str:
+    name = _operator_representative_name()
+    if not name:
+        return "- School contact person and return number: TBC"
+    return f"- School contact person: {name} · Return number: TBC"
+
+
 def _audit_claim_is_grounded_or_proposed(
     claim: str, artifact: str, source_request: str,
 ) -> bool:
@@ -444,6 +857,12 @@ def _school_response_pack_safe_fallback(
         return text[:limit]
 
     raw_source_text = str(source_goal or "")
+    # 2026-08-21 fix: extract a reported/resolved date+time up front so the
+    # role bodies below can use a real value instead of a hardcoded TBC.
+    # Never touches location — see the helpers' own docstrings for why.
+    fallback_date_field = _extract_date_field(raw_source_text)
+    fallback_time_field = _extract_time_field(raw_source_text)
+    fallback_location_field = _extract_location_field(raw_source_text)
 
     def anonymous_class_average_statement(value: str) -> str:
         """Keep only an explicitly aggregate result from a mixed source.
@@ -717,12 +1136,30 @@ def _school_response_pack_safe_fallback(
                 )
     unknowns: list[str] = []
 
-    def unknown_label(value: Any) -> str:
+    def unknown_label(value: Any, impact: Any = None) -> str:
         raw = clean(value or "case_detail", 100).strip().lower()
-        if re.fullmatch(r"(?:f|fact|unknown)\d+", raw) or raw in {
+        # 2026-08-21: the compiler emits opaque ids like "fact_4"/"fact 4"
+        # (the original guard only caught the unseparated "fact4", so these
+        # reached the reader verbatim as "Fact 4: TBC" — the verifier itself
+        # flags those as non-meaningful placeholders). When the id carries no
+        # meaning, fall back to its `impact`, which does.
+        if re.fullmatch(r"(?:f|fact|unknown)[\s_-]*\d+", raw) or raw in {
             "fact", "unknown", "case_detail",
         }:
-            return "Additional case detail"
+            by_impact = {
+                "life_safety":
+                    "Whether anyone still needs urgent help or medical care",
+                "governance_boundary":
+                    "Who authorised this and what may be shared",
+                "required_deliverables":
+                    "Which documents the school actually needs",
+                "external_contact":
+                    "Which external party has actually been contacted",
+                "student_welfare":
+                    "The affected pupil's current condition and support needs",
+            }
+            key = clean(impact or "", 60).strip().lower()
+            return by_impact.get(key, "Additional case detail")
         labels = {
             "urgent_help_or_danger_still_present": (
                 "Whether immediate danger or unmet urgent help remains"
@@ -739,7 +1176,7 @@ def _school_response_pack_safe_fallback(
 
     for item in (meta.get("school_unknowns") or [])[:10]:
         if isinstance(item, dict):
-            fact_id = unknown_label(item.get("fact_id"))
+            fact_id = unknown_label(item.get("fact_id"), item.get("impact"))
             candidate = fact_id
             if allowed_by_action_contract(candidate):
                 unknowns.append(f"- {fact_id}: TBC")
@@ -750,7 +1187,12 @@ def _school_response_pack_safe_fallback(
     if not facts:
         facts = ["- Confirmed case facts available to this draft: TBC"]
     if not unknowns:
-        unknowns = ["- Date, time, exact location and current status: TBC"]
+        unknowns = [_partial_date_time_location_bullet(
+            fallback_date_field, fallback_time_field,
+            "Date, time, exact location and current status",
+            location_field=fallback_location_field,
+            include_status=True,
+        )]
     if restricted_broad:
         facts = [
             "- No individual student name, mark, health, discipline, weakness "
@@ -974,8 +1416,10 @@ def _school_response_pack_safe_fallback(
         "internal_incident_report": (
             "## Incident snapshot\n\n"
             f"User-reported case: {safe_summary}\n\n"
-            "- Date of incident: TBC\n- Time of incident: TBC\n"
-            "- Location: TBC\n- Person or people affected: TBC\n\n"
+            f"- Date of incident: {fallback_date_field or 'TBC'}\n"
+            f"- Time of incident: {fallback_time_field or 'TBC'}\n"
+            f"- Location: {fallback_location_field or 'TBC'}\n"
+            "- Person or people affected: TBC\n\n"
             "## Known-fact register\n\n" + facts_block + "\n\n"
             "## Information still required\n\n" + unknowns_block + "\n\n"
             "## Action and decision record\n\n"
@@ -995,14 +1439,14 @@ def _school_response_pack_safe_fallback(
             "by this system.\n\n"
             "## Information for the family\n\n"
             "- Child's present condition: TBC\n- Care or assistance provided: TBC\n"
-            "- Exact date, time and location: TBC\n"
-            "- School contact person and return number: TBC\n\n"
+            f"{_partial_date_time_location_bullet(fallback_date_field, fallback_time_field, 'Exact date, time and location', location_field=fallback_location_field)}\n"
+            f"{_contact_person_bullet()}\n\n"
             "## Missing or unverified case details\n\n"
             + unknowns_block + "\n\n"
             "Please use the confirmed school contact channel for urgent questions. "
             "This text is a preparation draft only; it does not claim that a "
             "message, call or update has already been made.\n\n"
-            "Yours sincerely,\n\nTBC - authorised school representative"
+            f"Yours sincerely,\n\n{_representative_signoff()}"
         ),
         "school_parent_notice": (
             (
@@ -1024,7 +1468,7 @@ def _school_response_pack_safe_fallback(
             "facts above. Any missing operational detail is TBC. This is a draft; "
             "it has not been posted to a WhatsApp group or otherwise released."
             + (
-                "\n\nYours faithfully,\n\nTBC - authorised school representative"
+                f"\n\nYours faithfully,\n\n{_representative_signoff()}"
                 if str(meta.get("channel") or "").lower() == "email"
                 else ""
             )
@@ -1036,7 +1480,7 @@ def _school_response_pack_safe_fallback(
             f"## Reported event\n\n{safe_summary}\n\n"
             "## Handover fields\n\n"
             "- Student identity confirmed by authorised staff: TBC\n"
-            "- Date, time and exact location: TBC\n"
+            f"{_partial_date_time_location_bullet(fallback_date_field, fallback_time_field, 'Date, time and exact location', location_field=fallback_location_field)}\n"
             "- Symptoms, injury site and observed changes: TBC\n"
             "- First aid or other action actually given: TBC\n"
             "- Allergies, medication and known conditions: TBC\n"
@@ -3322,6 +3766,12 @@ class ContentSynthesizer:
             "canteen, classroom, or other location; use Location: TBC. Do not add "
             "'promptly' or 'immediately' to a reported action unless supplied. "
             "Do not assign blame.\n\n"
+            "RELATIVE DATE RULE: if source_request says 'today', "
+            "'yesterday' or 'N days ago', keep that phrase exactly as the "
+            "source wrote it. Do NOT convert it to a calendar date — the "
+            "governed runtime fills the real date in afterwards from the "
+            "system clock. Writing a calendar date the source never spelled "
+            "out makes the draft fail fact-grounding (2026-08-21).\n\n"
             "EPISTEMIC STATUS RULE: keep three classes visibly separate: "
             "(1) facts stated in source_request, (2) unknown or unverified "
             "details marked TBC, and (3) new planning ideas marked "
@@ -3507,6 +3957,8 @@ class ContentSynthesizer:
             if not issues:
                 for action in artifacts:
                     body = str(mapping[action.action_id]).strip()
+                    body = _resolve_relative_dates_in_body(
+                        body, source_by_id[action.action_id])
                     action.metadata["content"] = body
                     action.metadata["synthesis_skip"] = True
                     action.metadata["school_generation_failed"] = False
@@ -3587,6 +4039,7 @@ class ContentSynthesizer:
                 "Repair every listed issue without adding facts or changing "
                 "action ids. Replace the rejected drafts; do not repeat their "
                 "unsupported process language:\n- " + "\n- ".join(issues[:20])
+                + _explain_validation_issues(issues[:20])
                 + "\n\nPREVIOUS REJECTED ARTIFACTS:\n"
                 + json.dumps(
                     {
@@ -3638,7 +4091,8 @@ class ContentSynthesizer:
                 and not hard_global_failure
                 and not action_issues
             ):
-                action.metadata["content"] = body
+                action.metadata["content"] = _resolve_relative_dates_in_body(
+                    body, source_by_id[action.action_id])
                 action.metadata["synthesis_skip"] = True
                 action.metadata["school_generation_failed"] = False
                 action.metadata["school_generation_validation"] = {
@@ -3874,7 +4328,12 @@ class ContentSynthesizer:
             "Reported facts must remain reported; do not allow stronger medical, "
             "injury, witness, police, blame, or response details than the source. "
             "Do not flag headings, DRAFT/NOT SENT labels, audience labels, TBC "
-            "fields, or clearly proposed/recommended verification steps. Return "
+            "fields, or clearly proposed/recommended verification steps. "
+            f"Today's real date is {_today_display_date()}: when the source "
+            "contains a relative day phrase ('today', 'yesterday', 'N days "
+            "ago'), the calendar date it resolves to is a SUPPORTED claim — "
+            "do not flag it. A date resolving no phrase present in the source "
+            "remains unsupported. Return "
             "JSON only: {\"pass\": boolean, \"unsupported_claims\": "
             "[{\"action_id\": string, \"claim\": string, \"reason\": string}]}. "
             "pass may be true only when unsupported_claims is empty."
@@ -4153,6 +4612,15 @@ class ContentSynthesizer:
             "Apply the same rule to operational planning, schedules, staffing, "
             "facilities, channels and deadlines. "
             "are not unsupported claims. Never use a sibling source as evidence.\n\n"
+            "DATE EXCEPTION: today's real date is "
+            f"{_today_display_date()}. When source_request contains a relative "
+            "day phrase ('today', 'yesterday', 'N days ago'), the artifact may "
+            f"state the calendar date that phrase resolves to (for source "
+            f"'today' that is {_today_display_date()}). That is a supported "
+            "claim — the phrase is in the source and the calendar is "
+            "objective — so do NOT report it as an unsupported claim. A date "
+            "that resolves no phrase actually present in source_request is "
+            "still unsupported and must be reported.\n\n"
             "GOAL ALIGNMENT: identify (1) requested deliverables or material "
             "instructions that the bundle omits, (2) artifacts that do not help "
             "the raw goal or requested outcome, (3) wrong recipient, audience, "
@@ -4756,6 +5224,9 @@ class ContentSynthesizer:
             "be provided unless the source says so. Use TBC instead. "
             "Never add 'today', a date, or a promise to monitor/provide updates "
             "unless the source says so. "
+            "If the source says 'today', 'yesterday' or 'N days ago', keep "
+            "that phrase exactly as written; do not convert it to a calendar "
+            "date. The governed runtime fills the real date in afterwards. "
             "Do not turn a general school/recess reference into a specific "
             "location; use Location: TBC. Do not add 'promptly' or 'immediately' "
             "unless supplied. "
@@ -4860,6 +5331,7 @@ class ContentSynthesizer:
                 "\n\nThe previous draft below failed these checks. Replace it "
                 "and remove every unsupported process/action claim; do not repeat "
                 "the rejected wording:\n- " + "\n- ".join(flat[:12])
+                + _explain_validation_issues(flat[:12])
                 + "\n\nPREVIOUS REJECTED DRAFT:\n---\n"
                 + body[:5000] + "\n---"
             )

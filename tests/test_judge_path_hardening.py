@@ -102,6 +102,33 @@ def _wait_http_task(client, task_id: str, timeout: float = 25.0) -> dict:
     return state
 
 
+def _resolve_immediate_danger_if_asked(client, state: dict) -> dict:
+    """2026-08-21: `_critical_question` no longer requires the compiler to
+    ALSO tag an unknown "life_safety" before asking whether danger is still
+    present — that tag was model-assigned and unreliable (the same
+    active_danger/critical-severity case got tagged "content_only" on one
+    run, silently skipping a genuine safety question). `source_safety` (the
+    deterministic hazard/safeguarding signal) now gates it alone. Several
+    fixture goals here ("fainted", "snake may still be on school grounds")
+    are exactly the scenarios this SHOULD ask about, so answer it like a
+    real operator confirming the situation is stable, then continue."""
+    if state.get("status") != "awaiting_clarification":
+        return state
+    pack = state.get("response_pack") or {}
+    question = pack.get("critical_question") or {}
+    assert question.get("question_id") == "immediate_danger", state
+    resp = client.post(
+        f"/api/tasks/{state['task_id']}/response-pack/confirm",
+        json={
+            "revision": pack.get("revision"),
+            "question_id": "immediate_danger",
+            "answer": "No",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    return _wait_http_task(client, resp.json()["task_id"])
+
+
 def _artifact_bodies(state: dict) -> dict[str, str]:
     bodies: dict[str, str] = {}
     for execution in state.get("executions") or []:
@@ -124,6 +151,7 @@ def test_zero_key_unseen_school_case_runs_full_http_path(monkeypatch):
     })
     assert started.status_code == 200
     state = _wait_http_task(client, started.json()["task_id"])
+    state = _resolve_immediate_danger_if_asked(client, state)
     assert state.get("status") == "done", state
     assert state.get("final_route") == "BLUE", state
     assert (state.get("verification") or {}).get("pass") is True
@@ -329,6 +357,7 @@ def test_status_manipulation_is_red_but_safe_http_artifacts_still_complete(monke
         "interaction_mode": "review_if_needed", "raw_goal": goal,
     })
     state = _wait_http_task(client, started.json()["task_id"])
+    state = _resolve_immediate_danger_if_asked(client, state)
     assert state.get("status") == "done", state
     governance = (state.get("response_pack") or {}).get("input_governance") or {}
     assert governance.get("decision") == "RED", governance
@@ -356,6 +385,7 @@ def test_public_medical_history_command_is_red_and_never_becomes_artifact_text(
         "interaction_mode": "review_if_needed", "raw_goal": goal,
     })
     state = _wait_http_task(client, started.json()["task_id"])
+    state = _resolve_immediate_danger_if_asked(client, state)
     assert state.get("status") == "done", state
     governance = (state.get("response_pack") or {}).get("input_governance") or {}
     assert governance.get("decision") == "RED", governance

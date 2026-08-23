@@ -13,6 +13,36 @@ from typing import Any
 
 _MINOR = r"(?:students?|pupils?|children|student|pupil|child|murid|pelajar)"
 
+# 2026-08-21: shared by module_102b_synthesizer (writes a resolved date) and
+# module_school_artifact_guard (grounds it) so the two can never disagree —
+# a leaf module with no dependents, safe for both to import without a cycle.
+_RELATIVE_DAYS_AGO = re.compile(r"\b(\d{1,3})\s+days?\s+ago\b", re.IGNORECASE)
+_YESTERDAY = re.compile(r"\byesterday\b", re.IGNORECASE)
+_TODAY = re.compile(r"\btoday\b", re.IGNORECASE)
+
+
+def resolve_relative_date_phrase(source_text: str) -> tuple[str, str] | None:
+    """If `source_text` contains an unambiguous relative-date phrase
+    ('today' / 'yesterday' / 'N days ago'), resolve it against the real
+    current date. Returns (resolved_date, matched_phrase), or None.
+
+    Deterministic, never a guess: the phrase is literally in the source,
+    only the calendar arithmetic comes from the objective system clock —
+    the same "ground truth only" contract as everything else here.
+    """
+    from datetime import datetime, timedelta
+    text = str(source_text or "")
+    now = datetime.now()
+    days_ago = _RELATIVE_DAYS_AGO.search(text)
+    if days_ago:
+        n = int(days_ago.group(1))
+        return (now - timedelta(days=n)).strftime("%d %B %Y"), days_ago.group(0)
+    if _YESTERDAY.search(text):
+        return (now - timedelta(days=1)).strftime("%d %B %Y"), "yesterday"
+    if _TODAY.search(text):
+        return now.strftime("%d %B %Y"), "today"
+    return None
+
 
 def _base() -> dict[str, Any]:
     return {

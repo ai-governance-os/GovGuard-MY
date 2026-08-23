@@ -2191,7 +2191,10 @@ function renderArtifacts(el, d) {
   let latestImage = null;
   for (const e of d.executions || []) {
     for (const f of e.affected_resources || []) {
-      files.push({ status: e.status, path: f, summary: e.output_summary });
+      files.push({
+        status: e.status, path: f, summary: e.output_summary,
+        genReason: e.school_generation_reason || "",
+      });
     }
     const s = e.output_summary || "";
     if (s.startsWith("screenshot_saved:") && e.affected_resources && e.affected_resources[0]) {
@@ -2245,6 +2248,17 @@ function renderArtifacts(el, d) {
       a.innerHTML = `<span class="icon">${iconFor(fn)}</span>`
         + `<span>${escapeHtml(displayLabel)}</span>`;
       el.appendChild(a);
+      // Per-file "why is this a template" badge — only when this specific
+      // artifact actually fell back, and only the plain-language reason
+      // the backend already computed. Purely informational; the link
+      // above still opens the exact same file either way.
+      if (f.genReason) {
+        const badge = document.createElement("span");
+        badge.className = "chip chip-tiny SAFE-FORMAT";
+        badge.textContent = "ⓘ why a template?";
+        badge.title = f.genReason;
+        el.appendChild(badge);
+      }
     }
   }
 }

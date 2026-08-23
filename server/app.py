@@ -26,7 +26,10 @@ from teow_agl.adapters.openai_provider import (
 )
 from teow_agl.adapters.smart_mock_planner import SmartMockPlanner
 from teow_agl.models import TaskEnvelope
-from teow_agl.modules.module_102b_synthesizer import ContentSynthesizer
+from teow_agl.modules.module_102b_synthesizer import (
+    ContentSynthesizer,
+    explain_school_generation_reason,
+)
 from teow_agl.modules.module_102w_workflow_resolver import WorkflowResolver
 from teow_agl.modules.module_102t_task_tree import TaskTreeModule
 from teow_agl.modules.module_105_web_gate import WebHumanGate
@@ -1127,6 +1130,11 @@ def start_task(req: StartTaskRequest) -> dict:
             with _app_state["lock"]:
                 state.decisions = [d.model_dump() for d in result.decisions]
                 state.executions = [e.model_dump() for e in result.executions]
+                # Purely additive, read-only annotation: attach a plain-
+                # language "why did this specific file use a safe template"
+                # reason where one applies, so the UI can show it per file.
+                # Never touches routing, content, or which mode was chosen.
+                _attach_school_generation_reasons(state.executions, result.plan)
                 proposals_payload = [p.model_dump() for p in result.proposals]
                 state.proposals = proposals_payload
                 state.final_route = result.final_route
@@ -2130,6 +2138,40 @@ def _state_to_dict(state: TaskState) -> dict:
         "case_context_id": state.case_context_id,
         "phase": state.phase,
     }
+
+
+def _attach_school_generation_reasons(executions: list[dict], plan) -> None:
+    """Annotate each already-serialized execution dict with why ITS
+    specific artifact used a safe/deterministic template, when one applies.
+
+    Reads the same per-action ``school_generation_validation`` metadata
+    that ``_school_generation_mode()`` below already aggregates into one
+    task-level chip — this just surfaces it per file, in plain language,
+    via ``explain_school_generation_reason()``. Purely additive: adds new
+    optional keys to dicts that already exist; never changes an
+    execution's status, affected_resources, or any existing field, and
+    no-ops quietly when there is no plan or nothing to explain.
+    """
+    actions = list(getattr(plan, "actions", []) or [])
+    if not actions:
+        return
+    validations = {
+        action.action_id: (action.metadata or {}).get(
+            "school_generation_validation"
+        ) or {}
+        for action in actions
+    }
+    for execution in executions:
+        validation = validations.get(execution.get("action_id"))
+        if not validation:
+            continue
+        reason = explain_school_generation_reason(validation)
+        if not reason:
+            continue
+        execution["school_generation_reason"] = reason
+        execution["school_generation_submode"] = str(
+            validation.get("mode") or ""
+        )
 
 
 def _school_generation_mode(plan, planner_mode: str) -> str:

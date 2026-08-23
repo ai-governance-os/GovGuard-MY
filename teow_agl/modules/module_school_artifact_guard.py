@@ -33,6 +33,7 @@ from .module_school_privacy import (
     source_identifiers,
     source_individual_mark_values,
 )
+from .module_school_fallback_floors import resolve_relative_date_phrase
 
 
 _TEXT_FILE_TOOLS = {"docx", "report", "fs"}
@@ -2159,6 +2160,19 @@ def validate_school_markdown(
         }
         source_tokens = set(re.findall(r"[a-z0-9]+", source.casefold()))
         if value_tokens and not value_tokens.issubset(source_tokens):
+            # A date field may legitimately read e.g. "21 August 2026
+            # (resolved from 'today')" — none of those tokens are verbatim
+            # in source, but the resolution itself is deterministic system-
+            # clock arithmetic on a phrase that IS in source, not a guess.
+            # Accept only an exact match against the one date that phrase
+            # resolves to (2026-08-21) — this can't be gamed by wrapping
+            # unrelated invented text in a similar-looking parenthetical.
+            resolved = (
+                resolve_relative_date_phrase(source)
+                if field == "date of incident" else None
+            )
+            if resolved and resolved[0].casefold() in value.casefold():
+                continue
             issues["grounding"].append(f"unsupported_{field.replace(' ', '_')}")
 
     if re.search(

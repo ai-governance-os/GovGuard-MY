@@ -4471,10 +4471,6 @@ class SchoolSituationCompiler:
 
     @staticmethod
     def _critical_question(situation: dict, answers: dict) -> dict | None:
-        unknown_ids = {u.get("fact_id") for u in situation.get("unknowns") or []}
-        life_unknown = any(
-            u.get("impact") == "life_safety" for u in situation.get("unknowns") or []
-        )
         source_text = str(situation.get("case_summary") or "")
         source_physical, _ = _physical_incident_flags(source_text)
         semantic_signals = set(situation.get("signals") or [])
@@ -4498,9 +4494,22 @@ class SchoolSituationCompiler:
                 source_text.casefold(),
             )
         )
-        if not answers.get("immediate_danger") and situation["severity"] in {"critical", "high"} and (
-            life_unknown or "danger_still_present" in unknown_ids
-        ) and source_safety:
+        # 2026-08-21: this used to ALSO require the compiler's own unknowns
+        # list to carry a "life_safety" (or "danger_still_present") tag
+        # before asking. That tag is model-assigned per request and not
+        # reliable — the same active_danger/critical-severity case got
+        # tagged "life_safety" on one run and "content_only" on the next,
+        # silently skipping this question on a genuinely dangerous case.
+        # source_safety below is already the real signal (deterministic
+        # hazard/safeguarding regex OR semantic danger signals); severity
+        # plus source_safety is sufficient on its own — do not gate a
+        # life-safety question on a label the model may or may not choose
+        # to apply.
+        if (
+            not answers.get("immediate_danger")
+            and situation["severity"] in {"critical", "high"}
+            and source_safety
+        ):
             return {
                 "question_id": "immediate_danger",
                 "prompt": "Is there still immediate danger or an unmet medical emergency now?",
