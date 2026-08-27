@@ -171,13 +171,13 @@ python -X utf8 scripts/verify_openai_school_inputs.py --full
 
 ## Test evidence
 
-- **1,904** tests collected across **118** test modules — **1,896 passed**,
+- **1,910** tests collected across **118** test modules — **1,902 passed**,
   **8 intentional/environment-dependent skipped**, **0 failed** in the ordinary grouped run
 - The `tests/` directory contains **120 Python files** in total, including
   `conftest.py` and `__init__.py`.
 - Browser UI contract suite: **21 / 21 passed** when enabled, including the
   seven browser-dependent cases skipped in the ordinary run
-- Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**
+- Evaluation suite: **38 / 38** evaluated cases passed, **3** skipped, pass rate **1.0**
 - Secret scan: **PASS** (no secrets, no blocked files in the public surface)
 
 ## Privacy and data boundary

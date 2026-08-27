@@ -61,10 +61,28 @@ The landing console groups the four demo parts into a three-tier narrative
 
 ## Measured Mixed Live boundaries
 
+Safety and autonomy are reported **jointly**. A governance system that reaches a
+zero violation rate by blocking everything has no practical value, so the two
+must be read together:
+
+| Quantity | Meaning | Observed |
+|---|---|---|
+| **Benign task completion** | legitimate work actually delivered | **74-84%** complete output |
+| **Executed violation rate** | unsafe proposals that became real actions | **zero** |
+| **Unsafe proposal rate** | drafts the model produced that failed grounding | **greater than zero** |
+
 - Two independent 19-case English / Bahasa Melayu runs observed **74-84%
   complete output**. Both runs had **zero personal-data leakage, zero
   unauthorised external sending, and fail-closed handling for every unsuccessful
   case**. The range is an observed result, not a statistical confidence interval.
+- The third row is reported deliberately rather than hidden. The live model does
+  at times draft an unsupported claim — for example asserting that emergency
+  services were already contacted when the source never said so. Those drafts are
+  rejected before they reach an output file and replaced with a governed
+  deterministic template. **A non-zero unsafe-proposal rate alongside a zero
+  executed-violation rate is the architecture working as designed**, not a
+  defect: it shows the system tolerates imperfect cognition without allowing a
+  cognitive failure to become an external consequence.
 - The School Administration Pack produces governed Markdown drafts. PowerPoint
   and other Office-format export are outside this submission's claimed scope.
 - GovGuard will not autonomously create student-health data collection fields.
@@ -73,12 +91,12 @@ The landing console groups the four demo parts into a three-tier narrative
 
 ## Evidence
 
-- pytest: **1,904** collected across **118 test modules** — **1,896 passed /
+- pytest: **1,910** collected across **118 test modules** — **1,902 passed /
   8 intentional/environment-dependent skipped / 0 failed** in the ordinary grouped run.
 - The `tests/` directory contains **120 Python files** in total, including
   `conftest.py` and `__init__.py`.
 - Browser UI contract suite: **21 / 21 passed** when enabled, including seven conditional browser cases.
-- Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**.
+- Evaluation suite: **38 / 38** evaluated cases passed, **3** skipped, pass rate **1.0**.
 - Secret scan: **PASS**.
 - Published regression evidence is offline / keyless
   (`smart_mock`, `MAIC_DEMO_MODE=1`); live generation is optional.
@@ -101,3 +119,30 @@ approval, verification, and learning boundaries are enforced **outside** the
 model. Route A shows this on a credible real-case deployment; Route B shows the
 same governed procedure transferring to an unseen case without reusing private
 data or inventing missing facts.
+
+This separation is stated as a principle rather than an implementation detail:
+**the agent may interpret permission; the system must control permission.** The
+reasoning is that an instruction given to a capable agent must first be
+*interpreted*, and a sufficiently flexible interpreter can construct a plausible
+justification for a borderline action. Making the model understand the purpose
+better reduces how often an unsafe route is proposed, but it cannot be the
+authorisation boundary, because the same cognition that interprets the rule
+would also be judging its own compliance. Authority therefore sits in the
+runtime, bound to the concrete approved action, and is not something the model
+can grant itself.
+
+This architecture is developed formally in a companion **working paper**,
+*From Task Completion to Governed Agency* (unpublished draft, not peer
+reviewed), which separates a task's operational objective from its purpose,
+decomposes unsafe-execution risk into a proposal term and an authorisation term,
+and identifies this runtime as an engineering instantiation of that two-stage
+design. The claims in this submission stand on the runnable evidence in this
+repository; the paper supplies the theory, not the proof.
+
+The current release implements one deliberately narrow bridge from that theory:
+a config-driven **meaning-preservation contract** distinguishes explicit equal
+treatment plus factual fidelity from status-driven concealment or flattery.
+Contradictory effects win, so appending “treat everyone equally” cannot bypass a
+request to remove a relevant fact. The resulting signal is marked
+`authoritative: false` and may only suppress a lexical false positive; it cannot
+select a route, approve an action, or weaken the independent runtime boundary.

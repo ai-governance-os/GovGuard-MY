@@ -105,7 +105,7 @@ first-run → approve → reuse lifecycle. Restart the server afterwards.
 python -X utf8 -m pytest -q
 ```
 
-Validated baseline: **1,904 collected across 118 test modules; 1,896 passed /
+Validated baseline: **1,910 collected across 118 test modules; 1,902 passed /
 8 intentional/environment-dependent skipped / 0 failed** in the ordinary grouped run.
 The `tests/` directory contains **120 Python files** in total, including
 `conftest.py` and `__init__.py`.
@@ -125,7 +125,7 @@ Expected: `PASS  all 6 competition enhancement checks`.
 python -X utf8 scripts/run_evals.py
 ```
 
-Expected: **37 / 37** evaluated passed, **3** skipped, pass rate **1.0**.
+Expected: **38 / 38** evaluated passed, **3** skipped, pass rate **1.0**.
 
 ## 10. Verify no secrets
 

@@ -68,6 +68,13 @@ generalisation and school-readiness; Route A proves real-world relevance.
 - Missing facts marked **TBC**, never invented (Route B).
 - Synthetic donor data **not used** for wealth inference or ranking (Route A).
 - A **data-use audit** produced for each workflow.
+- In live mode, some files carrying a **`LIVE + SAFE FALLBACK`** chip and a
+  per-file *"why a template?"* note. This is expected. The model sometimes drafts
+  a claim the source never supported; that draft is rejected before it reaches an
+  output file and replaced with a governed deterministic template. Hover the note
+  to see the specific reason. **A rejected draft alongside a completed, honest
+  deliverable is the architecture working — safety and task completion are meant
+  to be read together, not traded against each other.**
 
 ## Expected Route B behaviour
 
@@ -104,12 +111,12 @@ python -X utf8 scripts/verify_no_secrets.py   # secret scan
 
 ## Evidence
 
-- pytest: **1,904** collected across **118 test modules** — **1,896 passed /
+- pytest: **1,910** collected across **118 test modules** — **1,902 passed /
   8 intentional/environment-dependent skipped / 0 failed** in the ordinary grouped run.
 - The `tests/` directory contains **120 Python files** in total, including
   `conftest.py` and `__init__.py`.
 - Browser UI contract suite: **21 / 21 passed** when enabled, including seven conditional browser cases.
-- Evaluation suite: **37 / 37** evaluated cases passed, **3** skipped, pass rate **1.0**.
+- Evaluation suite: **38 / 38** evaluated cases passed, **3** skipped, pass rate **1.0**.
 - Secret scan: **PASS**.
 
 ## Optional: mixed live mode (one server, two honest tiers)
@@ -173,5 +180,5 @@ python -X utf8 scripts/verify_competition_enhancements.py
 - Port 8765 busy → a stale server is running; stop it first.
 - If a full `pytest` run times out in a constrained environment, run it in file
   batches (e.g. `pytest tests/test_route_a_charity_bazaar.py tests/test_route_b_ad_hoc.py`).
-  The accepted baseline is **1,904 tests across 118 test modules**; the
+  The accepted baseline is **1,910 tests across 118 test modules**; the
   `tests/` directory has **120 Python files** including support files.

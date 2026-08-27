@@ -227,9 +227,31 @@
       "block": "red",
       "_doc": "User asks to change a message's warmth/honesty/priority or to drop a relevant reminder BECAUSE OF a parent's social title / committee status / donor influence -> RED. Concept (status) x intent (differential treatment), so rewording cannot slip. Household-income wording is deliberately NOT here: it is governed by 101D so its 'differential treatment' reason is preserved.",
       "safe_alternative": "Use the pupil's actual competition performance, training attendance, coach observations, development need, and the parent's recorded communication style. Do not use social title, PIBG status, household income, or donation potential to change tone, priority, or honesty.",
+      "meaning_preservation_contract": {
+        "_doc": "A narrow false-positive guard derived from the Meaning Goal / Cognitive-Authority Separation principle. Explicit equal treatment plus factual fidelity may suppress this lexical match, but cannot authorise an action or override a contradictory request.",
+        "meaning_goal": "Preserve equal treatment and factual fidelity while allowing ordinary courtesy.",
+        "forbid_any": [
+          "drop the reminder", "remove the reminder", "remove the training", "skip the reminder", "without the reminder", "flatter", "flattering", "write that he has", "write that she has", "warmer than", "softer than", "more respectful than", "than ordinary parents", "go easy on", "tone down the facts", "hide the fact", "conceal the fact", "去掉提醒", "去掉训练", "别提训练", "删掉", "隐瞒", "奉承", "比其他家长更", "特别优待"
+        ],
+        "allow_if_any": [
+          {
+            "id": "equal_treatment_and_fact_fidelity",
+            "require_all": [
+              ["applied equally to every parent", "equally for every parent", "same tone for every parent", "same warmth for every parent", "all parents equally", "所有家长一视同仁", "每位家长同样", "对所有家长一样"],
+              ["keep every fact", "keep all facts", "facts unchanged", "facts exactly as", "do not change any fact", "without changing the facts", "保留所有事实", "事实不变", "不改变事实"]
+            ]
+          },
+          {
+            "id": "explicit_no_status_preference",
+            "require_all": [
+              ["no extra warmth", "no special treatment", "no preferential treatment", "not warmer than other parents", "same as the other parents", "equal treatment regardless of status", "不额外温和", "不特别照顾", "不给特殊待遇", "不因身份区别对待"]
+            ]
+          }
+        ]
+      },
       "require_all": [
         ["dato", "datuk", "拿督", "tan sri", "datin", "pibg", "家协", "committee member", "pibg committee", "board member", "board position", "his status", "her status", "his position", "donor", "donation", "捐款", "donated", "major donor", "big donor", "influential parent", "vip parent", "well-connected", "social title", "社会地位"],
-        ["warmer", "softer", "soften", "more positive", "go easy", "be nicer", "drop the reminder", "remove the reminder", "remove the training", "skip the reminder", "without the reminder", "special treatment", "special attention", "preferential", "prioriti", "favour", "favor", "lenient", "tone down", "flatter", "flattering", "depends on him", "depends on her", "only someone of", "only you can", "only he can", "only she can", "embarrass", "embarrassed to refuse", "feel embarrassed", "make him feel", "make her feel", "guilt", "obligated", "more respectful", "longer messages", "than ordinary parents", "温和", "婉转", "客气一点", "去掉提醒", "去掉训练", "别提训练", "删掉训练", "删掉提醒", "宽容", "优待", "偏袒", "特别照顾", "照顾一下"]
+        ["warmer", "softer", "soften", "more positive", "go easy", "be nicer", "drop the reminder", "remove the reminder", "remove the training", "skip the reminder", "without the reminder", "special treatment", "special attention", "preferential", "prioriti", "favour", "favor", "lenient", "tone down", "flatter", "flattering", "depends on him", "depends on her", "only someone of", "only you can", "only he can", "only she can", "embarrass", "embarrassed to refuse", "feel embarrassed", "make him feel", "make her feel", "guilt", "obligated", "more respectful", "longer messages", "than ordinary parents", "温和", "婉转", "客气一点", "去掉提醒", "去掉训练", "别提训练", "删掉", "宽容", "优待", "偏袒", "特别照顾", "照顾一下"]
       ]
     },
     {

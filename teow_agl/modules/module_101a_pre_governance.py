@@ -83,6 +83,7 @@ class PreGovernanceModule:
         hard_block = False
         hard_block_code: str | None = None
         reasons: list[str] = []
+        meaning_preservation: dict[str, Any] | None = None
         if intent_hard_rule is not None:
             reasons.append(
                 f"intent_hard_block_rule:{intent_hard_rule.get('id')}"
@@ -107,18 +108,36 @@ class PreGovernanceModule:
         if not hard_block and not defer_contextual_data_use:
             risk_rule = self._match_risk_rule(text)
             if risk_rule is not None:
-                category = risk_rule.get("category", category)
-                hard_block = True
-                if risk_rule.get("block") == "infeasible":
-                    hard_block_code = "infeasible_" + risk_rule.get("category", "request")
+                preservation_id = self._match_meaning_preservation(text, risk_rule)
+                contract = risk_rule.get("meaning_preservation_contract") or {}
+                meaning_preservation = {
+                    "schema": "meaning_preservation_signal.v1",
+                    "policy_rule": str(risk_rule.get("id") or "configured_risk_rule"),
+                    "meaning_goal": str(contract.get("meaning_goal") or "").strip(),
+                    "condition": preservation_id or "not_preserved",
+                    # This signal may suppress a lexical false positive, but it
+                    # never grants authority, issues a route, or approves an
+                    # action.  Module 103 and the human gate remain independent.
+                    "authoritative": False,
+                    "effect": "proposal_filter_only",
+                }
+                if preservation_id:
+                    reasons.append(
+                        f"meaning_preservation:{risk_rule.get('id')}:{preservation_id}"
+                    )
                 else:
-                    hard_block_code = risk_rule.get("category", "policy_block")
-                reasons.append(f"risk_rule:{risk_rule.get('id')}")
-                # Carry a config-driven safe alternative so the blocked answer
-                # can show the user what to do instead (not just "blocked").
-                alt = (risk_rule.get("safe_alternative") or "").strip()
-                if alt:
-                    reasons.append(f"safe_alternative: {alt}")
+                    category = risk_rule.get("category", category)
+                    hard_block = True
+                    if risk_rule.get("block") == "infeasible":
+                        hard_block_code = "infeasible_" + risk_rule.get("category", "request")
+                    else:
+                        hard_block_code = risk_rule.get("category", "policy_block")
+                    reasons.append(f"risk_rule:{risk_rule.get('id')}")
+                    # Carry a config-driven safe alternative so the blocked answer
+                    # can show the user what to do instead (not just "blocked").
+                    alt = (risk_rule.get("safe_alternative") or "").strip()
+                    if alt:
+                        reasons.append(f"safe_alternative: {alt}")
 
         for blocking_category in hard_block_categories:
             if category == blocking_category:
@@ -164,6 +183,8 @@ class PreGovernanceModule:
             "must_not_directly_execute": True,
             "must_emit_json_only": True,
         }
+        if meaning_preservation is not None:
+            planning_brief["meaning_preservation"] = meaning_preservation
 
         return PreGovernanceAssessment(
             task_id=envelope.task_id,
@@ -219,6 +240,40 @@ class PreGovernanceModule:
                 continue
             if all(any(str(p).lower() in low for p in grp) for grp in groups):
                 return rule
+        return None
+
+    def _match_meaning_preservation(
+        self,
+        text: str,
+        risk_rule: dict,
+    ) -> str | None:
+        """Return a configured preservation-clause id when a lexical risk
+        match explicitly preserves the institutionally relevant meaning.
+
+        This is deliberately narrow.  A preservation clause is considered only
+        after a risk rule has matched, and any configured contradictory effect
+        (for example, removing a factual reminder) wins.  The result only
+        prevents a lexical false positive; it never selects BLUE/GREEN or grants
+        permission.  Vocabulary and meaning conditions stay in configuration.
+        """
+        contract = risk_rule.get("meaning_preservation_contract")
+        if not isinstance(contract, dict):
+            return None
+        low = (text or "").casefold()
+        forbidden = contract.get("forbid_any") or []
+        if any(str(term).strip().casefold() in low
+               for term in forbidden if str(term).strip()):
+            return None
+        for clause in contract.get("allow_if_any") or []:
+            if not isinstance(clause, dict):
+                continue
+            groups = clause.get("require_all") or []
+            if groups and all(
+                any(str(term).strip().casefold() in low
+                    for term in group if str(term).strip())
+                for group in groups
+            ):
+                return str(clause.get("id") or "configured_preservation")
         return None
 
     def _match_intent_hard_block_rule(self, text: str) -> dict | None:

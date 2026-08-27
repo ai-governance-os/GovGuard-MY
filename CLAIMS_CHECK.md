@@ -53,7 +53,7 @@ cannot reproduce.
 
 Command: `python -X utf8 -m pytest -q`
 
-- **1,904** collected across **118 test modules** — **1,896 passed**,
+- **1,910** collected across **118 test modules** — **1,902 passed**,
   **8 intentional/environment-dependent skipped**, **0 failed** in the ordinary grouped run.
 - The `tests/` directory contains **120 Python files** in total, including
   `conftest.py` and `__init__.py`.
@@ -63,7 +63,7 @@ Command: `python -X utf8 -m pytest -q`
 
 Command: `python -X utf8 scripts/run_evals.py`
 
-- cases **40** (evaluated **37**, skipped **3**) — **37 passed**, **0 failed**,
+- cases **41** (evaluated **38**, skipped **3**) — **38 passed**, **0 failed**,
   pass rate **1.0**.
 
 ## Claim 10 — Secret-scan status
