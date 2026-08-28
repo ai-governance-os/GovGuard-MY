@@ -105,9 +105,9 @@ first-run → approve → reuse lifecycle. Restart the server afterwards.
 python -X utf8 -m pytest -q
 ```
 
-Validated baseline: **1,910 collected across 118 test modules; 1,902 passed /
+Validated baseline: **1,930 collected across 119 test modules; 1,922 passed /
 8 intentional/environment-dependent skipped / 0 failed** in the ordinary grouped run.
-The `tests/` directory contains **120 Python files** in total, including
+The `tests/` directory contains **121 Python files** in total, including
 `conftest.py` and `__init__.py`.
 The browser UI contract suite passes **21 / 21** when enabled, including seven conditional browser cases.
 
