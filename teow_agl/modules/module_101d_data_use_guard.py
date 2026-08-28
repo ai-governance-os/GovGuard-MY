@@ -63,10 +63,20 @@ _SOCIO_FIELDS = (
     "拿督", "拿汀", "社会地位", "家协地位", "捐款", "捐献", "捐款潜力",
 )
 # Personally-identifying numbers / contacts that must never be published.
+# Bahasa Malaysia terms belong in this last deterministic boundary rather
+# than depending on an upstream model to emit a `public_pii` concept.
 _PUBLIC_PII = (
     "ic number", "mykid number", "mykid", "passport number",
     "phone number", "home address", "contact number",
+    "nombor telefon", "no telefon", "alamat rumah", "nombor ic",
+    "kad pengenalan", "nombor kad pengenalan", "nombor pasport",
     "身份证", "证件号码", "电话号码", "联络号码", "家庭住址", "住家地址",
+)
+# A real contact value, as opposed to the name of a contact field. Matching
+# runs on normalized text, so separators may already have become spaces.
+_CONTACT_VALUE = re.compile(
+    r"(?<!\w)(?:\+?60\s*|0)(?:1\d|[3-9])(?:[- ]?\d){7,8}(?!\w)"
+    r"|\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b",
 )
 # Categories that must not appear in public content by default.
 _HEALTH_FIELDS = (
@@ -423,10 +433,81 @@ class DataUseGuard:
             r"[^.!?\n]{0,100}\b(?:ic|mykid|passport|phone|address|contact)\b",
             own_text,
         ))
+        # A public school draft may safely NAME its own contact field while the
+        # value remains TBC. Keep this exemption sentence-scoped and narrow:
+        # only phone-shaped institutional fields qualify; IC/MyKid/passport/
+        # home-address terms, real values, and person-scoped fields never do.
+        institutional_eligible = (
+            "contact number", "phone number", "contact details",
+            "nombor telefon", "no telefon",
+        )
+        sentences = [
+            sentence
+            for sentence in re.split(r"(?:[;!?\n]+|\.\s+|\.$)", own_text)
+            if sentence.strip()
+        ]
+
+        def _person_scoped(sentence: str) -> bool:
+            person_before_field = re.search(
+                r"(?:\b(?!school|office|department|ministry|academy|college|"
+                r"institution|organisation|organization|company|vendor|operator)"
+                r"[a-z]+(?:'s|s')"
+                r"|\bpupils?'|\bstudents?'|\bparents?'"
+                r"|\bguardians?'|\bchildren'?s|\bhis\b|\bher\b|\btheir\b"
+                r"|\beach\s+(?:pupil|student|parent|guardian|child)"
+                r"|\bthe\s+(?:pupil|student|parent|guardian|child)\b"
+                r"|\bibu\s+bapa\b|\bpenjaga\b|\bmurid\b|\bpelajar\b)"
+                r"[^\n]{0,40}?"
+                r"\b(?:ic|mykid|passport|phone|contact|home address|address|"
+                r"telefon|alamat)\b",
+                sentence,
+            )
+            field_before_person = re.search(
+                r"\b(?:ic|mykid|passport|phone|contact|home address|address|"
+                r"telefon|alamat)\b"
+                r"[^\n]{0,40}?"
+                r"\b(?:pupil|student|parent|guardian|child|penjaga|murid|"
+                r"pelajar|ibu\s+bapa)\b",
+                sentence,
+            )
+            return bool(person_before_field or field_before_person)
+
+        def _has_value(sentence: str) -> bool:
+            return bool(
+                _CONTACT_VALUE.search(sentence)
+                or re.search(r"\b\d{6}[- ]?\d{2}[- ]?\d{4}\b", sentence)
+            )
+
+        def _term_sentence_is_school_channel(sentence: str) -> bool:
+            if any(
+                field in sentence
+                for field in _PUBLIC_PII
+                if field not in institutional_eligible
+            ):
+                return False
+            return not _has_value(sentence) and not _person_scoped(sentence)
+
+        own_pii_institutional_only = (
+            bool(own_pii_terms)
+            and institutional_contact
+            and all(
+                _term_sentence_is_school_channel(sentence)
+                for sentence in sentences
+                if any(field in sentence for field in _PUBLIC_PII)
+            )
+        )
+        contact_value_unshielded = any(
+            _has_value(sentence) for sentence in sentences
+        )
         has_pii = (
             any(f in text for f in _PUBLIC_PII)
-            or (own_pii_terms and not own_pii_negated)
+            or (
+                own_pii_terms
+                and not own_pii_negated
+                and not own_pii_institutional_only
+            )
             or bool(re.search(r"\b\d{6}[- ]?\d{2}[- ]?\d{4}\b", pii_scan))
+            or contact_value_unshielded
             or (contact_value and not institutional_contact)
             or "public_pii" in concepts
         )
