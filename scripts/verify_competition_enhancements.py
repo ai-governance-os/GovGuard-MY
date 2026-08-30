@@ -237,12 +237,13 @@ def verify_out_of_domain_boundary() -> None:
 
 def verify_frontend_continuity_wire() -> None:
     source = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
-    # Free-typed follow-ups preserve normal case continuity.  The five fixed
-    # competition probe buttons are intentionally detached so a stale case or
-    # workflow cannot replay the full scripted workflow or contaminate their
-    # labelled BLUE/GREEN/RED/INFEASIBLE result.
+    # Free-typed follow-ups preserve normal case continuity. Labelled demo
+    # probes are detached and deterministic; the optional open-input example
+    # is also detached but deliberately enters review_if_needed.
     assert "options.detachWorkflowContext === true" in source
-    assert "detachWorkflowContext: !isWorkflowEntry" in source
+    assert "const isOpenInput = b.dataset.openInput" in source
+    assert "direct: !isOpenInput" in source
+    assert "detachWorkflowContext: isOpenInput || !isWorkflowEntry" in source
     assert "const parentTaskIdForRequest" in source
     assert "active_workflow_id: activeWorkflowId" in source
     assert "parent_task_id: parentTaskIdForRequest" in source

@@ -393,9 +393,9 @@ def _build_runtime() -> Runtime:
 
 
 # ---------------------------------------------------------------------------
-# Mixed-mode planner selection. ONE server can run the core demo
-# deterministically (smart_mock) while selected workflows run on the live API
-# — no restart between demo parts. Opt in at startup, e.g.:
+# Mixed-mode planner selection. ONE server keeps every labelled competition
+# route deterministic (smart_mock), while separately submitted open input may
+# use the live API — no restart between demo parts. Opt in at startup, e.g.:
 #     TEOW_AGL_LIVE_WORKFLOWS=ad_hoc_school_event_reporting
 # (comma-separated workflow_ids; add school_charity_bazaar to take Route A
 # live too). A task is built live ONLY when (a) its goal pre-resolves to a
@@ -1034,6 +1034,11 @@ def start_task(req: StartTaskRequest) -> dict:
             state.live_model = (
                 active_chat_model() if planner_mode == "live" else ""
             )
+            # Approval-paused GREEN routes are returned to the UI before the
+            # normal completion block below. Preserve the same truthful mode
+            # label for those intermediate states too.
+            if req.deterministic_demo_probe:
+                state.generation_mode = "reproducible_mock"
         compiled: dict = {}
         effective_review = bool(
             req.interaction_mode == "review_if_needed"
@@ -1155,6 +1160,11 @@ def start_task(req: StartTaskRequest) -> dict:
                 state.generation_mode = _school_generation_mode(
                     result.plan, planner_mode,
                 )
+                # A labelled competition route is a reproducibility contract,
+                # not an API failure or fallback. Report it explicitly so the
+                # UI never asks judges to infer the mode from a missing badge.
+                if req.deterministic_demo_probe:
+                    state.generation_mode = "reproducible_mock"
                 # The situation compiler runs before pre-governance so the
                 # runtime can govern its proposal. Once pre-governance
                 # hard-stops the task, do not expose that unexecuted proposal

@@ -53,7 +53,7 @@ cannot reproduce.
 
 Command: `python -X utf8 -m pytest -q`
 
-- **1,930** collected across **119 test modules** — **1,922 passed**,
+- **1,937** collected across **119 test modules** — **1,929 passed**,
   **8 intentional/environment-dependent skipped**, **0 failed** in the ordinary grouped run.
 - The `tests/` directory contains **121 Python files** in total, including
   `conftest.py` and `__init__.py`.
@@ -83,9 +83,9 @@ appropriate (provided separately, not in this repository). See
 
 ## Note on the live LLM path
 
-The competition Mixed Live path keeps the core scripted demo deterministic and
-can attempt Route A/B, their continued questions, and new school-domain cases on
-a configured OpenAI-compatible provider. `scripts/verify_competition_enhancements.py` independently checks
+The competition live path keeps Main, Route A and Route B deterministic and can
+attempt only unfamiliar open school-domain input on a configured OpenAI-
+compatible provider. `scripts/verify_competition_enhancements.py` independently checks
 the closed semantic schema, deterministic concept policy, mandatory learning
 floor, live-tier selection, out-of-domain boundary, and browser continuity
 wire. The LLM is never the route authority. A private-key smoke test on

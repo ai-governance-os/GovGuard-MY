@@ -75,9 +75,25 @@ def test_demo_followups_detach_without_forcing_full_workflow():
     ]
     assert 'b.classList.contains("example-main")' in handler
     assert "scriptedWorkflowId: isWorkflowEntry" in handler
-    assert "detachWorkflowContext: !isWorkflowEntry" in handler
+    assert "const isOpenInput = b.dataset.openInput" in handler
+    assert "detachWorkflowContext: isOpenInput || !isWorkflowEntry" in handler
     assert "options.detachWorkflowContext === true" in source
     assert 'interaction_mode: options.direct === true ? "direct" : "review_if_needed"' in source
+
+
+def test_competition_ui_separates_three_fixed_routes_from_open_input():
+    html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+    assert html.index("Core governance demo") < html.index("Route A —")
+    assert html.index("Route A —") < html.index("Route B —")
+    assert html.index("Route B —") < html.index("Optional fourth proof")
+    for workflow_id in (
+        "national_athletics_reporting",
+        "school_charity_bazaar",
+        "ad_hoc_school_event_reporting",
+    ):
+        marker = f'data-workflow-id="{workflow_id}" data-demo-probe="true"'
+        assert marker in html
+    assert 'data-open-input="true"' in html
 
 
 def _keyless_http_client(monkeypatch):

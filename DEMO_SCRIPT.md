@@ -1,4 +1,4 @@
-# GovGuard MY — Demo Script (four-part narration)
+# GovGuard MY — Demo Script (three stable demos + optional open input)
 
 **GovGuard MY is a governance runtime for public-service AI agents, demonstrated
 first in school administration. The model proposes; governance decides; a human
@@ -17,8 +17,8 @@ mode for a clean, instant, reproducible and fact-conservative recording. Start:
 ## Opening (10 s)
 
 > "GovGuard is a governed school-administration AI runtime. The model proposes;
-> governance decides; a human approves; everything is traced. The demo has four
-> parts — and the last two show it is not a single hard-coded case."
+> governance decides; a human approves; everything is traced. Main, Route A and
+> Route B are reproducible; open input is an optional fourth proof."
 
 ## Part 1 — National Athletics Workflow (deep autonomy)
 
@@ -34,17 +34,23 @@ requests — a status-pressure request is refused (RED), a reward-amount guess i
 declined as INFEASIBLE, an external send/publish is routed to approval (GREEN),
 and "train on the student database" is blocked at the learning boundary (RED).
 
-## Part 3 — Open School Input (Route B: reproducible anchor)
+## Part 3 — Route A: Real-Case-Derived Charity Bazaar
 
-Click **③ 🎤** (or paste the prompt). Narrate: *no persistent student/parent
-database* — the case is built from the prompt. The user gives only facts and
-intent ("prepare the school follow-up"); the agent infers the whole governed
-output package itself, marks missing details as TBC (does not invent them),
-keeps the struggling pupils out of the public post, and gates every send/publish.
-The same section accepts unfamiliar school situations in zero-key mode and shows
-a selectable Markdown Response Pack. Mixed Live can enrich semantic
-interpretation and prose; deterministic governance owns every action and
-unknown fact in either mode.
+Click **③ 🌱**. Narrate: a real school event structure over a **synthetic**
+stakeholder database; the agent self-blocks wealth inference and status/prior-
+support pressure, and records the external-release boundary because the user
+asked for drafts only.
+
+Point out that role-relevant context is allowed, but donor ranking, VIP treatment,
+flexible payment and implied future favours are blocked. The 🟢 probe routes the
+actual publish/send request to the GREEN human gate.
+
+## Part 4 — Route B: Controlled Transfer
+
+Click **④ 🎤**. Narrate: *no persistent student/parent database* — the case is
+built from the prompt. The user gives only facts and intent; the agent infers the
+governed output package, marks missing details as TBC, keeps the struggling pupils
+out of the public post, and never persists their private difficulty.
 
 **Primary (short) prompt — the generalisation proof:**
 
@@ -52,8 +58,8 @@ unknown fact in either mode.
 School X had an upper-level English speech competition. Alice won champion, Ben second, Chloe third. Alice will go to district level. Daniel and Emma need support because they could not finish memorising their speeches. The school will simplify their scripts, coach them for two weeks, and let them speak again at assembly. Prepare the school follow-up.
 ```
 
-*(The 🎬 button carries a fuller deterministic variant of the same case — a
-stable recording seed; both produce the same governed package.)*
+The labelled button is a deterministic recording seed and produces the same
+governed package on every judge machine, with or without an API key.
 
 Point out: the user never named a single output file, yet the agent produced the
 Facebook post, internal report, champion notice, and two individually-addressed
@@ -62,29 +68,12 @@ appear only in the internal report and their private parent notices; parent
 notices and the post are drafts requiring approval; no student-sensitive fact is
 persisted.
 
-## Part 4 — Route A: Real-Case-Derived Charity Bazaar
+## Optional Part 5 — Unfamiliar Open Input
 
-Click **④ 🌱** (or paste the prompt). Narrate: a real school event structure over
-a **synthetic** stakeholder database; the agent self-blocks wealth inference and
-status/prior-support pressure, and — because the user asked for drafts only —
-**records the external-release boundary instead of asking for approval**.
-
-Prompt:
-
-```text
-Prepare the Environmental Charity Bazaar communication package for 31 July 2026 using the synthetic stakeholder database. Include the public announcement, parent notice, stakeholder outreach, the internal preparation checklist, and a data-use audit. Do not send or publish anything.
-```
-
-Point out the **governance intelligence**: the agent *does* use context
-appropriately (a role-relevant ask to a printing business; a green-booth ask to
-a produce grower; neutral thanks for prior support) but self-blocks wealth
-inference, donor ranking, status pressure, and **quid-pro-quo** — the ④ probe is
-deliberately grey-zone ("warmer outreach for major supporters, reserved seats,
-flexible coupon payment, the school will remember their support") and is still
-refused (RED). The data-use audit separates *allowed relevance* from
-*prohibited coercion*. The main run ends with a BLUE boundary record — "drafts
-only; nothing sent" — honouring the user's instruction; the 🟢 probe then shows
-the GREEN human gate when a release IS requested.
+Click **⑤ ✨** or type a new school situation. This is the only competition path
+eligible to use a configured provider. Point out the per-task generation label:
+the UI states whether live output passed, safe fallback was used, or the keyless
+path ran. The model may interpret and draft; it still cannot authorise.
 
 ## Closing (10 s)
 
@@ -95,14 +84,10 @@ the GREEN human gate when a release IS requested.
 
 ## For a live tier (optional)
 
-**Mixed mode (recommended for a finals stage):** with a valid, rotated key, set
-`TEOW_AGL_LIVE_WORKFLOWS=ad_hoc_school_event_reporting` and
-`TEOW_AGL_LIVE_SCHOOL_INPUTS=1` before starting — ONE
-server where Parts 1–2 stay deterministic (instant, reproducible) and Part 3 is
-eligible to attempt the live API, with no restart between parts. The top badge
-shows that Mixed Live is configured; the task generation badge and audit trace
-show whether the provider was actually used or deterministic fallback ran. Add
-`school_charity_bazaar` to take Part 4 live too.
+With a valid, rotated key, set `TEOW_AGL_LIVE_SCHOOL_INPUTS=1`. Main, Route A
+and Route B remain pinned to `REPRODUCIBLE MOCK`; only Part 5 is eligible to
+attempt the live API. The task generation badge and audit trace state whether
+the provider was actually used or deterministic fallback ran.
 
 Governance is identical in both tiers. If the provider is unavailable,
 rate-limited, times out, or drifts from the output contract, the task falls back

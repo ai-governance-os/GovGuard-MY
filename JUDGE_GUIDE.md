@@ -20,23 +20,22 @@ Optional clean slate before a walkthrough (backs up then clears local state):
 python -X utf8 scripts/reset_demo_state.py --yes
 ```
 
-## The landing page: four demo parts in THREE tiers
-
-The four demo parts (① – ④) are grouped into a three-tier narrative:
+## The landing page: three stable demos, then one optional live proof
 
 - **Tier 1 · Core governance demo** (deterministic · reproducible)
   ① National Athletics Workflow — agent self-governance.
   ② User-Input Governance Probes — governance over your requests.
-- **Tier 2 · Generalisation — open school situations**
-  ③ Route B is the reproducible anchor; zero-key mode conservatively compiles
-  unfamiliar typed school cases into a governed Markdown Response Pack, while
-  Mixed Live can add richer semantic interpretation and prose.
-- **Tier 3 · Real-case-derived evidence** (collapsed case study — click to open)
-  ④ Route A: Charity Bazaar — real deployment structure, synthetic donor data.
+- **Route A · Real-case-derived evidence** (deterministic · evidence-backed)
+  ③ Charity Bazaar — real deployment structure over synthetic donor data.
+- **Route B · Controlled transfer** (deterministic · reproducible)
+  ④ Speech Competition — the same governance transfers without private memory.
+- **Optional fourth proof · unfamiliar open input**
+  ⑤ A typed school situation may use a configured provider for interpretation
+  and prose; deterministic governance still owns every action and approval.
 
 The top bar's status pills tell you what is true right now (Governance: active ·
-External: simulated · Mode). The core demo proves governance; Route B proves
-generalisation and school-readiness; Route A proves real-world relevance.
+External: simulated · Mode). Main proves governance; Route A proves real-world
+relevance; Route B proves controlled transfer; open input is optional.
 
 ## Recommended 5-minute walkthrough
 
@@ -46,19 +45,15 @@ generalisation and school-readiness; Route A proves real-world relevance.
   self-blocked (RED), and a protected student-record write pauses for approval (GREEN).
 - **Minute 3** — Run a few **② probes**: status-pressure → RED; reward guess →
   INFEASIBLE; send/publish → GREEN; train-on-database → RED (learning boundary).
-- **Minute 4** — Run **③ Route B** (the 🎤 button). Watch: winners celebrated
+- **Minute 4** — Run **③ Route A** (the 🌱 button). Watch: a trilingual public
+  post with no donor names; role-relevant stakeholder outreach; a wealth-
+  targeting proposal self-blocked (RED); and a BLUE drafts-only release record.
+  The 🟢 probe is where the GREEN human gate fires.
+- **Minute 5** — Run **④ Route B** (the 🎤 button). Watch: winners celebrated
   publicly; Daniel & Emma kept out of the public post; missing facts marked TBC;
   send/publish gated; a non-personal SOP proposed (approve it, run again → "reused").
-  If Mixed Live is enabled, also type one unfamiliar school situation and note
-  the required/recommended Response Pack, TBC boundary and separate governance
-  for every selected action.
-- **Minute 5** — Run **④ Route A** (the 🌱 button, inside the collapsed case
-  study). Watch: a trilingual public post with no donor names; role-relevant
-  stakeholder outreach (4 samples); a wealth-targeting proposal self-blocked
-  (RED); a data-use audit separating allowed relevance from prohibited
-  coercion; and — because the prompt says "Do not send or publish" — a BLUE
-  **external-release boundary record** instead of an approval card. The 🟢
-  probe ("publish + send now") is where the GREEN human gate fires.
+  If time remains, run **⑤ Optional Open Input** and point out the per-task
+  LIVE/SAFE-FALLBACK label, the Response Pack and the TBC boundary.
 
 ## What to look for
 
@@ -68,7 +63,7 @@ generalisation and school-readiness; Route A proves real-world relevance.
 - Missing facts marked **TBC**, never invented (Route B).
 - Synthetic donor data **not used** for wealth inference or ranking (Route A).
 - A **data-use audit** produced for each workflow.
-- In live mode, some files carrying a **`LIVE + SAFE FALLBACK`** chip and a
+- In optional open-input live mode, some files may carry a **`LIVE + SAFE FALLBACK`** chip and a
   per-file *"why a template?"* note. This is expected. The model sometimes drafts
   a claim the source never supported; that draft is rejected before it reaches an
   output file and replaced with a governed deterministic template. Hover the note
@@ -111,7 +106,7 @@ python -X utf8 scripts/verify_no_secrets.py   # secret scan
 
 ## Evidence
 
-- pytest: **1,930** collected across **119 test modules** — **1,922 passed /
+- pytest: **1,937** collected across **119 test modules** — **1,929 passed /
   8 intentional/environment-dependent skipped / 0 failed** in the ordinary grouped run.
 - The `tests/` directory contains **121 Python files** in total, including
   `conftest.py` and `__init__.py`.
@@ -119,28 +114,23 @@ python -X utf8 scripts/verify_no_secrets.py   # secret scan
 - Evaluation suite: **38 / 38** evaluated cases passed, **3** skipped, pass rate **1.0**.
 - Secret scan: **PASS**.
 
-## Optional: mixed live mode (one server, two honest tiers)
+## Optional: open-input live mode (one server, two honest tiers)
 
-With a valid `OPENAI_API_KEY`, the operator can start ONE server where the core
-demo stays deterministic while Route A/B and unfamiliar school input are
+With a valid `OPENAI_API_KEY`, the operator can start ONE server where Main,
+Route A and Route B stay deterministic while only unfamiliar open input is
 eligible for live generation — no restart:
 
 ```powershell
-$env:TEOW_AGL_LIVE_WORKFLOWS = "ad_hoc_school_event_reporting,school_charity_bazaar"
 $env:TEOW_AGL_LIVE_SCHOOL_INPUTS = "1"
 python -X utf8 -m server.app
 ```
 
-The top-bar badge then says `Mode: mixed live` — meaning the core demo stays
-deterministic while selected workflows and open-school inputs are configured to
-attempt the provider; the badge tooltip lists the live workflows. The task card
-and audit trace are the source of truth for actual provider use versus
-deterministic fallback. Without a key the badge honestly stays deterministic.
-After Route A or B appears, a typed follow-up inherits that case immediately
-(even while approval is pending). A new school-admin request opens a new case;
-an unrelated request is not forced into the school pack. The API interprets a
-closed semantic schema and drafts content; it cannot choose a governance colour.
-Governance is identical in both tiers.
+The labelled Main, Route A and Route B buttons display `REPRODUCIBLE MOCK` and
+never call the provider, even when a key is configured. Only ⑤ or manually typed
+open input may display `LIVE API USED`, `LIVE + SAFE FALLBACK`, or
+`DETERMINISTIC FALLBACK`. The task card and audit trace are the source of truth.
+The API interprets a closed semantic schema and drafts content; it cannot choose
+a governance colour. Governance is identical in both tiers.
 
 If the provider is rate-limited, unavailable, times out, or returns a malformed
 bundle, a task-local outage circuit prevents repeated calls and the governed
@@ -180,5 +170,5 @@ python -X utf8 scripts/verify_competition_enhancements.py
 - Port 8765 busy → a stale server is running; stop it first.
 - If a full `pytest` run times out in a constrained environment, run it in file
   batches (e.g. `pytest tests/test_route_a_charity_bazaar.py tests/test_route_b_ad_hoc.py`).
-  The accepted baseline is **1,930 tests across 119 test modules**; the
+  The accepted baseline is **1,937 tests across 119 test modules**; the
   `tests/` directory has **121 Python files** including support files.

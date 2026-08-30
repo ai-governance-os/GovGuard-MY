@@ -1,8 +1,9 @@
 """Mixed-mode planner selection — one server, two honest tiers.
 
-The operator may start ONE server where the core demo stays deterministic
-(smart_mock) while selected workflows run on the live API — no restart between
-demo parts (TEOW_AGL_LIVE_WORKFLOWS=<workflow_id,...>). These tests pin the
+The operator may start ONE server where labelled competition probes stay
+deterministic (smart_mock), while a separately submitted open-input request may
+use the live API — no restart between demo parts
+(TEOW_AGL_LIVE_WORKFLOWS=<workflow_id,...>). These tests pin the lower-level
 selection logic keyless and network-free:
 
   * default (env unset)          → everything deterministic (exact current behaviour)

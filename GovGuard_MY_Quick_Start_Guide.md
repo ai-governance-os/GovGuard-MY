@@ -21,14 +21,15 @@ python -X utf8 -m server.app
 
 <http://127.0.0.1:8765>
 
-## 4. Demo parts (four, in three tiers)
+## 4. Demo parts (three stable demos + optional open input)
 
 - **Tier 1 · Core governance demo** — ① national athletics workflow autonomy +
   ② user-input governance probes (deterministic · reproducible)
-- **Tier 2 · Generalisation** — ③ open school input with a governed Markdown
-  Response Pack (Route B remains the reproducible example)
-- **Tier 3 · Real-case evidence** — ④ Route A: charity bazaar case study
-  (collapsed — click to open; synthetic donor data)
+- **Route A · Real-case evidence** — ③ charity bazaar over synthetic donor data
+  (deterministic · evidence-backed)
+- **Route B · Controlled transfer** — ④ speech-competition workflow
+  (deterministic · reproducible)
+- **Optional open input** — ⑤ unfamiliar school case, live when configured
 
 Each part has one main workflow button and one or two governance probes. The
 top-bar pills show the honest session state (Governance / External / Mode).
@@ -43,7 +44,6 @@ $env:MAIC_DEMO_MODE = "1"
 $env:TEOW_AGL_DOMAIN_PACK = "public_school"
 $env:OPENAI_API_KEY = "<private OpenAI key; never commit it>"
 $env:OPENAI_MODEL = "gpt-4o"
-$env:TEOW_AGL_LIVE_WORKFLOWS = "ad_hoc_school_event_reporting,school_charity_bazaar"
 $env:TEOW_AGL_LIVE_SCHOOL_INPUTS = "1"
 python -X utf8 -m server.app
 ```
@@ -57,14 +57,13 @@ $env:TEOW_AGL_DOMAIN_PACK = "public_school"
 $env:OPENAI_API_KEY = "<private DeepSeek key; never commit it>"
 $env:OPENAI_BASE_URL = "https://api.deepseek.com/v1"
 $env:OPENAI_MODEL = "deepseek-v4-flash"
-$env:TEOW_AGL_LIVE_WORKFLOWS = "ad_hoc_school_event_reporting,school_charity_bazaar"
 $env:TEOW_AGL_LIVE_SCHOOL_INPUTS = "1"
 python -X utf8 -m server.app
 ```
 
-The core demo stays deterministic. Route A/B, their typed follow-ups, and new
-school-admin cases attempt the live API; deterministic governance still owns
-every route, artifact and approval decision. Open-input files are Markdown,
+Main, Route A and Route B stay deterministic even when a key is present. Only
+optional unfamiliar open input attempts the live API; deterministic governance
+still owns every route, artifact and approval decision. Open-input files are Markdown,
 unknowns remain TBC, and a failed or unavailable live bundle falls back to safe
 role-specific drafts. The top badge reports configuration; each task reports
 whether live generation or deterministic fallback actually ran, including the
@@ -105,7 +104,7 @@ first-run → approve → reuse lifecycle. Restart the server afterwards.
 python -X utf8 -m pytest -q
 ```
 
-Validated baseline: **1,930 collected across 119 test modules; 1,922 passed /
+Validated baseline: **1,937 collected across 119 test modules; 1,929 passed /
 8 intentional/environment-dependent skipped / 0 failed** in the ordinary grouped run.
 The `tests/` directory contains **121 Python files** in total, including
 `conftest.py` and `__init__.py`.

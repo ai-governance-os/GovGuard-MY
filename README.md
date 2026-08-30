@@ -29,11 +29,7 @@ external action needs human approval, whether a request must be refused, and
 whether a missing fact must be marked unknown instead of invented. None of these
 decisions is left to prompt-only guardrails.
 
-## Demo overview — four parts, three tiers
-
-The local demo home page groups four demo parts into a three-tier narrative —
-**core governance demo** (dominant) → **generalisation** → **real-case
-evidence** (collapsed case study):
+## Demo overview — three stable demos, then optional open input
 
 1. **① National athletics workflow autonomy** — the agent runs a multi-step
    school follow-up, self-blocks its own unsafe status/income proposal (RED),
@@ -41,15 +37,15 @@ evidence** (collapsed case study):
 2. **② User-input governance probes** — the same governance over the operator's
    later free-text requests (BLUE edit, RED status-pressure, GREEN release,
    INFEASIBLE reward guess, RED learning-boundary).
-3. **③ Open school input (generalisation)** — an unfamiliar school situation
-   becomes a selectable, governed Markdown Response Pack. Route B remains the
-   reproducible speech-competition example; typed cases can range across safety,
-   welfare, events, transport, food, cyber/data, finance, learning support, and
-   general administration. The zero-key path uses conservative deterministic
-   compilation; an optional provider can add richer semantic interpretation and
-   prose without gaining authority.
-4. **④ Route A — real-case-derived school charity bazaar** — a realistic
-   administrative deployment over a *synthetic* stakeholder/donor database.
+3. **③ Route A — real-case-derived school charity bazaar** — a realistic,
+   deterministic administrative deployment over a *synthetic* stakeholder/donor
+   database.
+4. **④ Route B — controlled transfer** — the reproducible speech-competition
+   workflow separates public achievement from private student support and never
+   invents missing facts.
+5. **⑤ Optional open input** — an unfamiliar typed school situation becomes a
+   selectable governed Markdown Response Pack. A configured provider may enrich
+   interpretation and prose without gaining authority.
 
 ## Route A: real-case-derived charity bazaar
 
@@ -129,12 +125,10 @@ Runs offline with **no API keys** (default planner `smart_mock`,
 `MAIC_DEMO_MODE=1`). Keep `-X utf8` on Windows (the demo mixes 中文 / Malay /
 English).
 
-**Optional competition Mixed Live mode** (with a valid OpenAI or DeepSeek key): set both
-`TEOW_AGL_LIVE_WORKFLOWS=ad_hoc_school_event_reporting,school_charity_bazaar`
-and `TEOW_AGL_LIVE_SCHOOL_INPUTS=1` before starting. The core main demo remains
-deterministic; Route A/B, their free-form follow-ups, and new school-domain
-administration cases attempt the API in the same browser session. The active
-case is carried into follow-up turns, including while a GREEN approval is pending.
+**Optional competition Open Input Live mode** (with a valid OpenAI or DeepSeek
+key): set `TEOW_AGL_LIVE_SCHOOL_INPUTS=1` before starting. Main, Route A and
+Route B remain deterministic and display `REPRODUCIBLE MOCK`; only unfamiliar
+open input attempts the API in the same browser session.
 The LLM labels meaning and may draft content; deterministic coverage,
 data-use, governance, artifact and verification modules still own the package
 and decide BLUE/GREEN/RED/INFEASIBLE. If a live bundle is incomplete or
@@ -143,7 +137,7 @@ replaces it as one governed unit. An
 unrelated request does not silently inherit the school case. Instead it receives
 a stable capability-boundary answer that states no student, parent, or
 school-case data was carried over; the generic planner is skipped. The UI mode
-badge states what is configured; each task's generation badge and audit trace
+badge states what is configured; each open-input task's generation badge and audit trace
 state whether the provider was actually used or a deterministic fallback ran.
 
 Two independent 19-case English / Bahasa Melayu Mixed Live runs observed
@@ -171,7 +165,7 @@ python -X utf8 scripts/verify_openai_school_inputs.py --full
 
 ## Test evidence
 
-- **1,930** tests collected across **119** test modules — **1,922 passed**,
+- **1,937** tests collected across **119** test modules — **1,929 passed**,
   **8 intentional/environment-dependent skipped**, **0 failed** in the ordinary grouped run
 - The `tests/` directory contains **121 Python files** in total, including
   `conftest.py` and `__init__.py`.

@@ -159,10 +159,10 @@ async function loadConfig() {
     const genBadge = $("#gen-mode-badge");
     if (genBadge) {
       const genLive = c.planner === "openai" || c.planner === "deepseek"
-        || (liveOn && liveList.includes("ad_hoc_school_event_reporting"));
+        || (liveOn && c.live_school_inputs === true);
       genBadge.textContent = genLive
-        ? "API configured · use shown per task"
-        : "Deterministic demo";
+        ? "Live available · use shown per task"
+        : "Keyless path available";
     }
   } catch (e) { const cm = $("#cfg-mini"); if (cm) cm.textContent = ""; }
 }
@@ -461,25 +461,11 @@ function buildDemoDock() {
   const body = $("#demo-dock-body");
   const src = $("#welcome");
   if (!body || !src || body.childElementCount) return;
-  // Mirror the landing hierarchy (Brief 8 Issue 3): core + generalisation
-  // prompts stay expanded; the case-study (evidence tier) prompts stay
-  // collapsed, so Route A never re-appears as a peer-level main demo.
-  let evidence = null;
+  // Mirror the competition hierarchy exactly: Main, Route A, Route B, then
+  // the optional open-input proof. All four remain visible in this order.
   src.querySelectorAll(".demo-section-label, .example-grid").forEach((n) => {
     const clone = n.cloneNode(true);
-    if (n.closest(".tier-evidence")) {
-      if (!evidence) {
-        evidence = document.createElement("details");
-        evidence.className = "dock-evidence";
-        const sum = document.createElement("summary");
-        sum.textContent = "④ Case study — charity bazaar (click to open)";
-        evidence.appendChild(sum);
-        body.appendChild(evidence);
-      }
-      evidence.appendChild(clone);
-    } else {
-      body.appendChild(clone);
-    }
+    body.appendChild(clone);
   });
 }
 
@@ -1871,6 +1857,7 @@ function renderAgentMessage(node, d) {
     routes.appendChild(chip);
   }
   const generationLabels = {
+    reproducible_mock: ["REPRODUCIBLE MOCK", "This labelled competition route is pinned to the deterministic governance fixture and does not call a live provider."],
     live_api_verified: ["LIVE API USED", "The provider output passed grounding and artifact verification."],
     hybrid_live_with_deterministic_repair: ["LIVE + SAFE FALLBACK", "Some provider output was retained; failed artifacts used verified deterministic repair."],
     deterministic_fallback: ["DETERMINISTIC FALLBACK", "The API output was unavailable or rejected; governed deterministic artifacts were used."],
@@ -3249,6 +3236,7 @@ document.addEventListener("DOMContentLoaded", () => {
     $("#goal").value = b.dataset.prompt;
     autoSizeTextarea($("#goal"));
     const isWorkflowEntry = b.classList.contains("example-main");
+    const isOpenInput = b.dataset.openInput === "true";
     // deterministicDemoProbe is INDEPENDENT of scriptedWorkflowId: the latter
     // forces the full configured workflow to replay (must stay off for these
     // labelled buttons — see 8/11 review), while the former only pins the
@@ -3257,14 +3245,14 @@ document.addEventListener("DOMContentLoaded", () => {
     // fixed BLUE/RED/GREEN/INFEASIBLE probe and drift its route.
     const isDemoProbe = b.dataset.demoProbe === "true";
     startTask({
-      direct: true,
+      direct: !isOpenInput,
       // Only the large entry button may force the configured workflow.
       // The labelled probes are standalone deterministic governance checks;
       // they must not inherit/replay a workflow or stale case snapshot.
       // Free-typed follow-ups still retain normal case continuity.
       scriptedWorkflowId: isWorkflowEntry ? (b.dataset.workflowId || null) : null,
       contextWorkflowId: null,
-      detachWorkflowContext: !isWorkflowEntry,
+      detachWorkflowContext: isOpenInput || !isWorkflowEntry,
       deterministicDemoProbe: isDemoProbe,
     });
   });

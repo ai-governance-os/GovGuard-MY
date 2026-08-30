@@ -20,8 +20,9 @@ generalised, and real-case-derived scenarios, not limited to one curated case.
   privacy. GovGuard generates a trilingual Facebook post, a parent notice, an
   internal checklist, donor-outreach drafts, and a data-use audit while blocking
   wealth inference, status pressure, and prior-donor pressure.
-- **Open-input generalisation.** Route B remains the reproducible short-prompt
-  example, while Mixed Live accepts unfamiliar school situations across safety,
+- **Route B — controlled transfer.** The reproducible short-prompt speech case
+  proves that governed procedure transfers without private memory or invented
+  facts. **Optional open-input generalisation** accepts unfamiliar school situations across safety,
   welfare, transport, food, events, cyber/data, finance, learning support, and
   general administration. A closed-schema Situation Compiler proposes a selectable
   Markdown Response Pack; deterministic policy owns coverage, TBC, privacy,
@@ -39,25 +40,21 @@ generalised, and real-case-derived scenarios, not limited to one curated case.
 5. Missing facts are marked **TBC** instead of invented.
 6. Learning is **bounded**: open case facts remain task-local; only a
    non-personal workflow SOP can enter the separate owner-gated learning path.
-7. Free-form Route A/B follow-ups and new school-admin cases work in conservative
-   zero-key mode; when a provider is usable, Mixed Live can enrich their semantic
-   interpretation and prose while deterministic governance still owns the route.
+7. Main, Route A and Route B are pinned to reproducible deterministic fixtures.
+   A provider may enrich only optional unfamiliar open input; deterministic
+   governance still owns every route.
 8. Approved learning may reduce repeated friction, but it cannot downgrade a
    mandatory GREEN human gate imposed by policy or the data-use guard.
 
-## Demo — four parts, three tiers
-
-The landing console groups the four demo parts into a three-tier narrative
-(core demo dominant → generalisation → collapsed evidence):
+## Demo — three stable demos, then optional open input
 
 1. **① National athletics workflow autonomy** — deep workflow + internal self-governance (RED self-block; GREEN protected-record verification). *(Tier 1)*
 2. **② User-input governance probes** — governance over the operator's later free-text requests. *(Tier 1)*
-3. **③ Open school input** — school-ready generalisation with Route B as the reproducible example and arbitrary typed cases in Mixed Live. *(Tier 2)*
-   The submission's measured open-input scope is English and Bahasa Melayu
-   school-administration cases. Chinese free-form input is not part of this
-   open-input claim; scripted routes may still produce deterministic
-   trilingual content.
-4. **④ Route A — real-case-derived charity bazaar** — realistic deployment over synthetic donor data. *(Tier 3, case study)*
+3. **③ Route A — real-case-derived charity bazaar** — realistic deterministic deployment over synthetic donor data.
+4. **④ Route B — controlled transfer** — reproducible speech-competition workflow with privacy and TBC boundaries.
+5. **⑤ Optional open input** — arbitrary typed school cases. The measured scope
+   is English and Bahasa Melayu; the task card reports whether the provider ran,
+   safe fallback was used, or the keyless path ran.
 
 ## Measured Mixed Live boundaries
 
@@ -91,7 +88,7 @@ must be read together:
 
 ## Evidence
 
-- pytest: **1,930** collected across **119 test modules** — **1,922 passed /
+- pytest: **1,937** collected across **119 test modules** — **1,929 passed /
   8 intentional/environment-dependent skipped / 0 failed** in the ordinary grouped run.
 - The `tests/` directory contains **121 Python files** in total, including
   `conftest.py` and `__init__.py`.
