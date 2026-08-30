@@ -53,9 +53,9 @@ cannot reproduce.
 
 Command: `python -X utf8 -m pytest -q`
 
-- **1,937** collected across **119 test modules** — **1,929 passed**,
+- **2,128** collected across **123 test modules** — **2,120 passed**,
   **8 intentional/environment-dependent skipped**, **0 failed** in the ordinary grouped run.
-- The `tests/` directory contains **121 Python files** in total, including
+- The `tests/` directory contains **125 Python files** in total, including
   `conftest.py` and `__init__.py`.
 - Browser UI contract suite: **21 / 21 passed** when enabled, including seven conditional browser cases.
 

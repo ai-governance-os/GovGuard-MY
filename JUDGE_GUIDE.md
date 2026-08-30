@@ -106,9 +106,9 @@ python -X utf8 scripts/verify_no_secrets.py   # secret scan
 
 ## Evidence
 
-- pytest: **1,937** collected across **119 test modules** — **1,929 passed /
+- pytest: **2,128** collected across **123 test modules** — **2,120 passed /
   8 intentional/environment-dependent skipped / 0 failed** in the ordinary grouped run.
-- The `tests/` directory contains **121 Python files** in total, including
+- The `tests/` directory contains **125 Python files** in total, including
   `conftest.py` and `__init__.py`.
 - Browser UI contract suite: **21 / 21 passed** when enabled, including seven conditional browser cases.
 - Evaluation suite: **38 / 38** evaluated cases passed, **3** skipped, pass rate **1.0**.
@@ -170,5 +170,5 @@ python -X utf8 scripts/verify_competition_enhancements.py
 - Port 8765 busy → a stale server is running; stop it first.
 - If a full `pytest` run times out in a constrained environment, run it in file
   batches (e.g. `pytest tests/test_route_a_charity_bazaar.py tests/test_route_b_ad_hoc.py`).
-  The accepted baseline is **1,937 tests across 119 test modules**; the
-  `tests/` directory has **121 Python files** including support files.
+  The accepted baseline is **2,128 tests across 123 test modules**; the
+  `tests/` directory has **125 Python files** including support files.
