@@ -139,6 +139,15 @@ def test_equipment_or_service_failure_is_not_student_sensitive(source: str) -> N
     assert source_identifiers(source) == set()
 
 
+def test_sentence_initial_pronoun_is_not_a_student_identifier() -> None:
+    source = (
+        "Eight pupils vomited after lunch. They are stable and there is no "
+        "unmet medical emergency now."
+    )
+
+    assert "They" not in source_identifiers(source)
+
+
 @pytest.mark.parametrize(("source", "identifier"), [
     ("Ali failed BM.", "Ali"),
     ("A Year 5 student Ali failed BM with 20 marks.", "Ali"),

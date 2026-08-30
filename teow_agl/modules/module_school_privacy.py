@@ -293,13 +293,14 @@ def source_identifiers(source: str) -> set[str]:
     # "BM" or "their full names").
     non_identifiers = _NON_PERSON_NAME_TOKENS.union({
         "all", "and", "bahasa", "bm", "child", "children", "each",
-        "every", "facebook", "full", "guardian", "guardians", "his",
-        "her", "include", "including", "list", "listed", "listing",
+        "every", "facebook", "full", "guardian", "guardians", "he", "his",
+        "her", "hers", "include", "including", "it", "its", "list", "listed", "listing",
         "mark", "marks", "message", "name", "names", "notice", "parent",
         "parents", "please", "prepare", "pupil", "pupils", "reason",
         "report", "school", "score", "scores", "send", "student",
-        "students", "subject", "the", "their", "this", "weak",
-        "weakness", "whatsapp", "who", "year",
+        "students", "subject", "the", "their", "theirs", "them", "they",
+        "this", "we", "our", "ours", "weak", "weakness", "whatsapp",
+        "who", "year",
     })
     return {
         item for item in found

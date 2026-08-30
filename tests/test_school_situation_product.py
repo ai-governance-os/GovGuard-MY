@@ -1346,6 +1346,252 @@ def test_high_cyber_incident_does_not_show_irrelevant_life_safety_banner():
     assert compiled["response_pack"]["emergency_banner"] is None
 
 
+def test_explicit_false_death_rumour_cannot_inherit_high_severity() -> None:
+    compiled = SchoolSituationCompiler(POLICY).compile(
+        "A false rumour on Facebook says a pupil died at school. Prepare "
+        "a privacy-safe public response without naming any child.",
+        _semantics({
+            "family": "communications_reputation",
+            "phase": "ongoing",
+            "severity": "high",
+            "signals": [
+                "public_interest", "minor_involved", "injury_or_illness",
+                "possible_regulatory_trigger",
+            ],
+            "affected_people_types": ["student"],
+            "stakeholder_candidates": [
+                "public_media", "medical_services", "education_authority",
+            ],
+        }),
+    )
+    situation = compiled["situation"]
+    assert situation["family"] == "communications_reputation"
+    assert situation["severity"] == "medium"
+    assert "public_interest" in situation["signals"]
+    assert "minor_involved" in situation["signals"]
+    assert {
+        "injury_or_illness", "possible_regulatory_trigger", "active_danger",
+    }.isdisjoint(situation["signals"])
+    recommended = {
+        item["artifact_role"]
+        for item in compiled["response_pack"]["deliverables"]
+        if item.get("requirement") == "recommended"
+    }
+    assert "post_incident_review" not in recommended
+    assert "regulatory_notification_assessment" not in recommended
+
+
+def test_real_harm_is_not_erased_by_a_separate_false_online_rumour() -> None:
+    compiled = SchoolSituationCompiler(POLICY).compile(
+        "A pupil died at school. A false rumour on Facebook says another "
+        "pupil died after a fight. Prepare the school's response package.",
+        _semantics({
+            "family": "communications_reputation",
+            "phase": "ongoing",
+            "severity": "critical",
+            "signals": [
+                "injury_or_illness", "minor_involved", "public_interest",
+                "possible_regulatory_trigger", "evidence_preservation_needed",
+            ],
+            "affected_people_types": ["student"],
+            "stakeholder_candidates": [
+                "guardian", "public_media", "school_leadership",
+                "education_authority", "medical_services",
+            ],
+        }),
+    )
+    situation = compiled["situation"]
+    assert situation["severity"] in {"high", "critical"}
+    assert "injury_or_illness" in situation["signals"]
+
+
+@pytest.mark.parametrize("text", [
+    "An unverified post on Facebook says a pupil may have died at school.",
+    "A pupil reportedly died at school and the facts are still being verified.",
+])
+def test_unverified_or_reported_death_is_never_downgraded_as_false_rumour(
+    text: str,
+) -> None:
+    compiled = SchoolSituationCompiler(POLICY).compile(
+        text + " Prepare the governed response pack.",
+        _semantics({
+            "family": "communications_reputation",
+            "phase": "just_occurred",
+            "severity": "high",
+            "signals": [
+                "public_interest", "minor_involved",
+                "possible_regulatory_trigger",
+            ],
+            "affected_people_types": ["student"],
+            "stakeholder_candidates": [
+                "public_media", "school_leadership", "education_authority",
+            ],
+        }),
+    )
+    assert compiled["situation"]["severity"] == "high"
+    recommended = {
+        item["artifact_role"]
+        for item in compiled["response_pack"]["deliverables"]
+        if item.get("requirement") == "recommended"
+    }
+    assert "regulatory_notification_assessment" in recommended
+    assert "post_incident_review" in recommended
+
+
+def test_semantic_high_safe_bus_is_capped_by_source_resolution() -> None:
+    compiled = SchoolSituationCompiler(POLICY).compile(
+        "The school bus broke down on the way home. All pupils are safe and "
+        "supervised. Prepare the appropriate response. Draft only.",
+        _semantics({
+            "family": "transport_travel",
+            "phase": "ongoing",
+            "severity": "high",
+            "signals": [
+                "transport_operation",
+                "external_help_may_be_required", "possible_regulatory_trigger",
+            ],
+            "affected_people_types": ["student"],
+            "stakeholder_candidates": [
+                "guardian", "transport_provider", "education_authority",
+                "malaysia_emergency_services_999",
+            ],
+        }),
+    )
+    situation = compiled["situation"]
+    assert situation["severity"] == "medium"
+    assert "transport_operation" in situation["signals"]
+    assert {
+        "active_danger", "external_help_may_be_required",
+        "possible_regulatory_trigger",
+    }.isdisjoint(situation["signals"])
+    recommended = {
+        item["artifact_role"]
+        for item in compiled["response_pack"]["deliverables"]
+        if item.get("requirement") == "recommended"
+    }
+    assert {"private_parent_notice", "external_stakeholder_message"} <= recommended
+    assert "post_incident_review" not in recommended
+    assert "regulatory_notification_assessment" not in recommended
+    assert compiled["response_pack"]["critical_question"] is None
+
+
+def test_safe_pupils_do_not_resolve_a_distinct_active_bus_hazard() -> None:
+    compiled = SchoolSituationCompiler(POLICY).compile(
+        "The school bus broke down in a live traffic lane and smoke is coming "
+        "from the engine. All pupils are safe and supervised. Prepare the "
+        "appropriate response. Draft only.",
+        _semantics({
+            "family": "transport_travel",
+            "phase": "ongoing",
+            "severity": "high",
+            "signals": [
+                "transport_operation", "active_danger",
+                "external_help_may_be_required",
+            ],
+            "affected_people_types": ["student"],
+            "stakeholder_candidates": [
+                "guardian", "transport_provider",
+                "malaysia_emergency_services_999",
+            ],
+        }),
+    )
+    situation = compiled["situation"]
+    assert situation["severity"] in {"high", "critical"}
+    assert "active_danger" in situation["signals"]
+    question = compiled["response_pack"]["critical_question"]
+    assert question and question["question_id"] == "immediate_danger"
+
+
+def test_semantic_high_closed_ceiling_is_contained_not_emergency() -> None:
+    compiled = SchoolSituationCompiler(POLICY).compile(
+        "After heavy rain, part of the ceiling in a Year 4 classroom fell. "
+        "The room was cleared, all pupils are accounted for, and the room is "
+        "closed. No injuries are confirmed. Prepare the school response package.",
+        _semantics({
+            "family": "facilities_environment",
+            "phase": "ongoing",
+            "severity": "critical",
+            "signals": [
+                "service_disruption", "active_danger",
+                "external_help_may_be_required", "evacuation_accountability",
+                "possible_regulatory_trigger",
+            ],
+            "affected_people_types": ["student", "staff"],
+            "stakeholder_candidates": [
+                "school_leadership", "fire_and_rescue",
+                "malaysia_emergency_services_999", "education_authority",
+            ],
+        }),
+    )
+    situation = compiled["situation"]
+    assert situation["severity"] == "medium"
+    assert "service_disruption" in situation["signals"]
+    assert {
+        "active_danger", "external_help_may_be_required",
+        "evacuation_accountability", "possible_regulatory_trigger",
+    }.isdisjoint(situation["signals"])
+    selected = {
+        item["artifact_role"]
+        for item in compiled["response_pack"]["deliverables"]
+        if item.get("selected") is True
+    }
+    assert {"internal_incident_report", "site_safety_checklist"} <= selected
+    assert {
+        "emergency_contact_script", "fire_rescue_contact_script",
+        "student_accountability_checklist",
+    }.isdisjoint(selected)
+    assert compiled["response_pack"]["critical_question"] is None
+
+
+def test_closed_ceiling_room_without_clearance_keeps_human_safety_question() -> None:
+    compiled = SchoolSituationCompiler(POLICY).compile(
+        "Part of the ceiling fell. The room is closed, but we have not checked "
+        "whether anyone is inside. Prepare the immediate school response.",
+        _semantics({
+            "family": "facilities_environment",
+            "phase": "ongoing",
+            "severity": "critical",
+            "signals": [
+                "service_disruption", "active_danger",
+                "external_help_may_be_required", "evacuation_accountability",
+            ],
+            "affected_people_types": ["student", "staff"],
+            "stakeholder_candidates": [
+                "school_leadership", "fire_and_rescue",
+                "malaysia_emergency_services_999",
+            ],
+        }),
+    )
+    assert compiled["situation"]["severity"] in {"high", "critical"}
+    assert "active_danger" in compiled["situation"]["signals"]
+    question = compiled["response_pack"]["critical_question"]
+    assert question and question["question_id"] == "immediate_danger"
+
+
+def test_uncontained_ceiling_danger_keeps_high_human_question() -> None:
+    compiled = SchoolSituationCompiler(POLICY).compile(
+        "Part of the ceiling fell. The room may still be unsafe and staff "
+        "remain inside. Prepare the immediate school response.",
+        _semantics({
+            "family": "facilities_environment",
+            "phase": "ongoing",
+            "severity": "high",
+            "signals": [
+                "service_disruption", "active_danger",
+                "external_help_may_be_required",
+            ],
+            "affected_people_types": ["staff"],
+            "stakeholder_candidates": [
+                "school_leadership", "fire_and_rescue",
+            ],
+        }),
+    )
+    assert compiled["situation"]["severity"] in {"high", "critical"}
+    assert "active_danger" in compiled["situation"]["signals"]
+    question = compiled["response_pack"]["critical_question"]
+    assert question and question["question_id"] == "immediate_danger"
+
+
 def test_safe_public_fallback_is_private_by_construction_and_not_red(tmp_path: Path):
     class BrokenBundleLLM:
         def chat_json(self, **kwargs):

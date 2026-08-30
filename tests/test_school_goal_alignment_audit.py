@@ -4,7 +4,10 @@ import pytest
 
 from teow_agl.adapters.chat_llm import ChatLLM
 from teow_agl.models import CandidateAction
-from teow_agl.modules.module_102b_synthesizer import ContentSynthesizer
+from teow_agl.modules.module_102b_synthesizer import (
+    ContentSynthesizer,
+    _school_audit_issue_scope,
+)
 
 
 class _StrictAdapter(ChatLLM):
@@ -180,7 +183,31 @@ def test_production_adapter_fails_closed_on_incomplete_alignment_schema(
     assert result["score"] == 0
 
 
-def test_low_score_cannot_contradictorily_pass_with_empty_issue_lists() -> None:
+@pytest.mark.parametrize("malformed", [[{}], [None], ["missing report"]])
+def test_malformed_goal_findings_are_audit_unavailable_not_invented(
+    malformed: list,
+) -> None:
+    payload = _clean_payload()
+    payload["goal_alignment_passed"] = False
+    payload["missing_obligations"] = malformed
+    payload["score"] = 40
+    payload["reason"] = "A provider returned a malformed issue item."
+    action = _action()
+
+    result = ContentSynthesizer(
+        chat_llm=_StrictAdapter(payload)
+    )._school_goal_alignment_audit(
+        [action], {action.action_id: _body()}, action.metadata["source_request"],
+        audit_data=payload,
+    )
+
+    assert result["goal_alignment_passed"] is False
+    assert result["missing_obligations"] == []
+    assert result["malformed_issue_schema"] is True
+    assert "Unspecified issue" not in str(result)
+
+
+def test_low_score_without_actionable_findings_is_escalated_not_invented() -> None:
     payload = _clean_payload()
     payload["score"] = 70
     action = _action()
@@ -192,7 +219,64 @@ def test_low_score_cannot_contradictorily_pass_with_empty_issue_lists() -> None:
     )
 
     assert result["goal_alignment_passed"] is False
-    assert result["missing_obligations"]
+    assert result["missing_obligations"] == []
+    assert result["goal_alignment_consistency_uncertain"] is True
+
+
+def test_false_alignment_flag_without_findings_is_escalated_not_invented() -> None:
+    payload = _clean_payload()
+    payload["goal_alignment_passed"] = False
+    action = _action()
+    result = ContentSynthesizer(
+        chat_llm=_StrictAdapter(payload)
+    )._school_goal_alignment_audit(
+        [action], {action.action_id: _body()}, action.metadata["source_request"],
+        audit_data=payload,
+    )
+
+    assert result["goal_alignment_passed"] is False
+    assert result["missing_obligations"] == []
+    assert result["goal_alignment_consistency_uncertain"] is True
+
+
+def test_alignment_consistency_uncertainty_is_bundle_scoped_for_one_file() -> None:
+    scoped, bundle = _school_audit_issue_scope(
+        {"issues": ["goal_alignment_consistency_uncertain"]},
+        {"only_file"},
+    )
+
+    assert scoped == {"only_file": []}
+    assert bundle == ["goal_alignment_consistency_uncertain"]
+
+
+def test_unowned_missing_obligation_stays_bundle_scoped_for_one_file() -> None:
+    finding = {
+        "obligation": "a separate comprehensive response plan",
+        "reason": "The provider preferred an extra file outside the pack.",
+    }
+    scoped, bundle = _school_audit_issue_scope(
+        {"missing_obligations": [finding]},
+        {"incident_report"},
+    )
+
+    assert scoped == {"incident_report": []}
+    assert len(bundle) == 1
+    assert bundle[0].startswith("missing_obligation:")
+
+
+def test_owned_missing_obligation_remains_file_scoped() -> None:
+    finding = {
+        "action_id": "incident_report",
+        "obligation": "include the requested chronology",
+        "reason": "The chronology section is absent.",
+    }
+    scoped, bundle = _school_audit_issue_scope(
+        {"missing_obligations": [finding]},
+        {"incident_report"},
+    )
+
+    assert bundle == []
+    assert scoped["incident_report"][0].startswith("missing_obligation:")
 
 
 def test_combined_audit_uses_one_call_and_requires_both_dimensions() -> None:

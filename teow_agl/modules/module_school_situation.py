@@ -362,6 +362,82 @@ def _physical_incident_flags(text: str) -> tuple[bool, bool]:
     return incident, minor_affected
 
 
+def _is_explicit_false_online_harm_rumour_clause(clause: str) -> bool:
+    value = str(clause or "").casefold()
+    expressly_false = bool(re.search(
+        r"\b(?:false|fabricated|untrue|inaccurate|hoax)\s+"
+        r"(?:online\s+)?(?:rumou?r|claim|post|story)\b|"
+        r"\b(?:rumou?r|claim|post|story)\b[^.!?;]{0,55}"
+        r"\b(?:is|was)\s+(?:false|fabricated|untrue|inaccurate|a\s+hoax)\b",
+        value,
+    ))
+    online = bool(re.search(
+        r"\b(?:facebook|social\s+media|online|viral|website|public\s+post)\b",
+        value,
+    ))
+    harmful_minor_content = bool(re.search(
+        rf"\b{_MINOR}\b[^.!?;]{{0,90}}\b"
+        r"(?:died|dead|killed|injured|missing)\b|"
+        r"\b(?:died|dead|killed|injured|missing)\b[^.!?;]{0,90}"
+        rf"\b{_MINOR}\b",
+        value,
+    ))
+    return expressly_false and online and harmful_minor_content
+
+
+def _affirmed_person_harm_clause(clause: str) -> bool:
+    """Detect an actual person-harm assertion, including death wording."""
+    value = str(clause or "").casefold()
+    if not value or _planned_hypothetical_clause(value):
+        return False
+    physical, _ = _physical_incident_flags(value)
+    death_or_missing = bool(re.search(
+        rf"\b{_PERSON}\b[^.!?;]{{0,100}}\b"
+        r"(?:died|dead|killed|fatal(?:ly)?|missing)\b|"
+        r"\b(?:died|dead|killed|fatal(?:ly)?|missing)\b"
+        rf"[^.!?;]{{0,100}}\b{_PERSON}\b",
+        value,
+    ))
+    return physical or death_or_missing
+
+
+def _false_online_harm_rumour_is_only_harm_claim(text: str) -> bool:
+    """Return true only when every person-harm claim is expressly false.
+
+    A communications case may quote a false death/injury rumour without
+    becoming an emergency incident.  A mixed case is different: one real harm
+    assertion must retain its own severity even when a second online claim is
+    explicitly false.  ``unverified`` is deliberately not treated as false.
+    """
+    clauses: list[str] = []
+    for logical in _logical_clauses(str(text or "").casefold()):
+        clauses.extend(
+            part.strip(" ,:")
+            for part in re.split(
+                r",\s*(?:while|whereas|and)\s+|\b(?:while|whereas)\b",
+                logical,
+            )
+            if part.strip(" ,:")
+        )
+    found_false_harm = False
+    for clause in clauses:
+        if _is_explicit_false_online_harm_rumour_clause(clause):
+            found_false_harm = True
+            # If the same segment contains a separate affirmed incident before
+            # the false-rumour marker, do not let the later qualifier erase it.
+            marker = re.search(
+                r"\b(?:false|fabricated|untrue|inaccurate|hoax)\b|"
+                r"\b(?:rumou?r|claim|post|story)\b",
+                clause,
+            )
+            if marker and _affirmed_person_harm_clause(clause[:marker.start()]):
+                return False
+            continue
+        if _affirmed_person_harm_clause(clause):
+            return False
+    return found_false_harm
+
+
 def _mask_exercise_hazard_terms(text: str) -> str:
     """Remove hazard words that only name a drill, not a live hazard."""
     return re.sub(
@@ -462,6 +538,145 @@ def _active_hazard_present(text: str) -> bool:
         ):
             return True
     return False
+
+
+def _has_affirmed_source_statement(
+    text: str,
+    positive: re.Pattern[str],
+) -> bool:
+    """Match only an affirmative source statement, never uncertainty.
+
+    Safety and privacy floors must not treat a phrase inside a question,
+    ``cannot confirm`` scope, or ``not ruled out`` scope as established fact.
+    """
+    uncertain = re.compile(
+        r"\b(?:cannot|can't|could\s+not|couldn't|do\s+not|don't)\s+"
+        r"(?:confirm|verify|establish|know|rule\s+out)\b|"
+        r"\b(?:not|never)\s+(?:confirmed|verified|established|known|ruled\s+out)\b|"
+        r"\b(?:unconfirmed|unknown|unclear|uncertain|not\s+sure|whether|"
+        r"has\s+(?:not\s+)?been\s+ruled\s+out|"
+        r"have\s+(?:not\s+)?been\s+ruled\s+out|false\s+that)\b|"
+        r"\b(?:tidak|belum)\s+(?:dapat\s+)?(?:disahkan|dipastikan|diketahui)\b|"
+        r"\b(?:tidak\s+pasti|sama\s+ada)\b|"
+        r"(?:无法确认|無法確認|不能确认|不能確認|尚未确认|尚未確認|"
+        r"不确定|不確定|是否|未排除)",
+        re.IGNORECASE,
+    )
+    for match in re.finditer(
+        r"[^.!?;。！？；\n]+[.!?;。！？；]?",
+        str(text or ""),
+    ):
+        clause = match.group(0).strip()
+        if not clause or not positive.search(clause):
+            continue
+        if "?" in clause or "？" in clause or uncertain.search(clause):
+            continue
+        return True
+    return False
+
+
+_NO_UNMET_EMERGENCY_ASSERTION = re.compile(
+    r"\b(?:there\s+is\s+)?no\s+(?:unmet\s+)?(?:immediate\s+)?"
+    r"(?:medical\s+)?emergency(?:\s+(?:now|at\s+present))?\b|"
+    r"\bno\s+(?:immediate|active|continuing)\s+danger\b|"
+    r"\b(?:immediate\s+)?danger\s+(?:is\s+)?not\s+(?:present|ongoing)\b|"
+    r"\btiada\s+(?:bahaya\s+segera|kecemasan\s+perubatan\s+yang\s+belum\s+ditangani)\b|"
+    r"(?:没有|沒有)(?:即时|即時)?(?:危险|危險)|"
+    r"(?:没有|沒有)未处理的医疗紧急情况",
+    re.IGNORECASE,
+)
+
+
+def _explicitly_no_unmet_emergency(text: str) -> bool:
+    """Detect an express first-party resolution of present safety urgency.
+
+    ``stable`` by itself is not enough. The source must say there is no
+    immediate danger or no unmet medical/emergency need, so a conservative
+    semantic severity label cannot reopen a question already answered by the
+    operator.
+    """
+    return _has_affirmed_source_statement(
+        text,
+        _NO_UNMET_EMERGENCY_ASSERTION,
+    )
+
+
+def _explicitly_all_pupils_safe_and_supervised(text: str) -> bool:
+    return _has_affirmed_source_statement(
+        text,
+        re.compile(
+            r"\ball\s+(?:pupils?|students?|children)\s+(?:are|were)\s+"
+            r"safe\s+and\s+(?:accounted\s+for\s+and\s+)?supervised\b|"
+            r"\ball\s+(?:pupils?|students?|children)\s+(?:are|were)\s+"
+            r"supervised\s+and\s+safe\b",
+            re.IGNORECASE,
+        ),
+    )
+
+
+def _explicitly_contained_structural_hazard(text: str) -> bool:
+    """Require both access control and affirmative occupancy clearance."""
+    value = str(text or "").casefold()
+    structural_fall = bool(re.search(
+        r"\b(?:roof|ceiling|wall|beam|panel)\b[^.!?;]{0,75}"
+        r"\b(?:collaps(?:e|ed)|fell|fallen|caved\s+in|gave\s+way)\b|"
+        r"\b(?:collaps(?:e|ed)|caved\s+in|gave\s+way)\b"
+        r"[^.!?;]{0,75}\b(?:roof|ceiling|wall|beam|panel)\b",
+        value,
+    ))
+    affected_space_closed = bool(re.search(
+        r"\b(?:the\s+)?(?:room|classroom|affected\s+area|area|block)\s+"
+        r"(?:is|was|has\s+been|had\s+been)\s+"
+        r"(?:closed|cordoned\s+off|isolated|secured)\b",
+        value,
+    ))
+    occupancy_cleared = bool(re.search(
+        r"\b(?:the\s+)?(?:room|classroom|affected\s+area|area|block)\s+"
+        r"(?:was|has\s+been|had\s+been)\s+(?:cleared|evacuated|confirmed\s+empty)\b|"
+        r"\bno\s+(?:one|person|pupil|student|child|staff\s+member)\s+"
+        r"(?:is|was|remains?)\s+(?:inside|in\s+the\s+(?:room|area|block))\b|"
+        r"\b(?:all|every)\s+(?:occupants?|pupils?|students?|children|staff)\s+"
+        r"(?:are|were|have\s+been|had\s+been)\s+"
+        r"(?:evacuated|cleared|accounted\s+for)\b|"
+        r"\beveryone\s+(?:is|was|has\s+been)\s+(?:clear|accounted\s+for)\b",
+        value,
+    ))
+    unresolved_exposure = bool(re.search(
+        r"\b(?:people|persons?|pupils?|students?|children|staff)\s+"
+        r"(?:remain|are\s+still|were\s+still|may\s+be)\s+"
+        r"(?:inside|in\s+the\s+room|trapped\s+inside)\b|"
+        r"\b(?:pupils?|students?|children|staff)\s+may\s+be\s+trapped\b|"
+        r"\b(?:further\s+(?:collapse|panels?\s+falling)|still\s+unsafe|"
+        r"may\s+still\s+be\s+unsafe|active\s+danger|immediate\s+danger|"
+        r"door\s+(?:is\s+)?jammed)\b|"
+        r"\b(?:(?:have|has)\s+not|haven't|hasn't|cannot|can't|"
+        r"do\s+not|don't)\s+(?:checked?|confirm(?:ed)?|know)\s+whether\s+"
+        r"(?:anyone|people|pupils?|students?|children|staff)\s+"
+        r"(?:remain|are|were)?\s*(?:still\s+)?inside\b",
+        value,
+    ))
+    return bool(
+        structural_fall
+        and affected_space_closed
+        and occupancy_cleared
+        and not unresolved_exposure
+    )
+
+
+def _explicitly_resolved_or_contained_safety(text: str) -> bool:
+    """Recognise narrow first-party evidence that immediate exposure ended.
+
+    ``safe and supervised`` resolves pupil welfare, but does not by itself
+    resolve a separate fire, traffic or structural hazard. Structural damage
+    is considered contained only when the affected space is closed *and* the
+    source affirmatively confirms that occupants were cleared/accounted for.
+    """
+    value = str(text or "").casefold()
+    return bool(
+        _explicitly_no_unmet_emergency(value)
+        or _explicitly_all_pupils_safe_and_supervised(value)
+        or _explicitly_contained_structural_hazard(value)
+    )
 
 
 def _life_safety_status_unknown(text: str) -> bool:
@@ -652,6 +867,10 @@ def _corroborate_semantic_impact(
         r"(?:water\s+)?pipe\s+burst|burst\s+(?:water\s+)?pipe|"
         r"classrooms?\s+(?:cannot|can\s+not)\s+be\s+used|"
         r"building\s+damage|toilet\s+fault|electrical\s+fault)\b|"
+        r"\b(?:roof|ceiling|wall|beam|panel)\b[^.!?;]{0,75}"
+        r"\b(?:collaps(?:e|ed)|fell|fallen|caved\s+in|gave\s+way)\b|"
+        r"\b(?:collaps(?:e|ed)|caved\s+in|gave\s+way)\b"
+        r"[^.!?;]{0,75}\b(?:roof|ceiling|wall|beam|panel)\b|"
         r"漏水|停电|停電|设施故障|設施故障|kebocoran\s+air", low,
     ))
     public = bool(re.search(
@@ -768,6 +987,71 @@ def _corroborate_semantic_impact(
         physical or active or cyber or missing or safeguarding or finance
         or regulatory or food_topic or food_incident or transport or facility
     )
+    false_harm_rumour_only = bool(
+        _false_online_harm_rumour_is_only_harm_claim(low) and not any_material
+    )
+    if false_harm_rumour_only:
+        # A semantic model may correctly notice that the quoted words describe
+        # death or injury but incorrectly assign that severity to the school
+        # case.  The source explicitly says the online claim is false, and no
+        # independent incident predicate above corroborates it.  Preserve the
+        # public/privacy response while removing only the unsupported impact
+        # signals that would expand the pack into emergency/regulatory work.
+        family = "communications_reputation"
+        severity = "medium"
+        keep.difference_update({
+            "active_danger", "injury_or_illness", "person_missing",
+            "safeguarding_concern", "external_help_may_be_required",
+            "possible_regulatory_trigger", "food_water_exposure",
+            "evacuation_accountability", "guardian_notification_relevant",
+            "evidence_preservation_needed",
+        })
+        keep.add("public_interest")
+        if student_mentioned:
+            keep.add("minor_involved")
+        stakeholders.difference_update({
+            "medical_services", "malaysia_emergency_services_999",
+            "fire_and_rescue", "police", "education_authority", "guardian",
+        })
+        stakeholders.update({"public_media", "school_leadership"})
+    resolved_or_contained = _explicitly_resolved_or_contained_safety(low)
+    active_signal_resolved = bool(
+        "active_danger" not in keep
+        or _explicitly_no_unmet_emergency(low)
+        or _explicitly_contained_structural_hazard(low)
+    )
+    if (
+        semantic_authoritative
+        and severity in {"high", "critical"}
+        and resolved_or_contained
+        and active_signal_resolved
+        and not urgent
+    ):
+        # High-impact semantic labels are proposals.  When the source itself
+        # says every pupil is safe/supervised or a structural-fall area is
+        # closed and cleared, uncorroborated emergency signals cannot override
+        # that evidence. A distinct semantic active-danger signal survives
+        # unless the source explicitly resolves that hazard. Retain the
+        # material incident and its operational plan, but avoid unsupported
+        # emergency contacts and regulatory expansion.
+        severity = "medium" if any_material else "low"
+        for signal in (
+            "active_danger", "injury_or_illness", "person_missing",
+            "safeguarding_concern", "external_help_may_be_required",
+            "possible_regulatory_trigger", "evacuation_accountability",
+            "data_security_incident", "guardian_notification_relevant",
+            "evidence_preservation_needed",
+        ):
+            if not predicates.get(signal, False):
+                keep.discard(signal)
+        if not active:
+            stakeholders.difference_update({
+                "malaysia_emergency_services_999", "fire_and_rescue", "police",
+            })
+        if not regulatory:
+            stakeholders.discard("education_authority")
+        if not physical:
+            stakeholders.discard("medical_services")
     if (
         not semantic_authoritative
         and severity in {"high", "critical"}
@@ -2008,6 +2292,52 @@ class SchoolSituationCompiler:
                 prior_case_context,
                 current_text=text,
             )
+        # A current-turn human answer is newer evidence than the inherited
+        # case snapshot.  ``merge_followup_situation`` deliberately carries
+        # forward prior facts and signals, but that must not resurrect a stale
+        # active-danger state after the operator has just answered "No".
+        # Re-apply only the dynamic life-safety status here; stable historical
+        # facts (injury, safeguarding, missing person, etc.) remain available.
+        immediate_danger_answer = str(
+            answers.get("immediate_danger") or ""
+        ).strip().casefold()
+        if immediate_danger_answer:
+            merged_signals = set(situation.get("signals") or [])
+            merged_stakeholders = set(
+                situation.get("stakeholder_candidates") or []
+            )
+            if immediate_danger_answer in {"yes", "active", "ongoing", "true"}:
+                merged_signals.update({
+                    "active_danger", "external_help_may_be_required",
+                })
+                merged_stakeholders.add("malaysia_emergency_services_999")
+                situation["severity"] = "critical"
+                situation["phase"] = "ongoing"
+                situation["immediate_danger_status"] = "yes"
+            elif immediate_danger_answer in {"no", "contained", "false"}:
+                merged_signals.discard("active_danger")
+                if not merged_signals.intersection({
+                    "person_missing", "safeguarding_concern",
+                }):
+                    # "No" also answers the unmet-emergency half of the
+                    # question.  Do not keep a generic emergency-service need
+                    # merely because the parent snapshot once had one.
+                    merged_signals.discard("external_help_may_be_required")
+                    merged_stakeholders.discard(
+                        "malaysia_emergency_services_999"
+                    )
+                if str(situation.get("phase") or "") == "ongoing":
+                    situation["phase"] = "just_occurred"
+                situation["immediate_danger_status"] = "no"
+            elif immediate_danger_answer in {"unknown", "tbc", "unsure"}:
+                merged_signals.add("external_help_may_be_required")
+                if str(situation.get("severity") or "") not in {
+                    "critical", "high",
+                }:
+                    situation["severity"] = "high"
+                situation["immediate_danger_status"] = "unknown"
+            situation["signals"] = sorted(merged_signals)
+            situation["stakeholder_candidates"] = sorted(merged_stakeholders)
         if re.search(
             r"\b(?:response|follow[- ]?up)\s+pack(?:age)?\b",
             lower_text,
@@ -2849,6 +3179,18 @@ class SchoolSituationCompiler:
         ):
             family = "staffing_hr"
             signals.add("evidence_preservation_needed")
+        if re.search(
+            r"\b(?:teacher|teachers|staff|employee|employees)\b"
+            r"[^.!?;\n]{0,100}\b(?:argu(?:e|ed|ing|ment)|conflict|"
+            r"dispute|altercation|confrontation)\b|"
+            r"\b(?:argu(?:e|ed|ing|ment)|conflict|dispute|altercation|"
+            r"confrontation)\b[^.!?;\n]{0,100}"
+            r"\b(?:teacher|teachers|staff|employee|employees)\b",
+            low,
+        ):
+            family = "staffing_hr"
+            stakeholders.add("school_leadership")
+            signals.add("evidence_preservation_needed")
         if re.search(r"\b(?:attendance|enrolment|enrollment)\s+record\b|\brekod\s+kehadiran\b|考勤记录|出勤紀錄", low):
             family = "attendance_student_movement"
             signals.add("official_record_involved")
@@ -2936,6 +3278,7 @@ class SchoolSituationCompiler:
         explicit_broad_parent_audience = bool(re.search(
             r"\b(?:all|every)\s+parents?\b|\bparent\s+(?:group|community)\b|"
             r"\bschool\s+community\b|\b(?:all|whole)\s+school\b|"
+            r"\b(?:bilingual\s+)?school\s+notice\b|"
             r"\b(?:year\s+\d+\s+)?class\s+(?:whatsapp\s+)?group\b|"
             r"\b(?:semua|seluruh)\s+ibu\s+bapa\b|\bkumpulan\s+ibu\s+bapa\b|"
             r"\bkomuniti\s+sekolah\b|"
@@ -2952,8 +3295,15 @@ class SchoolSituationCompiler:
         # person-level incident gets a private guardian draft.
         if incident_family and not explicit_broad_parent_audience:
             for item in structured_outputs:
-                if str(item.get("artifact_role") or "").lower() == (
-                    "school_parent_notice"
+                if (
+                    str(item.get("artifact_role") or "").lower()
+                    in {"school_parent_notice", "private_parent_notice"}
+                    and (
+                        str(item.get("artifact_role") or "").lower()
+                        == "school_parent_notice"
+                        or str(item.get("audience") or "").lower()
+                        in {"school_community", "public"}
+                    )
                 ):
                     item.update({
                         "artifact_role": "private_parent_notice",
@@ -2967,6 +3317,16 @@ class SchoolSituationCompiler:
         output_audiences = {
             str(item.get("audience") or "").strip().lower()
             for item in structured_outputs
+        }
+        source_named_output_roles = {
+            str(item.get("artifact_role") or "").strip().lower()
+            for item in structured_outputs
+            if item.get("source_named") is True
+        }
+        source_named_output_audiences = {
+            str(item.get("audience") or "").strip().lower()
+            for item in structured_outputs
+            if item.get("source_named") is True
         }
         entries: dict[str, dict] = {}
         obligation_by_id = {
@@ -3016,21 +3376,24 @@ class SchoolSituationCompiler:
 
         broad_internal_staff_audience = bool(re.search(
             r"\b(?:all|every)[-\s]+(?:school[-\s]+)?teachers?\b|"
+            r"\bevery[-\s]+instructor\b|"
             r"\b(?:all|whole|entire)[-\s]+(?:school[-\s]+|teaching[-\s]+)?staff\b|"
             r"\b(?:all|whole|entire)[-\s]+(?:teaching[-\s]+)?(?:team|faculty)\b|"
+            r"\b(?:faculty|staff|teacher)[-\s]+wide\b|"
             r"\bwhole\s+staff\b",
             lower_text,
         )) or bool(
-            "staff_internal_notice" in output_roles
+            "staff_internal_notice" in source_named_output_roles
             and (
-                requested_audience == "school_community"
-                or bool(output_audiences.intersection({"school_community", "public"}))
+                explicit_broad_parent_audience
+                or bool(source_named_output_audiences.intersection({
+                    "school_community", "public",
+                }))
             )
         )
         broad_audience = bool(
             explicit_broad_parent_audience
             or broad_internal_staff_audience
-            or requested_audience in {"school_community", "public"}
             or external_requests.intersection({
                 "school_community", "public_media",
             })
@@ -3040,8 +3403,10 @@ class SchoolSituationCompiler:
                 }
                 for item in external_release_specs
             )
-            or output_audiences.intersection({"school_community", "public"})
-            or output_roles.intersection({
+            or source_named_output_audiences.intersection({
+                "school_community", "public",
+            })
+            or source_named_output_roles.intersection({
                 "school_parent_notice", "public_communication_draft",
             })
             or re.search(
@@ -3365,7 +3730,14 @@ class SchoolSituationCompiler:
         ]
         if not requested_outputs:
             requested_outputs.extend(
-                {"artifact_role": role}
+                {
+                    "artifact_role": role,
+                    # The legacy closed-list field is already the semantic
+                    # provider's explicit pack choice. Keep it as an operator-
+                    # visible/default-selected recommendation, while reserving
+                    # ``required`` for source-named or policy-backed work.
+                    "semantic_pack_choice": True,
+                }
                 for role in (situation.get("requested_deliverables") or [])
                 if role in self.catalog
             )
@@ -3395,6 +3767,16 @@ class SchoolSituationCompiler:
                 or 0
             )
             or selected_deliverable_ids
+            or any(
+                item.get("source_named") is True
+                or (
+                    str(situation.get("compiler_source") or "").startswith(
+                        "fallback"
+                    )
+                    and item.get("semantic_pack_choice") is not True
+                )
+                for item in requested_outputs
+            )
         )
         if not requested_outputs and not custom_deliverables:
             if institutional_finance_request:
@@ -3412,7 +3794,7 @@ class SchoolSituationCompiler:
                 and requested_action in {"send", "submit", "message", "contact"}
             ):
                 requested_outputs = [{"artifact_role": "education_authority_request"}]
-            elif requested_audience == "school_community" or (
+            elif explicit_broad_parent_audience or (
                 "guardian_notification_relevant" in signals
                 and re.search(r"\b(?:notice|message|whatsapp|circular|inform)\b", lower_text)
             ) or (
@@ -3481,6 +3863,8 @@ class SchoolSituationCompiler:
                 "source_fact_ids": output.get("source_fact_ids") or fact_ids,
                 "claim_policy": "reported_facts_only",
             }
+            if output.get("semantic_pack_choice") is True:
+                contract["default_selected"] = True
             if output.get("source_obligation_id"):
                 contract["source_obligation_id"] = str(
                     output.get("source_obligation_id")
@@ -3490,7 +3874,11 @@ class SchoolSituationCompiler:
             )
             selection_origin = (
                 "explicit_request"
-                if obligation and obligation.get("explicit") is True
+                if output.get("source_named") is True
+                or str(situation.get("compiler_source") or "").startswith(
+                    "fallback"
+                )
+                or (obligation and obligation.get("explicit") is True)
                 else "system_recommendation"
             )
             contract["selection_origin"] = selection_origin
@@ -3517,6 +3905,11 @@ class SchoolSituationCompiler:
                     ],
                     "claim_policy": "anonymous_reported_facts_only",
                     "action_data_use_concepts": [],
+                    "selection_origin": (
+                        "explicit_request"
+                        if selection_origin == "explicit_request"
+                        else "safe_substitution"
+                    ),
                 })
             if output.get("channel"):
                 contract["channel"] = str(output.get("channel"))[:40].lower()
@@ -3541,8 +3934,14 @@ class SchoolSituationCompiler:
             ):
                 contract["custom_template_key"] = "operational_notice"
             if (
-                str(output.get("audience") or requested_audience).lower()
-                == "school_community"
+                (
+                    explicit_broad_parent_audience
+                    or (
+                        output.get("source_named") is True
+                        and str(output.get("audience") or "").lower()
+                        == "school_community"
+                    )
+                )
                 and role == "private_parent_notice"
             ):
                 # A message for the whole parent community is not a private
@@ -3601,6 +4000,11 @@ class SchoolSituationCompiler:
                     ],
                     "claim_policy": "restricted_verified_support_only",
                     "action_data_use_concepts": [],
+                    "selection_origin": (
+                        "explicit_request"
+                        if selection_origin == "explicit_request"
+                        else "safe_substitution"
+                    ),
                 })
             if (
                 sensitive_broadcast and broad_output_transform
@@ -3630,6 +4034,11 @@ class SchoolSituationCompiler:
                     ],
                     "claim_policy": "anonymous_aggregate_or_general_support_only",
                     "action_data_use_concepts": [],
+                    "selection_origin": (
+                        "explicit_request"
+                        if selection_origin == "explicit_request"
+                        else "safe_substitution"
+                    ),
                 })
             if fact_invention_request:
                 contract.update({
@@ -3723,7 +4132,12 @@ class SchoolSituationCompiler:
                 contract["action_data_use_concepts"] = sorted(action_concepts)
             add(
                 role,
-                "required",
+                (
+                    "required"
+                    if str(contract.get("selection_origin") or selection_origin)
+                    in {"explicit_request", "safe_substitution"}
+                    else "recommended"
+                ),
                 (
                     "explicitly requested by the user"
                     if selection_origin == "explicit_request"
@@ -3734,6 +4148,19 @@ class SchoolSituationCompiler:
 
         # Predicate-backed necessities only. Mere personal data is not a data
         # breach; a routine official message is not a regulatory incident.
+        resolved_immediate_danger = bool(
+            str(situation.get("immediate_danger_status") or "").casefold()
+            == "no"
+            or _explicitly_resolved_or_contained_safety(source_text)
+        )
+        if (
+            "active_danger" in signals
+            and str(situation.get("immediate_danger_status") or "").casefold()
+            != "no"
+            and not _explicitly_no_unmet_emergency(source_text)
+            and not _explicitly_contained_structural_hazard(source_text)
+        ):
+            resolved_immediate_danger = False
         if "injury_or_illness" in signals:
             add("internal_incident_report", "required", "record the reported incident")
             if "student" in people or "minor_involved" in signals:
@@ -3746,9 +4173,58 @@ class SchoolSituationCompiler:
             elif not has_explicit_outputs:
                 add(
                     "medical_handover_script",
-                    "required" if severity == "high" else "recommended",
+                    (
+                        "required"
+                        if severity == "high" and not resolved_immediate_danger
+                        else "recommended"
+                    ),
                     "support an accurate handover if a human contacts medical services",
+                    selection_origin="system_recommendation",
+                    # A recommended medical handover is a visible option, not
+                    # an assumed action. High/critical unresolved emergencies
+                    # are already promoted to required by the branches above.
+                    default_selected=False,
                 )
+        staff_conflict_source = bool(re.search(
+            r"\b(?:teacher|teachers|staff|employee|employees)\b"
+            r"[^.!?;\n]{0,100}\b(?:argu(?:e|ed|ing|ment)|conflict|"
+            r"dispute|fight|fighting|altercation|confrontation)\b|"
+            r"\b(?:argu(?:e|ed|ing|ment)|conflict|dispute|fight|fighting|"
+            r"altercation|confrontation)\b[^.!?;\n]{0,100}"
+            r"\b(?:teacher|teachers|staff|employee|employees)\b",
+            lower_text,
+        ))
+        staff_only_conflict = bool(
+            family in {"staffing_hr", "discipline_behaviour"}
+            and staff_conflict_source
+            and (
+                (people and people.issubset({"staff"}))
+                or (
+                    not people
+                    and not re.search(
+                        r"\b(?:student|pupil|child|murid|pelajar)\b|"
+                        r"(?:学生|學生|孩子)",
+                        lower_text,
+                    )
+                )
+            )
+        )
+        if staff_only_conflict:
+            if (
+                "discipline_investigation_report" in entries
+                and "discipline_investigation_report"
+                not in source_named_output_roles
+            ):
+                # Model-inferred discipline paperwork duplicates the governed
+                # internal incident record for an ordinary staff-only conflict.
+                # Preserve it only when the operator explicitly named it.
+                entries.pop("discipline_investigation_report", None)
+            add(
+                "internal_incident_report", "required",
+                "record the reported staff conflict for authorised leadership review",
+                claim_policy="reported_facts_and_proposed_handling_only",
+                action_data_use_concepts=[],
+            )
         if "active_danger" in signals:
             add("internal_incident_report", "required", "record the reported safety incident and chronology")
             add("site_safety_checklist", "required", "support immediate human safety response")
@@ -3782,8 +4258,24 @@ class SchoolSituationCompiler:
             add("evidence_preservation_log", "recommended", "preserve evidence without assigning blame")
         if "evidence_preservation_needed" in signals:
             add(
-                "evidence_preservation_log", "required",
+                "evidence_preservation_log",
+                (
+                    "required"
+                    if signals.intersection({
+                        "data_security_incident", "person_missing",
+                        "safeguarding_concern",
+                    })
+                    else "recommended"
+                ),
                 "preserve source-grounded evidence and decision chronology without assigning blame",
+                selection_origin=(
+                    "policy_required"
+                    if signals.intersection({
+                        "data_security_incident", "person_missing",
+                        "safeguarding_concern",
+                    })
+                    else "system_recommendation"
+                ),
             )
         facility_control_required = bool(
             family == "facilities_environment"
@@ -3810,6 +4302,24 @@ class SchoolSituationCompiler:
             )
         )
         if facility_control_required:
+            if (
+                str(situation.get("phase") or "") != "planned"
+                and not has_explicit_outputs
+            ):
+                add(
+                    "internal_incident_report", "required",
+                    "record the reported facility incident and controls",
+                    claim_policy="reported_condition_and_proposed_controls_only",
+                    action_data_use_concepts=[],
+                )
+            if "staff" in people or "school_staff" in stakeholders:
+                add(
+                    "staff_internal_notice", "recommended",
+                    "prepare an internal operational notice for affected staff",
+                    selection_origin="system_recommendation",
+                    claim_policy="reported_condition_and_proposed_controls_only",
+                    action_data_use_concepts=[],
+                )
             add(
                 "site_safety_checklist", "required",
                 "inspect and control access to the affected school facility",
@@ -3827,7 +4337,21 @@ class SchoolSituationCompiler:
                 claim_policy="reported_condition_and_proposed_controls_only",
                 action_data_use_concepts=[],
             )
+            if "staff" in people or "school_staff" in stakeholders:
+                add(
+                    "staff_internal_notice", "recommended",
+                    "prepare an internal operational notice for affected staff",
+                    selection_origin="system_recommendation",
+                    claim_policy="reported_condition_and_proposed_controls_only",
+                    action_data_use_concepts=[],
+                )
         transport_collision = school_transport_collision(source_text)
+        transport_plan_explicit = bool(re.search(
+            r"\b(?:transport|bus|controlled\s+response|response)\s+plan\b|"
+            r"\bpelan\s+(?:respons|pengangkutan|bas)\b|"
+            r"(?:交通|巴士|校车|校車)(?:应对|應對|响应|響應)计划",
+            lower_text,
+        ))
         if "transport_operation" in signals:
             if transport_collision:
                 add(
@@ -3845,10 +4369,39 @@ class SchoolSituationCompiler:
                 else "recommended",
                 "coordinate the transport impact",
                 selection_origin=(
-                    "policy_required" if transport_collision
+                    "policy_required"
+                    if transport_collision or not has_explicit_outputs
                     else "system_recommendation"
                 ),
             )
+            if (
+                not transport_collision
+                and not has_explicit_outputs
+                and not transport_plan_explicit
+                and ("student" in people or "minor_involved" in signals)
+                and (
+                    "guardian_notification_relevant" in signals
+                    or "guardian" in stakeholders
+                )
+                and not parent_notice_negated
+            ):
+                add(
+                    "private_parent_notice", "recommended",
+                    "prepare a draft delay and supervision update for affected families",
+                    selection_origin="system_recommendation",
+                    default_selected=True,
+                    claim_policy="reported_facts_and_proposed_coordination_only",
+                    action_data_use_concepts=[],
+                )
+            if "transport_provider" in stakeholders:
+                add(
+                    "external_stakeholder_message", "recommended",
+                    "prepare a draft coordination message for the transport provider",
+                    selection_origin="system_recommendation",
+                    default_selected=False,
+                    claim_policy="reported_facts_and_proposed_coordination_only",
+                    action_data_use_concepts=[],
+                )
         if "food_water_exposure" in signals:
             add("food_safety_response", "required", "contain and document the exposure")
             if (
@@ -3891,7 +4444,26 @@ class SchoolSituationCompiler:
                 "prepare the affected organiser or guest message",
                 selection_origin="system_recommendation",
             )
-        if "evacuation_accountability" in signals or "active_danger" in signals:
+        students_explicitly_absent = _has_affirmed_source_statement(
+            source_text,
+            re.compile(
+                r"\b(?:no|without\s+any)\s+(?:students?|pupils?|children)\s+"
+                r"(?:are\s+|were\s+|was\s+)?(?:present|involved|affected)\b|"
+                r"(?:没有|沒有)(?:学生|學生|孩子)(?:在场|在場|参与|參與)|"
+                r"\btiada\s+(?:murid|pelajar)\s+(?:hadir|terlibat)\b",
+                re.IGNORECASE,
+            ),
+        )
+        if (
+            signals.intersection({"evacuation_accountability", "active_danger"})
+            and not students_explicitly_absent
+            and (
+                "student" in people
+                or "minor_involved" in signals
+                or not people
+                or "unknown" in people
+            )
+        ):
             add("student_accountability_checklist", "required", "support controlled accountability")
         if "data_security_incident" in signals:
             add("cyber_incident_response", "required", "contain the actual cyber or data incident")
@@ -3941,7 +4513,21 @@ class SchoolSituationCompiler:
         if severity in {"critical", "high"}:
             add("regulatory_notification_assessment", "recommended", "check current reporting requirements")
             add("post_incident_review", "recommended", "support controlled follow-up")
-        if not entries and not official_record_mutation:
+        family_default_roles = set(
+            self.policy.get("family_packs", {}).get(family) or []
+        )
+        has_contextual_core = any(
+            entry.get("requirement") == "required"
+            or role in family_default_roles
+            or str(
+                (entry.get("contract") or {}).get("selection_origin") or ""
+            ) in {"explicit_request", "safe_substitution"}
+            or (entry.get("contract") or {}).get("default_selected") is True
+            for role, entry in entries.items()
+        )
+        if not has_contextual_core and not official_record_mutation:
+            # Preserve configured priority; ``family_default_roles`` above is
+            # only for membership checks.
             defaults = self.policy.get("family_packs", {}).get(family) or []
             add(str(defaults[0] if defaults else "school_document"),
                 "required", f"core {family} output")
@@ -4131,6 +4717,15 @@ class SchoolSituationCompiler:
 
         selected_set = set(selected_deliverable_ids or [])
         has_selection = selected_deliverable_ids is not None
+        contextual_recommendation_roles = set(family_default_roles)
+        if str(situation.get("phase") or "") in {
+            "just_occurred", "post_incident", "follow_up",
+        }:
+            contextual_recommendation_roles.add("post_incident_review")
+        if severity in {"critical", "high"}:
+            contextual_recommendation_roles.add(
+                "regulatory_notification_assessment"
+            )
         deliverables: list[dict] = []
         for entry in entries.values():
             role = entry["role"]
@@ -4146,7 +4741,20 @@ class SchoolSituationCompiler:
                 item["recipient_type"] = item["requested_recipient_type"]
             item["selected"] = (
                 True if requirement == "required"
-                else (item["deliverable_id"] in selected_set if has_selection else False)
+                else (
+                    item["deliverable_id"] in selected_set
+                    if has_selection
+                    else (
+                        item.get("selection_origin") == "system_recommendation"
+                        and item.get("default_selected") is not False
+                        and (
+                            item.get("default_selected") is True
+                            or
+                            item.get("reason") != "semantic system recommendation"
+                            or role in contextual_recommendation_roles
+                        )
+                    )
+                )
             )
             deliverables.append(item)
 
@@ -4494,6 +5102,16 @@ class SchoolSituationCompiler:
                 source_text.casefold(),
             )
         )
+        source_resolution = _explicitly_resolved_or_contained_safety(source_text)
+        if (
+            "active_danger" in semantic_signals
+            and not _explicitly_no_unmet_emergency(source_text)
+            and not _explicitly_contained_structural_hazard(source_text)
+        ):
+            # Safe/supervised pupils do not resolve a distinct active hazard
+            # such as smoke, fire or traffic exposure. Ask the bounded human
+            # question unless that hazard itself was expressly contained.
+            source_resolution = False
         # 2026-08-21: this used to ALSO require the compiler's own unknowns
         # list to carry a "life_safety" (or "danger_still_present") tag
         # before asking. That tag is model-assigned per request and not
@@ -4509,6 +5127,7 @@ class SchoolSituationCompiler:
             not answers.get("immediate_danger")
             and situation["severity"] in {"critical", "high"}
             and source_safety
+            and not source_resolution
         ):
             return {
                 "question_id": "immediate_danger",

@@ -131,6 +131,28 @@ _INTERNAL_RELEASE_SENTENCE = re.compile(
     r"(?:human\s+)?(?:approval|authorisation|authorization)"
     r"[^.!?\n]{0,180}\b(?:send|email|publish|share|release|post)\b"
 )
+_INTERNAL_SOURCE_CONTROL_LINE = re.compile(
+    r"(?im)^\s*>?\s*official-source\s+check\s*:\s*required\s*[-—:]\s*"
+    r"not\s+yet\s+completed\b[^\n]*\n?"
+)
+_UNGROUNDED_PREPARATION_SENTENCE = re.compile(
+    r"(?im)^\s*(?:>\s*)?(?:[-*+]\s*)?(?:\*\*)?"
+    r"(?:the\s+school\s+is|we\s+are)\s+"
+    r"(?:currently\s+)?preparing\b"
+    r"[^.!?\n]{0,220}[.!?]?(?:\*\*)?\s*$"
+)
+_PREPARATION_STATUS_PHRASE = re.compile(
+    r"(?i)\b(?:the\s+school\s+is|we\s+are)\s+"
+    r"(?:currently\s+)?preparing\b"
+)
+_INTERNAL_PROPOSAL_HEADING = re.compile(
+    r"(?mi)^\s*(?:"
+    r"#{1,6}\s+(?:recommendations?|recommended\s+next\s+steps?|"
+    r"proposed\s+(?:next\s+steps?|actions?)|next\s+steps?|"
+    r"suggested\s+actions?|cadangan|langkah\s+seterusnya\s+yang\s+disyorkan|"
+    r"建议(?:的)?(?:后续|後續)步骤|建議(?:的)?(?:后续|後續)步驟)\s*[:：]?|"
+    r"\*\*(?:recommendations?|cadangan|建议|建議)\s*[:：]?\*\*)\s*$"
+)
 
 
 def strip_internal_release_control(
@@ -160,6 +182,69 @@ def strip_internal_release_control(
     return text.strip()
 
 
+def strip_recipient_facing_source_control(
+    action: CandidateAction,
+    content: str,
+) -> str:
+    """Keep an internal verification flag out of recipient-facing prose.
+
+    The control remains in action metadata and the audit trace. Operational
+    internal/agency scripts may show it to the authorised operator, while a
+    parent letter or public statement should not expose an implementation
+    label that is not part of the communication itself.
+    """
+    role = str((action.metadata or {}).get("artifact_role") or "").casefold()
+    text = str(content or "")
+    if role not in _EXTERNAL_DRAFT_ROLES or not text:
+        return text
+    cleaned = _INTERNAL_SOURCE_CONTROL_LINE.sub("", text)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
+def strip_ungrounded_preparation_boilerplate(
+    content: str,
+    source_goal: str,
+) -> str:
+    """Delete a narrow model-authored process claim not owned by source.
+
+    ``Prepare a response`` is an instruction, not evidence that the school is
+    already doing so. This sentence adds no case value and can misstate current
+    operational status, so deletion is safer than trusting it or replacing an
+    otherwise useful artifact with a template.
+    """
+    text = str(content or "")
+    source = str(source_goal or "")
+    if _PREPARATION_STATUS_PHRASE.search(source):
+        return text
+    cleaned = _UNGROUNDED_PREPARATION_SENTENCE.sub("", text)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
+def qualify_internal_proposal_headings(
+    action: CandidateAction,
+    content: str,
+) -> str:
+    """Make a model's advice boundary explicit without changing its advice.
+
+    This is a label-only repair for internal incident reports. It never turns
+    an ``actions taken`` or factual section into a proposal, and all claims
+    beneath the renamed heading still pass the independent grounding audit.
+    """
+    role = str((action.metadata or {}).get("artifact_role") or "").casefold()
+    text = str(content or "")
+    if role != "internal_incident_report" or not text:
+        return text
+    def replacement(match: re.Match) -> str:
+        heading = match.group(0).casefold()
+        if re.search(r"cadangan|langkah\s+seterusnya", heading):
+            return "## Cadangan langkah seterusnya — tertakluk kepada semakan manusia"
+        if re.search(r"建议|建議", heading):
+            return "## 建议的后续步骤 — 须经人工审核"
+        return "## Recommended next steps — subject to human review"
+
+    return _INTERNAL_PROPOSAL_HEADING.sub(replacement, text)
+
+
 def classify_school_validation_issues(
     action: CandidateAction,
     issues: dict[str, list[str]] | Iterable[str],
@@ -167,10 +252,11 @@ def classify_school_validation_issues(
     """Classify generation checks without weakening the governance boundary.
 
     ``hard_block`` is reserved for privacy, data-use, authorisation and
-    unavailable-auditor failures. ``repair_once`` covers quality or grounding
-    defects that may be regenerated under the same policy. ``review_note`` is
-    deliberately narrow: only non-safety similarity warnings may survive, and
-    only after the independent semantic audit has accepted both artifacts.
+    unavailable-auditor failures. ``repair_once`` covers structural or
+    grounding defects that may be regenerated under the same policy.
+    ``review_note`` is deliberately narrow: non-safety similarity warnings and
+    a below-target-but-nonempty length warning may survive only after the
+    independent semantic audit has accepted the artifact.
 
     The classifier changes what happens *after* a check; it never changes the
     check itself or promotes a failed privacy/policy result to a warning.
@@ -191,6 +277,12 @@ def classify_school_validation_issues(
         # the policy-layer marker and privacy suffix both remain visible.
         if any(marker in value for marker in _HARD_VALIDATION_MARKERS):
             result["hard_block"].append(issue)
+        elif "hygiene:response_pack_artifact_too_short:" in value:
+            # This is a usefulness target, not a governance boundary. The
+            # absolute ``artifact_too_short`` floor remains blocking, and a
+            # below-target file may survive only after semantic grounding and
+            # all privacy/policy checks pass.
+            result["review_note"].append(issue)
         elif value.startswith("cross_artifact_similarity:"):
             result["review_note"].append(issue)
         else:
@@ -227,9 +319,9 @@ _CLINICAL_CEILING_ROLES = {
 }
 _UNSOURCED_CLINICAL_INSTRUCTION = re.compile(
     r"\b(?:remove|scrape)\s+(?:the\s+)?stinger\b|"
-    r"\bapply\s+(?:an?\s+)?(?:cold|ice)\s+(?:pack|compress)\b|"
-    r"\bmonitor\b[^\n]{0,45}\b\d+\s*(?:minutes?|mins?|hours?|hrs?)\b|"
-    r"\b(?:administer|give|take)\b[^\n]{0,35}\b(?:epinephrine|adrenaline|"
+    r"\bappl(?:y|ying)\s+(?:an?\s+)?(?:cold|ice)\s+(?:pack|compress)\b|"
+    r"\bmonitor(?:ing)?\b[^\n]{0,45}\b\d+\s*(?:minutes?|mins?|hours?|hrs?)\b|"
+    r"\b(?:administer(?:ing)?|giv(?:e|ing)|tak(?:e|ing))\b[^\n]{0,35}\b(?:epinephrine|adrenaline|"
     r"antihistamine|medication|medicine|painkiller)\b|"
     r"\b(?:induce\s+vomiting|apply\s+(?:a\s+)?tourniquet|suck\s+(?:out\s+)?"
     r"(?:the\s+)?venom|immobili[sz]e\s+the\s+limb)\b",
@@ -344,30 +436,381 @@ _BRACKET_PLACEHOLDER = re.compile(
     re.IGNORECASE,
 )
 
-_NEGATIVE_QUALIFIER = re.compile(
+_UNKNOWN_QUALIFIER_PATTERN = (
     r"\b(?:tbc|unknown|unverified|not\s+(?:yet\s+)?verified|not\s+confirmed|"
     r"not\s+provided|not\s+available|not\s+known|whether|"
-    r"to\s+be\s+confirmed|proposed|recommended|"
-    r"should|must\s+be\s+verified)\b",
+    r"to\s+be\s+confirmed|must\s+be\s+verified)\b|"
+    r"\b(?:belum\s+disahkan|tidak\s+diketahui|tidak\s+diberikan|"
+    r"akan\s+disahkan|perlu\s+disahkan|menunggu\s+pengesahan)\b|"
+    r"(?:待确认|待確認|有待确认|有待確認|未知|未核实|未核實|"
+    r"尚未确认|尚未確認|需要核实|需要核實)"
+)
+
+_RECOMMENDATION_HEADING = re.compile(
+    r"(?mi)^\s*(?:#{1,6}\s+(?:recommendations?|recommended\s+next\s+steps?|"
+    r"cadangan|langkah\s+seterusnya\s+yang\s+disyorkan|"
+    r"建议(?:的)?(?:后续|後續)步骤|建議(?:的)?(?:后续|後續)步驟)\s*"
+    r"(?:[-—:]\s*[^\n]+)?|\*\*recommendations?\s*:\*\*)$"
+)
+_QUALIFIED_RECOMMENDATION_HEADING = re.compile(
+    r"(?mi)^\s*#{1,6}\s+(?:"
+    r"(?:recommendations?|recommended\s+next\s+steps?)\s*[-—:]\s*"
+    r"subject\s+to\s+(?:human\s+)?(?:review|approval)|"
+    r"(?:cadangan|langkah\s+seterusnya\s+yang\s+disyorkan)\s*[-—:]\s*"
+    r"tertakluk\s+kepada\s+(?:semakan|kelulusan)\s+manusia|"
+    r"(?:建议|建議)(?:的)?(?:后续|後續)(?:步骤|步驟)\s*[-—:]\s*"
+    r"(?:须经|須經|需经|需經)(?:人工|人为|人為)(?:审核|審核|批准)"
+    r")\s*$"
+)
+_ADVICE_QUALIFIER_PATTERN = (
+    r"\b(?:proposed|proposal|recommended|recommendation|"
+    r"subject\s+to\s+(?:school\s+|human\s+)?(?:approval|confirmation|review)|"
+    r"pending\s+(?:approval|confirmation|review)|optional|option|"
+    r"if\s+(?:approved|required|needed|available)|should|must|may|might|could|consider)\b|"
+    r"\b(?:cadangan|dicadangkan|disyorkan|syor|patut|mesti|perlu|boleh|pertimbangkan|"
+    r"tertakluk\s+kepada\s+(?:semakan|kelulusan)|menunggu\s+kelulusan|"
+    r"jika\s+diluluskan)\b|"
+    r"(?:建议|建議|拟议|擬議|待批准|可选|可選|如果批准|若获批准|若獲批准|"
+    r"可以|应该|應該|必须|必須|可考虑|可考慮|应考虑|應考慮)"
+)
+_UNKNOWN_QUALIFIER = re.compile(
+    _UNKNOWN_QUALIFIER_PATTERN,
     re.IGNORECASE,
 )
+_ADVICE_QUALIFIER = re.compile(
+    _ADVICE_QUALIFIER_PATTERN,
+    re.IGNORECASE,
+)
+_EXPLICIT_ADVICE_QUALIFIER = re.compile(
+    r"\b(?:proposed|proposal|recommended|recommendation|optional|option|"
+    r"subject\s+to\s+(?:school\s+|human\s+)?(?:approval|confirmation|review)|"
+    r"pending\s+(?:approval|confirmation|review))\b|"
+    r"\b(?:cadangan|dicadangkan|disyorkan|syor|pertimbangkan|"
+    r"tertakluk\s+kepada\s+(?:semakan|kelulusan)|menunggu\s+kelulusan)\b|"
+    r"(?:建议|建議|拟议|擬議|待批准|可选|可選|可考虑|可考慮|应考虑|應考慮)",
+    re.IGNORECASE,
+)
+
+# A recommendation remains advice only when its wording does not assert that
+# the suggested action already happened or is currently happening. This keeps
+# useful future/modal/imperative guidance available while preventing a label
+# such as ``Recommended:`` from laundering a fabricated completed fact.
+_MODAL_ACTION_ADVICE = re.compile(
+    r"\b(?:should|must|may|might|could)\s+(?:not\s+)?(?:"
+    r"arrange|ask|avoid|brief|check|clarify|communicate|confirm|consult|"
+    r"contact|coordinate|document|engage|ensure|establish|evaluate|"
+    r"follow|gather|hold|identify|include|interview|investigate|invite|lead|"
+    r"maintain|manage|monitor|notify|offer|preserve|prepare|provide|record|"
+    r"refer|remain|report|request|reserve|review|seek|separate|share|speak|"
+    r"support|take|use|verify|be\s+(?:asked|briefed|checked|contacted|"
+    r"consulted|documented|interviewed|monitored|notified|preserved|recorded|"
+    r"referred|reviewed|separated|supported|verified))\b|"
+    r"\b(?:patut|mesti|perlu|boleh)\s+(?:"
+    r"atur|elak|hubungi|sahkan|rujuk|semak|rekodkan|"
+    r"dokumentasikan|pantau|sokong|asingkan|temu\s+bual|"
+    r"dihubungi|disahkan|dirujuk|disemak|direkodkan|diasingkan|ditemu\s+bual)\b|"
+    r"(?:应该|應該|必须|必須|可以)"
+    r"(?:由[^，。；]{0,24})?(?:联系|聯繫|确认|確認|咨询|諮詢|"
+    r"记录|記錄|审核|審核|保存|核实|核實|通知|支持|分开|分開|了解)|"
+    r"(?:建议|建議)(?:由[^，。；]{0,24})?(?:联系|聯繫|确认|確認|考虑|考慮|"
+    r"咨询|諮詢|记录|記錄|审核|審核|保存|核实|核實|通知|支持|分开|分開|了解)",
+    re.IGNORECASE,
+)
+_FUTURE_ACTION_ADVICE = re.compile(
+    r"\bwill\s+(?:not\s+)?(?:arrange|ask|avoid|brief|check|clarify|"
+    r"communicate|confirm|consult|contact|coordinate|document|engage|ensure|"
+    r"establish|evaluate|follow|gather|hold|identify|include|interview|"
+    r"investigate|invite|lead|maintain|manage|monitor|notify|offer|preserve|"
+    r"prepare|provide|record|refer|remain|report|request|reserve|review|seek|"
+    r"separate|share|speak|support|take|use|verify|be\s+(?:asked|briefed|"
+    r"checked|contacted|consulted|documented|interviewed|monitored|notified|"
+    r"preserved|recorded|referred|reviewed|separated|supported|verified))\b|"
+    r"\bakan\s+(?:atur|elak|hubungi|sahkan|rujuk|semak|rekodkan|"
+    r"dokumentasikan|pantau|sokong|asingkan|temu\s+bual|dihubungi|disahkan|"
+    r"dirujuk|disemak|direkodkan|diasingkan|ditemu\s+bual)\b|"
+    r"(?:将|將)(?:由[^，。；]{0,24})?(?:联系|聯繫|确认|確認|考虑|考慮|"
+    r"咨询|諮詢|记录|記錄|审核|審核|保存|核实|核實|通知|支持|分开|分開|了解)",
+    re.IGNORECASE,
+)
+_CONDITIONAL_IMPERATIVE_ADVICE = re.compile(
+    r"(?i)\bif\s+(?:approved|required|needed|available)\s*,?\s*"
+    r"(?:please\s+)?(?:contact|confirm|consider|consult|document|notify|"
+    r"preserve|record|refer|review|seek|verify)\b|"
+    r"\b(?:jika\s+diluluskan|sekiranya\s+diperlukan)\s*,?\s*"
+    r"(?:hubungi|sahkan|pertimbangkan|rujuk|semak|rekodkan)\b|"
+    r"(?:若获批准|若獲批准|如有需要)[，,]?\s*"
+    r"(?:联系|聯繫|确认|確認|考虑|考慮|咨询|諮詢|记录|記錄|审核|審核)"
+)
+_RECIPIENT_OPTIONAL_CONTACT_ADVICE = re.compile(
+    r"(?i)^if\s+you\s+have\s+(?:any\s+)?(?:questions?|concerns?)"
+    r"(?:\s+or\s+(?:questions?|concerns?))?\s*,\s*"
+    r"(?:please\s+|feel\s+free\s+to\s+)?(?:contact|reach\s+out\s+to)\s+"
+    r"(?:the\s+)?(?:school|school\s+office|school\s+administration|"
+    r"class\s+teacher|designated\s+school\s+contact)"
+    r"(?:\s+for\s+(?:clarification|assistance|support|further\s+information))?"
+    r"\.?$"
+)
+_NARROW_CONSIDER_ADVICE = re.compile(
+    r"(?i)^(?:(?:we|the\s+school|authorised\s+staff)\s+)?"
+    r"(?:(?:should|may|might|could)\s+)?consider\s+(?:"
+    r"whether\s+to\s+(?:arrange|ask|brief|check|clarify|consult|coordinate|"
+    r"document|evaluate|gather|hold|identify|interview|invite|monitor|"
+    r"preserve|prepare|record|refer|review|schedule|separate|support|use|verify)|"
+    r"(?:arranging|asking|briefing|checking|clarifying|consulting|coordinating|"
+    r"documenting|evaluating|gathering|holding|identifying|interviewing|"
+    r"inviting|monitoring|preserving|preparing|recording|referring|reviewing|"
+    r"scheduling|separating|supporting|using|verifying)\b|"
+    r"mediation\b|conflict\s+resolution\b|support\s+options?\b|"
+    r"alternative\s+arrangements?\b)|"
+    r"^(?:(?:patut|perlu|boleh)\s+)?pertimbangkan\s+(?:"
+    r"sama\s+ada\s+untuk\s+(?:mengatur|menyemak|merekodkan|menilai|"
+    r"menyediakan|memisahkan|menyokong)|untuk\s+(?:mengatur|menyemak|"
+    r"merekodkan|menilai|menyediakan|memisahkan|menyokong))\b|"
+    r"^(?:(?:可以|应该|應該)\s*)?(?:考虑|考慮)是否(?:安排|检查|檢查|"
+    r"澄清|咨询|諮詢|协调|協調|记录|記錄|评估|評估|收集|面谈|面談|"
+    r"保存|准备|準備|审核|審核|支持)",
+)
+_NARROW_CONSIDER_UNSAFE_TAIL = re.compile(
+    r"\b(?:that|because|since|given\s+that|was|were|is|are|has|have|had|"
+    r"already|currently|approved|passed|completed|contacted|notified|"
+    r"informed)\b|\b(?:bahawa|kerana|telah|sudah|sedang)\b|"
+    r"(?:因为|因為|鉴于|鑑於|已经|已經|正在|已批准|已通过|已通過|已完成|"
+    r"已联系|已聯繫|已通知)",
+    re.IGNORECASE,
+)
+_NARROW_CONSIDER_SECOND_ASSERTION = re.compile(
+    r"[:：;；]|\s+[—–-]\s+|[()]|[（）]|[.!?。！？]\s*\S|"
+    r",\s*(?:(?:and|but)\s+)?(?:the|a|an|staff|family|school|principal|police|parents?|"
+    r"pupils?|students?|teachers?)\s+\w+|"
+    r"\b(?:and|but|while|where|knowing)\b|"
+    r"\b(?:dan|tetapi)\b|"
+    r"\b(?:sementara|yang)\s+(?:(?:pihak\s+)?sekolah|guru|kakitangan|"
+    r"keluarga|pengetua|polis|murid)\s+\w+|"
+    r"(?:并且|並且|而且|但是|同时|同時)",
+    re.IGNORECASE,
+)
+_PAST_OR_CURRENT_ASSERTION = re.compile(
+    r"\b(?:was|were|has\s+been|have\s+been|had\s+been)\b|"
+    r"\b(?:is|are)\s+(?:currently\s+)?(?:reviewing|gathering|collecting|"
+    r"investigating|taking|monitoring|coordinating|ongoing|underway|"
+    r"contacted|notified|informed|checked|confirmed|approved|reviewed|"
+    r"repaired|verified|completed|implemented|activated)\b|"
+    r"\b(?:already|currently)\b|"
+    r"\b(?:telah|sudah|sedang)\b|(?:已经|已經|正在)",
+    re.IGNORECASE,
+)
+_MODAL_PERFECT_ASSERTION = re.compile(
+    r"\b(?:should|must|may|might|could)\s+(?:not\s+)?have\b|"
+    r"\b(?:patut|mesti|perlu|boleh)\s+telah\b|"
+    r"(?:应该|應該|可能|可以)(?:已经|已經)",
+    re.IGNORECASE,
+)
+_BARE_COMPLETED_ACTION = re.compile(
+    r"\b(?:contacted|called|arrived|attended|responded|transported|admitted|"
+    r"assessed|notified|informed|activated|initiated|implemented|completed|"
+    r"provided|reported)\b|"
+    r"\b(?:dihubungi|dimaklumkan|diberitahu|dilaksanakan|diselesaikan)\b|"
+    r"(?:已联系|已聯繫|已通知|已抵达|已抵達|已完成|已执行|已執行)",
+    re.IGNORECASE,
+)
+
+# An instruction to communicate or record something does not make the
+# embedded proposition true.  These verbs introduce content that recipients
+# would reasonably read as a factual assertion (``Notify parents that ...``),
+# so a recommendation label must not exempt the subordinate clause from the
+# grounding audit.  The auditor may still accept the sentence when that
+# proposition is independently supported by the source request.
+_ASSERTION_BEARING_OPERATOR_COMMAND = re.compile(
+    r"(?i)^(?:please\s+)?(?:announce|confirm|explain|inform|notify|publish|"
+    r"record|report|share|state|tell|write)\b"
+)
+_EMBEDDED_ASSERTION_CONNECTOR = re.compile(
+    r"(?i)\b(?:that|because|since|given\s+that|after|before|once|until)\b"
+)
+
+
+def has_unknown_epistemic_qualifier(text: str) -> bool:
+    """Return true when a claim is explicitly unknown or awaiting evidence."""
+    return bool(_UNKNOWN_QUALIFIER.search(str(text or "")))
+
+
+def is_clearly_future_advice(text: str) -> bool:
+    """Recognise advice without allowing a proposal label to rewrite history.
+
+    Modal/conditional advice is safe even when it uses a passive participle
+    (``should be contacted``). Otherwise an advice marker is accepted only
+    when the clause contains no past/current/completed-action assertion.
+    """
+    value = str(text or "")
+    assertion_view = re.sub(
+        r"\b(?:until|after|before|once|if)\s+(?:(?:the|an?)\s+)?"
+        r"(?:(?:safety|formal|human|authorised|authorized|required)\s+)?"
+        r"(?:assessment|inspection|repair|review|approval|record|information|"
+        r"details?|facts?|room|site|pupils?|students?|child|family)\s+"
+        r"(?:is|are)\s+(?:checked|confirmed|completed|approved|reviewed|"
+        r"repaired|verified)\b",
+        " ",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if (
+        _PAST_OR_CURRENT_ASSERTION.search(assertion_view)
+        or _MODAL_PERFECT_ASSERTION.search(assertion_view)
+    ):
+        return False
+    if re.fullmatch(
+        r"\s*(?:#{1,6}\s+)?(?:"
+        r"recommended\s+next\s+steps\s*[-—:]\s*subject\s+to\s+"
+        r"(?:human\s+)?(?:review|approval)|"
+        r"proposed\s+arrangements\s*[-—:]\s*subject\s+to\s+"
+        r"(?:school\s+)?approval)\.?\s*",
+        value,
+        re.IGNORECASE,
+    ):
+        return True
+    if _RECIPIENT_OPTIONAL_CONTACT_ADVICE.fullmatch(value.strip()):
+        return True
+    if not _ADVICE_QUALIFIER.search(value):
+        return False
+
+    # Inspect the recommendation payload, not the heading. A qualified heading
+    # may lend proposal status to an imperative or a compact option field, but
+    # it must never lend that status to arbitrary declarative prose.
+    payload = ""
+    for raw_line in reversed(value.splitlines()):
+        candidate = re.sub(
+            r"^\s*(?:[-*+]|\d+[.)])\s*", "", raw_line).strip()
+        if candidate and not candidate.startswith("#"):
+            payload = candidate
+            break
+    if not payload:
+        payload = value.strip()
+    payload = re.sub(
+        r"(?i)^(?:proposed|recommended|recommendation|optional|option)\s*:\s*",
+        "",
+        payload,
+    ).strip()
+
+    # ``Recommended: notify parents that police arrested the teacher`` has a
+    # future outer action but a past factual payload.  Do not decide whether
+    # that embedded payload is true here: leave it to source grounding.  This
+    # also covers non-``that`` causal/temporal forms such as ``inform staff
+    # after the ambulance took the pupil``.  A narrow process-boundary phrase
+    # (``after human approval``) is not an embedded case assertion.
+    if _ASSERTION_BEARING_OPERATOR_COMMAND.match(payload):
+        connector = _EMBEDDED_ASSERTION_CONNECTOR.search(payload)
+        if connector:
+            tail = payload[connector.start():].strip()
+            safe_process_boundary = bool(re.fullmatch(
+                r"(?i)(?:after|before|once|until)\s+(?:(?:the|a|an)\s+)?"
+                r"(?:(?:human|school|formal|required|safety)\s+)?"
+                r"(?:approval|review|verification|confirmation|inspection|"
+                r"assessment)(?:\s+is\s+(?:completed|recorded|confirmed|"
+                r"approved|verified))?[.!]?",
+                tail,
+            ))
+            if not safe_process_boundary:
+                return False
+
+    # A proposal boundary can authorise a future action, but it cannot turn a
+    # completed assertion nested inside that action into advice (for example,
+    # ``Inform staff that the inspection completed``). Remove only narrow,
+    # prospective passive shapes before looking for completed-action tokens.
+    # This keeps ``Ensure pupils are transported safely`` valid while still
+    # rejecting an additional completed/current fact later in the sentence.
+    completed_view = re.sub(
+        r"\b(?:until|after|before|once|if)\s+(?:(?:the|an?)\s+)?"
+        r"(?:(?:safety|formal|human|authorised|authorized|required)\s+)?"
+        r"(?:assessment|inspection|repair|review|approval|record|information|"
+        r"details?|facts?|room|site|pupils?|students?|child|family)\s+"
+        r"(?:is|are)\s+(?:checked|confirmed|completed|approved|reviewed|"
+        r"repaired|verified)\b",
+        " ",
+        payload,
+        flags=re.IGNORECASE,
+    )
+    completed_view = re.sub(
+        r"\b(?:should|must|may|might|could|will)\s+(?:not\s+)?be\s+"
+        r"(?:contacted|called|transported|admitted|assessed|notified|informed|"
+        r"activated|implemented|completed|provided|approved|checked|confirmed|"
+        r"repaired|reviewed|verified)\b",
+        " ",
+        completed_view,
+        flags=re.IGNORECASE,
+    )
+    if re.match(
+        r"(?i)^(?:arrange|coordinate|ensure|keep|prepare|request|seek|support)\b",
+        payload,
+    ):
+        completed_view = re.sub(
+            r"\b(?:be|is|are)\s+(?:contacted|called|transported|admitted|"
+            r"assessed|notified|informed|activated|implemented|completed|"
+            r"provided|approved|checked|confirmed|repaired|reviewed|verified)\b",
+            " ",
+            completed_view,
+            flags=re.IGNORECASE,
+        )
+    if re.match(r"(?i)^keep\b", payload):
+        completed_view = re.sub(
+            r"(?i)^keep\s+[^.;:\n]{1,80}\s+"
+            r"(?:informed|notified|updated|briefed)\b",
+            " ",
+            completed_view,
+        )
+    if _BARE_COMPLETED_ACTION.search(completed_view):
+        return False
+
+    if _MODAL_ACTION_ADVICE.search(value):
+        return True
+    explicitly_labelled = bool(_EXPLICIT_ADVICE_QUALIFIER.search(value))
+    if explicitly_labelled and _FUTURE_ACTION_ADVICE.search(value):
+        return True
+    if _CONDITIONAL_IMPERATIVE_ADVICE.search(value):
+        return True
+    if not explicitly_labelled:
+        return False
+
+    if (
+        _NARROW_CONSIDER_ADVICE.search(payload)
+        and not _NARROW_CONSIDER_UNSAFE_TAIL.search(payload)
+        and not _NARROW_CONSIDER_SECOND_ASSERTION.search(payload)
+    ):
+        return True
+
+    if SCHOOL_OPERATOR_COMMAND_PREFIX.match(payload):
+        return True
+    if re.match(
+        r"(?i)^(?:arrange|ask|assess|avoid|brief|check|clarify|communicate|confirm|"
+        r"conduct|consult|contact|coordinate|document|engage|ensure|establish|"
+        r"evaluate|follow|gather|hold|identify|include|inform|interview|"
+        r"investigate|invite|keep|lead|maintain|manage|monitor|notify|offer|preserve|"
+        r"prepare|provide|record|refer|remain|report|request|reserve|review|"
+        r"schedule|seek|separate|share|speak|support|take|use|verify)\b",
+        payload,
+    ):
+        return True
+    if re.match(
+        r"^(?:由[^，。；]{0,24})?(?:联系|聯繫|确认|確認|咨询|諮詢|"
+        r"记录|記錄|审核|審核|保存|核实|核實|通知|支持|分开|分開|了解)",
+        payload,
+    ):
+        return True
+    return bool(re.match(
+        r"(?i)^(?:(?:proposed\s+)?(?:staff\s+arrival|reporting\s+target|"
+        r"communication\s+option|room\s+option|time|deadline|channel|venue|"
+        r"room|staffing|quantity|assignment|contact|owner)|"
+        r"(?:cadangan\s+)?(?:masa|tarikh\s+akhir|saluran|tempat|bilik|"
+        r"kakitangan|kuantiti|tugasan|pegawai)|"
+        r"(?:建议|建議)?(?:时间|時間|期限|渠道|地点|地點|房间|房間|人员|人員|"
+        r"数量|數量|分工|联系人|聯絡人))\s*:\s*\S",
+        payload,
+    ))
 
 # Epistemic-status boundary for operational planning. A draft may contain
 # useful options, but details that the user did not supply must never read as
 # already-decided school arrangements. These patterns are deliberately about
 # evidence-bearing specificity (times, deadlines, channels and quantities),
 # not about school scenarios or prompt keywords.
-_PROPOSAL_QUALIFIER = re.compile(
-    r"\b(?:tbc|unknown|unverified|not\s+(?:yet\s+)?confirmed|"
-    r"to\s+be\s+confirmed|proposed|proposal|recommended|recommendation|"
-    r"subject\s+to\s+(?:school\s+)?(?:approval|confirmation|review)|"
-    r"pending\s+(?:approval|confirmation|review)|optional|option|"
-    r"if\s+(?:approved|required|needed|available)|may|could|consider)\b|"
-    r"(?:cadangan|dicadangkan|tertakluk\s+kepada\s+kelulusan|"
-    r"menunggu\s+pengesahan|akan\s+disahkan)|"
-    r"(?:\u5efa\u8bae|\u5efa\u8b70|\u62df\u8bae|\u64ec\u8b70|\u5f85\u6279\u51c6|\u5f85\u78ba\u8a8d|\u5f85\u786e\u8ba4|\u6709\u5f85\u786e\u8ba4|\u6709\u5f85\u78ba\u8a8d)",
-    re.IGNORECASE,
-)
 _PROPOSAL_SECTION = re.compile(
     r"\b(?:proposed|proposal|recommended|recommendation|options?|"
     r"subject\s+to\s+approval|pending\s+approval)\b|"
@@ -1739,8 +2182,11 @@ def _matched_positive_chunks(pattern: re.Pattern, text: str) -> list[str]:
         # object ("information will be gathered from TBC staff") and must not
         # excuse the unsupported process claim.
         qualifier_scope = text[start:match.end()]
-        if not _NEGATIVE_QUALIFIER.search(qualifier_scope):
-            chunks.append(chunk.strip())
+        if has_unknown_epistemic_qualifier(qualifier_scope):
+            continue
+        if is_clearly_future_advice(qualifier_scope):
+            continue
+        chunks.append(chunk.strip())
     return chunks
 
 
@@ -1787,6 +2233,7 @@ def _operational_detail_grounding_issues(
     ]
     issues: list[str] = []
     proposal_section_level: int | None = None
+    proposal_section_heading = ""
     pattern_specs = (
         ("unsupported_operational_time", _CLOCK_TIME),
         ("unsupported_operational_deadline", _OPERATIONAL_DEADLINE),
@@ -1805,13 +2252,27 @@ def _operational_detail_grounding_issues(
             level = len(heading.group(1))
             if _PROPOSAL_SECTION.search(line):
                 proposal_section_level = level
+                proposal_section_heading = line
             elif (
                 proposal_section_level is None
                 or level <= proposal_section_level
             ):
                 proposal_section_level = None
+                proposal_section_heading = ""
             continue
-        if _PROPOSAL_QUALIFIER.search(line) or proposal_section_level is not None:
+        section_context = (
+            f"{proposal_section_heading}\n{line}"
+            if proposal_section_level is not None
+            else line
+        )
+        if (
+            has_unknown_epistemic_qualifier(line)
+            or is_clearly_future_advice(line)
+            or (
+                proposal_section_level is not None
+                and is_clearly_future_advice(section_context)
+            )
+        ):
             continue
 
         for label, pattern in pattern_specs:
@@ -1879,7 +2340,8 @@ def _unsourced_clinical_instruction_issues(
     safety_context = bool(
         role in _CLINICAL_CEILING_ROLES
         and re.search(
-            r"\b(?:injur(?:y|ed)|ill(?:ness)?|medical|allerg|anaphyla|"
+            r"\b(?:injur(?:y|ies|ed)|ill(?:ness)?|medical|"
+            r"allerg(?:y|ies|ic)?|anaphyla(?:xis|ctic)?|"
             r"bite|bitten|sting|stung|poison|bleed|unconscious|seizure)\b",
             source_goal or "",
             re.IGNORECASE,
@@ -1966,7 +2428,7 @@ def validate_school_markdown(
         r"\bunknown\b|not\s+provided|missing\s+(?:fact|detail|information)",
         polarity_source, re.IGNORECASE,
     ))
-    if needs_tbc and "tbc" not in text.lower():
+    if needs_tbc and not has_unknown_epistemic_qualifier(text):
         issues["hygiene"].append("source_requires_tbc_but_artifact_has_none")
 
     parent_roles = {"private_parent_notice", "school_parent_notice"}
@@ -2083,18 +2545,22 @@ def validate_school_markdown(
             marker = language_markers.get(language)
             if marker and not re.search(marker, text):
                 issues["hygiene"].append(f"missing_language_section:{language}")
-    if (role == "internal_incident_report"
-            and re.search(
-                r"(?mi)^(?:#{1,6}\s+recommendations?\s*|"
-                r"\*\*recommendations?:\*\*\s*)$",
-                text,
-            )
-            and not re.search(
-                r"\brecommend|\bsuggest|\bpropose|what\s+(?:should|can)\s+we\s+do|"
-                r"action\s+plan|next\s+steps\s+beyond\s+verification",
-                source_goal or "", re.IGNORECASE,
-            )):
-        issues["role"].append("unrequested_recommendations_section")
+    recommendation_headings = [
+        match.group(0).strip()
+        for match in _RECOMMENDATION_HEADING.finditer(text)
+    ]
+    if (
+        role == "internal_incident_report"
+        and any(
+            _QUALIFIED_RECOMMENDATION_HEADING.fullmatch(heading) is None
+            for heading in recommendation_headings
+        )
+    ):
+        # Advice is useful, but an incident report must keep it visibly outside
+        # the confirmed factual record. A bare ``Recommendations`` heading is
+        # too easy to read as an authorised school decision; the qualified
+        # heading preserves the proposal/human-review boundary.
+        issues["role"].append("unqualified_recommendations_section")
 
     for label, output_rx, source_rx in _GROUNDING_RULES:
         output_claims = _matched_positive_chunks(output_rx, text)
@@ -2256,6 +2722,12 @@ def school_artifact_verification_checks(
     contract_errors: list[str] = []
     artifact_ids: set[str] = set()
     targets: set[str] = set()
+    live_generation_modes = {
+        "plan_level_action_id_mapping",
+        "plan_level_batched_action_id_mapping",
+        "partial_bundle_retained",
+        "per_action_scoped_fallback",
+    }
 
     for action in artifacts:
         meta = action.metadata or {}
@@ -2268,6 +2740,19 @@ def school_artifact_verification_checks(
             contract_errors.append(f"missing_role_or_audience:{action.action_id}")
         if meta.get("school_generation_failed"):
             contract_errors.append(f"generation_not_verified:{action.action_id}")
+        generation_validation = meta.get("school_generation_validation") or {}
+        generation_mode = str(generation_validation.get("mode") or "")
+        if (
+            generation_mode in live_generation_modes
+            and generation_validation.get("semantic_audit_passed") is not True
+        ):
+            # Module 110 independently checks provenance. A live-authored file
+            # is not verified merely because upstream forgot to mark it failed;
+            # it must carry an explicit successful semantic audit. Deterministic
+            # fallbacks remain governed by their own mechanical validation mode.
+            contract_errors.append(
+                f"live_semantic_audit_not_verified:{action.action_id}"
+            )
         if (action.tool or "").lower() != "fs" or Path(target).suffix.lower() != ".md":
             contract_errors.append(f"not_fs_markdown:{action.action_id}")
         if target.lower() in targets:
@@ -2354,9 +2839,24 @@ def school_artifact_verification_checks(
                 or []
             )
         }
-        # Review notes are never allowed to suppress policy/privacy findings.
-        # At present only the synthesizer's cross-artifact similarity warning
-        # can enter this set; grouped per-file guard failures remain blocking.
+        accepted_length_notes: set[str] = set()
+        for note in accepted_notes:
+            marker = "hygiene:response_pack_artifact_too_short:"
+            if note.startswith(marker):
+                accepted_length_notes.add(note.removeprefix("hygiene:"))
+            action_marker = f"{action.action_id}:{marker}"
+            if note.startswith(action_marker):
+                accepted_length_notes.add(
+                    note.removeprefix(f"{action.action_id}:hygiene:")
+                )
+        if accepted_length_notes:
+            issues["hygiene"] = [
+                issue for issue in issues["hygiene"]
+                if issue not in accepted_length_notes
+            ]
+        # Review notes can suppress only their exact below-target length
+        # warning. Policy, privacy, grounding, role and absolute empty-content
+        # findings remain blocking and cannot be hidden by metadata.
         if accepted_notes:
             review_notes[action.action_id] = sorted(accepted_notes)
         if issues["hygiene"]:

@@ -272,9 +272,9 @@ def _semantic_output_is_explicit(
         ).casefold(),
     ).strip()
     role_noun_patterns = {
-        "private_parent_notice": r"\b(?:school|parent|guardian|community)?\s*(?:notice|notification|message|letter|circular|email)\b",
-        "school_parent_notice": r"\b(?:school|parent|guardian|community)?\s*(?:notice|notification|message|letter|circular|email)\b",
-        "staff_internal_notice": r"\b(?:staff|teacher|internal|school)?\s*(?:notice|briefing|message|memo(?:randum)?)\b|\b(?:memo|notis)\s+(?:dalaman\s+)?(?:kepada\s+)?(?:semua\s+)?(?:staf|guru)\b",
+        "private_parent_notice": r"\b(?:school|parent|guardian|community)?\s*(?:notice|notification|message|letter|circular|email)\b|\b(?:parent|guardian|famil(?:y|ies))\s+communication\b|\bcommunication\s+(?:for|to)\s+(?:parents?|guardians?|families)\b",
+        "school_parent_notice": r"\b(?:school|parent|guardian|community)?\s*(?:notice|notification|message|letter|circular|email)\b|\b(?:parent|guardian|famil(?:y|ies))\s+communication\b|\bcommunication\s+(?:for|to)\s+(?:parents?|guardians?|families)\b|\bfamilies\s+need\s+to\s+know\b[^.!?;\n]{0,90}\bcommunication\b",
+        "staff_internal_notice": r"\b(?:staff|teacher|internal|school)?\s*(?:notice|briefing|message|memo(?:randum)?)\b|\binternal\s+communication\b|\b(?:memo|notis)\s+(?:dalaman\s+)?(?:kepada\s+)?(?:semua\s+)?(?:staf|guru)\b",
         "public_communication_draft": r"\b(?:public|media|facebook)?\s*(?:statement|post|notice|message|announcement)\b",
         "internal_incident_report": r"\b(?:incident|accident)\s+report\b",
         "education_authority_report": r"\b(?:authority|district|education|official)\s+report\b",
@@ -293,6 +293,12 @@ def _semantic_output_is_explicit(
         "curriculum_continuity_plan": r"\b(?:curriculum|teaching|learning|lesson|class)\s+continuity\s+plan\b",
         "user_titled_document": r"\b(?:document|file|draft|template|form|record)\b",
     }
+    if (
+        role in {"private_parent_notice", "school_parent_notice"}
+        and re.search(r"\b(?:parents?|guardians?|famil(?:y|ies))\b", raw_source)
+        and is_requested_output_mention(raw_source, r"\bcommunication\b")
+    ):
+        return True
     role_pattern = role_noun_patterns.get(role)
     if role_pattern and is_requested_output_mention(raw_source, role_pattern):
         return True

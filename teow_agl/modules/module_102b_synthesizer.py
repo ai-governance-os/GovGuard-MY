@@ -49,10 +49,15 @@ from .module_school_artifact_guard import (
     SCHOOL_OPERATOR_COMMAND_PREFIX,
     artifact_similarity,
     classify_school_validation_issues,
+    has_unknown_epistemic_qualifier,
+    is_clearly_future_advice,
+    qualify_internal_proposal_headings,
     requires_restricted_staff_boundary,
     excluded_known_fact_values,
     school_policy_contract_issues,
     strip_internal_release_control,
+    strip_recipient_facing_source_control,
+    strip_ungrounded_preparation_boilerplate,
     validate_school_markdown,
 )
 from .module_school_privacy import requires_broad_redaction
@@ -137,6 +142,16 @@ def _school_audit_issue_scope(
         }:
             bundle.append(value)
             continue
+        if value == "goal_alignment_consistency_uncertain":
+            # A complete provider schema can still contradict itself by
+            # returning ``goal_alignment_passed=false`` (or a sub-threshold
+            # score) while naming no missing, irrelevant, audience or
+            # language issue.  That is not evidence that any particular file
+            # is wrong.  Keep it bundle-scoped for the independent final judge
+            # instead of making one-file packs fail merely because they have
+            # only one possible attribution target.
+            bundle.append(value)
+            continue
         if value.startswith("semantic_grounding:"):
             parts = value.split(":", 2)
             action_id = parts[1] if len(parts) > 1 else ""
@@ -171,13 +186,17 @@ def _school_audit_issue_scope(
             linked = action_id if action_id in scoped else (
                 obligation if obligation in scoped else ""
             )
-            if not linked and len(action_ids) == 1:
-                # With one artifact there is no attribution ambiguity: a
-                # missing requested obligation means that file missed its job.
-                linked = next(iter(action_ids))
             if linked:
                 scoped[linked].append(f"missing_obligation:{detail}")
             else:
+                # The provider may suggest an additional deliverable that is
+                # not owned by any governed action contract.  Even in a
+                # one-file pack that is a bundle-level completeness question,
+                # not evidence that the existing file is unsafe or wrong.
+                # Module 110 evaluates the canonical response-pack coverage
+                # independently; never make the lone file absorb an unowned
+                # obligation merely because there is only one attribution
+                # candidate.
                 bundle.append(f"missing_obligation:{detail}")
         else:
             bundle.append(f"missing_obligation:{str(item)[:240]}")
@@ -674,8 +693,340 @@ def _contact_person_bullet() -> str:
     return f"- School contact person: {name} · Return number: TBC"
 
 
+_EN_CONTRACT_PURPOSE_FRAME = re.compile(
+    r"^(?:this|the)\s+(?P<kind>draft|report|plan|checklist|notice|script|log|"
+    r"assessment|record|document|message)\s+(?:(?:is\s+(?:intended|designed)|"
+    r"aims?)\s+to\s+(?:support|guide|help|structure|outline|summari[sz]e|"
+    r"organise|organize|present)|sets?\s+out|outlines?|supports?|"
+    r"provides?\s+(?:a\s+)?"
+    r"(?:framework|structure)\s+for|records?\s+(?:the\s+)?(?:reported|supplied|"
+    r"confirmed)\s+(?:facts?|information))\b",
+    re.IGNORECASE,
+)
+_BM_CONTRACT_PURPOSE_FRAME = re.compile(
+    r"^(?P<kind>draf|laporan|pelan|senarai\s+semak|notis|skrip|log|rekod|dokumen|"
+    r"mesej)\s+ini\s+(?:(?:bertujuan\s+untuk|direka\s+untuk)\s+"
+    r"(?:menyokong|membimbing|membantu|menstrukturkan|menggariskan|meringkaskan|"
+    r"menyusun|membentangkan)|menggariskan|"
+    r"menyediakan\s+(?:rangka|struktur)\s+untuk|menyokong)\b",
+    re.IGNORECASE,
+)
+_ZH_CONTRACT_PURPOSE_FRAME = re.compile(
+    r"^本(?P<kind>草稿|报告|報告|计划|計劃|清单|清單|通知|脚本|腳本|日志|日誌|"
+    r"记录|記錄|文件|信息|訊息)(?:(?:旨在|用于|用於|意在)"
+    r"(?:支持|协助|協助|指导|指導|组织|組織|整理|概述|汇总|彙總|呈现|呈現)|"
+    r"概述|列出|提供框架|支持)",
+)
+_CONTRACT_PURPOSE_EVENT_ASSERTION = re.compile(
+    r"\b(?:to|for)\s+(?:state|confirm|claim|say|report|record|document|verify)"
+    r"\s+(?:that\s+)?[^.;\n]{0,140}\b(?:was|were|has\s+been|have\s+been|"
+    r"had\s+been|have\s+completed|has\s+completed|contacted|notified|"
+    r"informed|completed|implemented|activated|approved|verified|investigated)\b|"
+    r"\buntuk\s+(?:mengesahkan|menyatakan|mendakwa|melaporkan|merekodkan)\b"
+    r"[^.;\n]{0,140}\b(?:telah|sudah|dihubungi|dimaklumkan|dilaksanakan|"
+    r"diselesaikan|disahkan)\b|"
+    r"(?:旨在|用于|用於|意在)(?:确认|確認|说明|說明|声称|聲稱|记录|記錄|"
+    r"报告|報告)[^。；\n]{0,90}(?:已经|已經|已联系|已聯繫|已通知|已完成|"
+    r"已执行|已執行)",
+    re.IGNORECASE,
+)
+
+
+def _audit_claim_is_contract_purpose(
+    action: CandidateAction | None,
+    claim: str,
+) -> bool:
+    """Accept bounded statements about what the artifact is for, not events.
+
+    Role fit remains independently checked by the goal/role auditors. This
+    helper only prevents a sentence such as ``This checklist is intended to
+    support authorised staff`` from being mistaken for an unsupported case
+    fact. Specific English artifact nouns must agree with the action contract.
+    """
+    if action is None:
+        return False
+    value = re.sub(r"\s+", " ", str(claim or "")).strip()
+    if _CONTRACT_PURPOSE_EVENT_ASSERTION.search(value):
+        return False
+    meta = action.metadata or {}
+    contract = " ".join((
+        str(action.purpose or ""),
+        str(action.target or ""),
+        str(meta.get("artifact_role") or ""),
+        str(meta.get("requested_label") or ""),
+    )).casefold()
+    english = _EN_CONTRACT_PURPOSE_FRAME.search(value)
+    malay = _BM_CONTRACT_PURPOSE_FRAME.search(value)
+    chinese = _ZH_CONTRACT_PURPOSE_FRAME.search(value)
+    if not (english or malay or chinese):
+
+        # Some providers express an artifact's role as a bounded normative
+        # purpose rather than with "this document is intended to...".  Accept
+        # only three contract-matched shapes; they describe what the proposed
+        # file is for and never assert that an action already happened.
+        normative = value.casefold()
+        if re.match(
+            r"^it\s+is\s+(?:essential|important|necessary)\s+to\s+preserve\b",
+            normative,
+        ):
+            return bool(re.search(r"\b(?:evidence|log|record|preserv)\w*\b", contract))
+        if re.match(
+            r"^(?:an?|the)\s+(?:regulatory\s+)?assessment\s+is\s+required\s+to\b",
+            normative,
+        ):
+            return bool(re.search(r"\b(?:assessment|regulatory|review)\b", contract))
+        if re.match(
+            r"^this\s+incident\s+requires\s+(?:a\s+)?structured\s+response\b",
+            normative,
+        ):
+            return bool(re.search(r"\b(?:response|plan|cyber|privacy|data)\b", contract))
+        return False
+
+    raw_kind = str(
+        (english or malay or chinese).group("kind") or ""
+    ).casefold()
+    kind_aliases = {
+        "draf": "draft", "dokumen": "document", "laporan": "report",
+        "pelan": "plan", "senarai semak": "checklist", "notis": "notice",
+        "skrip": "script", "rekod": "record", "mesej": "message",
+        "草稿": "draft", "文件": "document", "报告": "report",
+        "報告": "report", "计划": "plan", "計劃": "plan",
+        "清单": "checklist", "清單": "checklist", "通知": "notice",
+        "脚本": "script", "腳本": "script", "日志": "log", "日誌": "log",
+        "记录": "record", "記錄": "record", "信息": "message", "訊息": "message",
+    }
+    kind = kind_aliases.get(raw_kind, raw_kind)
+    if kind in {"draft", "document"}:
+        return bool(contract)
+    compatible = {
+        "report": {"report"},
+        "plan": {"plan"},
+        "checklist": {"checklist", "check list"},
+        "notice": {"notice", "notification", "communication"},
+        "script": {"script", "handover", "contact"},
+        "log": {"log", "record", "evidence"},
+        "record": {"record", "report", "minutes", "log"},
+        "assessment": {"assessment", "review"},
+        "message": {"message", "notice", "communication"},
+    }
+    return any(token in contract for token in compatible.get(kind, {kind}))
+
+
+_AUDIT_DRAFTING_COMMAND = re.compile(
+    r"(?i)(?:^|[.!?;,\n]\s*)(?:(?:then|also)\s+)?"
+    r"(?:as\s+[^,]{1,80},\s*)?"
+    r"(?:(?:could|can|would)\s+you\s+)?(?:please\s+)?"
+    r"(?:prepare|draft|write|create|produce|make|send|publish|release|"
+    r"contact|notify|issue|keep|do\s+not)\b"
+    r"(?!\s+(?:was|were|is|are|has|have|had|details?|information|record|"
+    r"status)\b)"
+)
+_AUDIT_PARAPHRASE_STOPWORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "has", "have",
+    "had", "been", "be", "being", "now", "there", "this", "that",
+    "these", "those", "it", "they", "their", "he", "she", "his",
+    "her", "of", "to", "in", "on", "at", "by", "for", "from",
+    "with", "and", "or", "as",
+}
+_AUDIT_PARAPHRASE_ALIASES = {
+    "arguments": "argument",
+    "teachers": "teacher",
+    "pupils": "pupil",
+    "students": "student",
+    "children": "child",
+    "offices": "office",
+    "separated": "separate",
+    "separating": "separate",
+    "injured": "injury",
+    "injuries": "injury",
+    "vomited": "vomit",
+    "vomiting": "vomit",
+    "collapsed": "collapse",
+    "fallen": "fall",
+    "fell": "fall",
+    "closed": "close",
+    "closing": "close",
+    "supervised": "supervise",
+    "supervision": "supervise",
+}
+_AUDIT_DIRECT_NO_INJURY = re.compile(
+    r"(?i)\b(?:no\s+(?:one|person|pupil|student|teacher)\s+(?:is|was)\s+"
+    r"injured|nobody\s+(?:is|was)\s+injured|no\s+injur(?:y|ies)\s+"
+    r"(?:occurred|were\s+reported))\b"
+)
+_AUDIT_NO_INJURY_CLAIM = re.compile(
+    r"(?i)^\s*no\s+injur(?:y|ies)\s+(?:occurred|were\s+reported)\.?\s*$"
+)
+_AUDIT_NEGATION = re.compile(
+    r"(?i)\b(?:no|not|never|without|none|nobody|nothing|cannot|can't|"
+    r"didn't|doesn't|isn't|wasn't|weren't)\b"
+)
+_AUDIT_UNKNOWN_ONLY = re.compile(
+    r"(?ix)^\s*(?:[-*+]\s*)?(?:"
+    r"tbc|"
+    r"(?:[a-z][a-z\s/_-]{0,60})\s*:\s*"
+    r"(?:tbc|unknown|unverified|not\s+confirmed|not\s+provided|"
+    r"pending\s+confirmation|required\s*[-—:]\s*not\s+yet\s+completed)|"
+    r"(?:the\s+)?(?:date|time|location|status|cause|identity|details?|"
+    r"information)\s+(?:is|are|remains?)\s+"
+    r"(?:tbc|unknown|unverified|not\s+confirmed|not\s+provided|"
+    r"pending\s+confirmation)"
+    r")\.?\s*$"
+)
+_AUDIT_FALSE_INFORMATION_SOURCE = re.compile(
+    r"(?i)\b(?:false|inaccurate|incorrect|untrue)\s+"
+    r"(?:rumou?r|claim|information|post)\b|"
+    r"\b(?:rumou?r|claim|information|post)\b[^.!?;]{0,30}"
+    r"\b(?:is\s+)?(?:false|inaccurate|incorrect|untrue|not\s+true)\b"
+)
+_AUDIT_FALSE_INFORMATION_CLAIM = re.compile(
+    r"(?i)^\s*(?:(?:(?:we|the\s+school)\s+(?:want|wish)\s+to\s+"
+    r"clarify\s+that)|(?:(?:we|the\s+school)\s+(?:want|wish)\s+to\s+"
+    r"assure\s+(?:you|our\s+community|families|parents?)\s+that))?\s*"
+    r"(?:this|the)\s+(?:information|rumou?r|claim|post)\s+"
+    r"(?:is|appears\s+to\s+be)\s+(?:not\s+(?:accurate|correct|true)|"
+    r"false|inaccurate|incorrect|untrue)\.?\s*$"
+)
+
+# These artifacts are explicitly plans, assessments or controlled action
+# aids. A bare imperative inside them is prospective operator guidance, not a
+# claim that the action already happened. The same sentence in an incident
+# record remains factual unless a proposal heading/qualifier supplies that
+# boundary. Privacy, clinical, authority and external-action checks still run
+# independently after this narrow epistemic classification.
+_PROPOSAL_BOUNDED_ARTIFACT_ROLES = frozenset({
+    "internal_action_plan",
+    "site_safety_checklist",
+    "student_accountability_checklist",
+    "regulatory_notification_assessment",
+    "safeguarding_action_plan",
+    "cyber_incident_response",
+    "finance_procurement_memo",
+    "event_action_plan",
+    "student_support_plan",
+    "transport_response_plan",
+    "food_safety_response",
+    "post_incident_review",
+    "measurement_plan",
+    "curriculum_continuity_plan",
+})
+
+
+def _audit_fact_source_prefix(source_request: str) -> str:
+    """Return only the reported-fact prefix, excluding drafting commands.
+
+    A request to prepare or send something is authority to draft an action,
+    not evidence that the action already happened.  The paraphrase resolver is
+    therefore deliberately limited to source material before the first clear
+    authoring/external-action command.
+    """
+    source = str(source_request or "")
+    command = _AUDIT_DRAFTING_COMMAND.search(source)
+    return source[:command.start()].strip() if command else source.strip()
+
+
+def _audit_paraphrase_tokens(value: str) -> list[str]:
+    text = re.sub(
+        r"(?i)\b(?:took\s+place|has\s+taken\s+place|had\s+taken\s+place|"
+        r"occurred|happened)\b",
+        " ",
+        str(value or ""),
+    )
+    text = re.sub(
+        r"(?i)\(?(?:as\s+of\s+)?(?:the\s+)?time\s+of\s+(?:the\s+)?report\)?",
+        " ",
+        text,
+    )
+    tokens = re.findall(r"[a-z0-9]+", text.casefold())
+    return [
+        _AUDIT_PARAPHRASE_ALIASES.get(token, token)
+        for token in tokens
+        if token not in _AUDIT_PARAPHRASE_STOPWORDS
+        and token not in {"no", "not", "never", "without", "none"}
+    ]
+
+
+def _audit_fact_clauses(value: str) -> list[str]:
+    return [
+        clause.strip()
+        for clause in re.split(
+            r"(?i)[.!?;\n]+|,\s+|\s+(?:and|but|while|whereas)\s+",
+            str(value or ""),
+        )
+        if clause.strip()
+    ]
+
+
+def _tokens_are_ordered_subset(needle: list[str], haystack: list[str]) -> bool:
+    if not needle:
+        return False
+    cursor = 0
+    for token in needle:
+        try:
+            cursor = haystack.index(token, cursor) + 1
+        except ValueError:
+            return False
+    return True
+
+
+def _audit_claim_is_unknown_only(value: str) -> bool:
+    return bool(_AUDIT_UNKNOWN_ONLY.fullmatch(str(value or "")))
+
+
+def _audit_claim_is_source_paraphrase(
+    claim: str,
+    source_request: str,
+) -> bool:
+    """Resolve only high-overlap, same-polarity source paraphrases.
+
+    This is not a general semantic similarity shortcut. Every material claim
+    token must already occur in the reported-fact prefix, so changed rooms,
+    people, times, agencies or actions remain unsupported. Opposite polarity
+    is rejected independently. A narrow no-injury equivalence handles the
+    common ``no one is injured`` / ``no injuries were reported`` wording.
+    """
+    factual_source = _audit_fact_source_prefix(source_request)
+    if not factual_source:
+        return False
+    if _AUDIT_NO_INJURY_CLAIM.fullmatch(str(claim or "")):
+        return bool(_AUDIT_DIRECT_NO_INJURY.search(factual_source))
+    claim_tokens = _audit_paraphrase_tokens(claim)
+    if len(claim_tokens) < 2:
+        return False
+    claim_clauses = _audit_fact_clauses(claim)
+    if len(claim_clauses) != 1:
+        return False
+    claim_negative = bool(_AUDIT_NEGATION.search(claim))
+    for source_clause in _audit_fact_clauses(factual_source):
+        if bool(_AUDIT_NEGATION.search(source_clause)) != claim_negative:
+            continue
+        source_tokens = _audit_paraphrase_tokens(source_clause)
+        if _tokens_are_ordered_subset(claim_tokens, source_tokens):
+            return True
+
+    # Narrow anaphora resolution for the observed staff-state paraphrase. The
+    # entity and state must both be explicit; no time, place or actor is added.
+    if re.fullmatch(
+        r"(?i)\s*(?:the\s+)?teachers?\s+(?:are|were|have\s+been|had\s+been)\s+"
+        r"(?:now\s+)?separated\.?\s*",
+        str(claim or ""),
+    ):
+        return bool(
+            re.search(r"(?i)\bteachers?\b", factual_source)
+            and re.search(
+                r"(?i)\bthey\s+(?:are|were|have\s+been|had\s+been)\s+"
+                r"(?:now\s+)?separated\b",
+                factual_source,
+            )
+        )
+    return False
+
+
 def _audit_claim_is_grounded_or_proposed(
-    claim: str, artifact: str, source_request: str,
+    claim: str,
+    artifact: str,
+    source_request: str,
+    action: CandidateAction | None = None,
 ) -> bool:
     """Discard only audit findings deterministic evidence can resolve.
 
@@ -687,38 +1038,54 @@ def _audit_claim_is_grounded_or_proposed(
     """
 
     def normal(value: str) -> str:
-        return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
+        text = re.sub(
+            r"[^\w\u3400-\u9fff]+",
+            " ",
+            str(value or "").casefold(),
+            flags=re.UNICODE,
+        )
+        return re.sub(r"[_\s]+", " ", text).strip()
 
     claim_norm = normal(claim)
-    source_norm = normal(source_request)
+    factual_source = _audit_fact_source_prefix(source_request)
     if not claim_norm:
         return False
-    if claim_norm in source_norm:
+    claim_negative = bool(_AUDIT_NEGATION.search(claim))
+    if any(
+        claim_norm in normal(source_clause)
+        and bool(_AUDIT_NEGATION.search(source_clause)) == claim_negative
+        for source_clause in _audit_fact_clauses(factual_source)
+    ):
+        return True
+    if _audit_claim_is_source_paraphrase(claim, source_request):
+        return True
+    if (
+        _AUDIT_FALSE_INFORMATION_CLAIM.fullmatch(str(claim or ""))
+        and _AUDIT_FALSE_INFORMATION_SOURCE.search(factual_source)
+    ):
+        return True
+    if _audit_claim_is_contract_purpose(action, claim):
         return True
 
-    negative = re.compile(r"\b(?:no|not|never|without|none|yet)\b")
+    if _audit_claim_is_unknown_only(claim):
+        return True
+    if is_clearly_future_advice(claim):
+        return True
+    role = str(
+        ((action.metadata or {}).get("artifact_role") if action else "") or ""
+    ).casefold()
+    if (
+        role in _PROPOSAL_BOUNDED_ARTIFACT_ROLES
+        and is_clearly_future_advice(f"Recommended: {claim}")
+    ):
+        return True
+
     claim_words = set(claim_norm.split())
-    source_words = set(source_norm.split())
     ignored = {
         "a", "an", "the", "is", "was", "were", "has", "have", "had",
         "as", "of", "to", "for", "and", "or", "by", "in", "on", "at",
         "time", "report", "reported", "been", "any", "yet", "no", "not",
     }
-    shared = (claim_words - ignored).intersection(source_words - ignored)
-    if (
-        negative.search(claim_norm)
-        and negative.search(source_norm)
-        and len(shared) >= 2
-    ):
-        return True
-
-    marker = re.compile(
-        r"\b(?:proposed|proposal|recommended|recommendation|optional|tbc|"
-        r"subject to (?:school )?approval|for human review)\b"
-    )
-    if marker.search(claim_norm):
-        return True
-
     heading_stack: list[tuple[int, str]] = []
     for raw_line in str(artifact or "").splitlines():
         stripped = raw_line.strip()
@@ -735,9 +1102,114 @@ def _audit_claim_is_grounded_or_proposed(
         overlap = len((claim_words - ignored).intersection(line_words))
         denominator = max(1, min(len(claim_words - ignored), len(line_words)))
         if overlap >= 3 and overlap / denominator >= 0.55:
-            context = " ".join(text for _, text in heading_stack) + " " + stripped
-            return bool(marker.search(normal(context)))
+            context = "\n".join(
+                [*(text for _, text in heading_stack), stripped]
+            )
+            if _audit_claim_is_unknown_only(stripped):
+                return True
+            return is_clearly_future_advice(context)
     return False
+
+
+# The provider audit is evidence discovery, not the final authority.  Most
+# unsupported case facts remain hard failures.  Only a small, deterministic
+# set of non-operational presentation claims may survive as review notes.
+# This prevents headings and courteous framing from erasing useful live work
+# while keeping claims capable of changing a real decision fail-closed.
+_AUDIT_MATERIAL_RISK = re.compile(
+    r"(?i)\b(?:police|ambulance|fire\s+(?:and\s+rescue|service)|"
+    r"emergency\s+services?|authorit(?:y|ies)|hospital|clinic|doctor|"
+    r"nurse|injur(?:y|ies|ed)|unwell|illness|diagnos(?:is|ed)|"
+    r"medicat(?:ion|ed)|treat(?:ment|ed)|died|death|fatal|asthma|"
+    r"allerg(?:y|ic)|contacted|notified|informed|called|sent|published|"
+    r"posted|released|arrived|attended|responded|evacuated|closed|"
+    r"locked|repaired|approved|signed|verified|completed|implemented|"
+    r"activated|investigat(?:ion|ing|ed)|review\s+is\s+(?:ongoing|underway)|"
+    r"responsib(?:le|ility)|blame|fault)\b"
+)
+_AUDIT_OPERATIONAL_SPECIFIC = re.compile(
+    r"(?i)(?:\b(?:room|classroom|block|gate|bus|vehicle)\s+[a-z0-9-]+\b|"
+    r"\b\d{1,2}:\d{2}\b|\b(?:rm|myr|usd)\s*\d|[$£€]\s*\d|"
+    r"\b\d+(?:\.\d+)?\s*(?:minutes?|hours?|days?|weeks?|months?|"
+    r"pupils?|students?|staff|teachers?|parents?|people|persons?)\b)"
+)
+_AUDIT_SOFT_PRESENTATION = re.compile(
+    r"(?ix)^\s*(?:\#{1,6}\s+|[-*+]\s+)?(?:\*\*)?(?:"
+    r"proposed\s+arrangements|recommended\s+next\s+steps?|"
+    r"recommendations?|next\s+steps?|information\s+for\s+the\s+family|"
+    r"if\s+you\s+have\s+(?:any\s+)?(?:questions?|concerns?)|"
+    r"please\s+(?:contact|reach\s+out)|thank\s+you\s+for|"
+    r"we\s+(?:understand|appreciate)\b|"
+    r"(?:the\s+school\s+is|we\s+are)\s+(?:currently\s+)?preparing\b"
+    r")"
+)
+_AUDIT_FALSE_RUMOUR_AWARENESS = re.compile(
+    r"(?i)^\s*(?:we|the\s+school)\s+(?:are|is)\s+aware\s+of\s+"
+    r"(?:a|the)\s+(?:false|inaccurate|incorrect|untrue)\s+"
+    r"(?:rumou?r|claim|post|information)\b[^;\n]{0,180}[.!?]?\s*$"
+)
+
+
+def _false_rumour_awareness_is_source_bounded(
+    claim: str,
+    source_request: str,
+) -> bool:
+    source = _audit_fact_source_prefix(source_request)
+    if not (
+        _AUDIT_FALSE_RUMOUR_AWARENESS.fullmatch(str(claim or ""))
+        and _AUDIT_FALSE_INFORMATION_SOURCE.search(source)
+    ):
+        return False
+
+    def topic_tokens(value: str) -> set[str]:
+        text = str(value or "").casefold()
+        text = re.sub(r"\bsocial\s+media\b|\bfacebook\b", " socialmedia ", text)
+        text = re.sub(r"\b(?:death|died|dies|dead)\b", " die ", text)
+        tokens = set(re.findall(r"[a-z0-9]+", text))
+        return tokens - {
+            "a", "an", "the", "we", "our", "school", "are", "is",
+            "of", "on", "at", "in", "to", "that", "this", "says",
+            "say", "aware", "false", "inaccurate", "incorrect", "untrue",
+            "rumour", "rumor", "claim", "post", "information", "circulating",
+            "regarding", "about", "has", "been",
+        }
+
+    claim_topic = topic_tokens(claim)
+    source_topic = topic_tokens(source)
+    return bool(claim_topic and claim_topic.issubset(source_topic))
+
+
+def _unresolved_audit_claim_disposition(
+    claim: str,
+    reason: str,
+    source_request: str,
+) -> str:
+    """Return ``hard_block`` or ``review_note`` for an unresolved finding.
+
+    Defaulting to ``hard_block`` is intentional.  A claim becomes a review
+    note only when its complete surface form is a known presentation/framing
+    shape and it contains no material action, safety, medical, authority,
+    privacy-adjacent or operationally specific detail.
+    """
+    value = re.sub(r"\s+", " ", str(claim or "")).strip()
+    rationale = str(reason or "")
+    if not value:
+        return "hard_block"
+    if re.search(
+        r"(?i)\b(?:reverse[sd]?|contradict(?:s|ed|ion)?|opposite\s+polarity|"
+        r"wrong\s+(?:person|room|time|date|location|amount))\b",
+        rationale,
+    ):
+        return "hard_block"
+    if _false_rumour_awareness_is_source_bounded(value, source_request):
+        return "review_note"
+    if _AUDIT_MATERIAL_RISK.search(value):
+        return "hard_block"
+    if _AUDIT_OPERATIONAL_SPECIFIC.search(value):
+        return "hard_block"
+    if _AUDIT_SOFT_PRESENTATION.search(value):
+        return "review_note"
+    return "hard_block"
 
 # Faithfulness-gate vocabularies for a LIVE workflow draft (see
 # ContentSynthesizer._workflow_draft_is_faithful). Conservative on purpose: a
@@ -1210,7 +1682,12 @@ def _school_response_pack_safe_fallback(
         raw_fact_values = []
 
     source_note = ""
-    if "verification_required" in str(meta.get("source_policy") or ""):
+    if (
+        "verification_required" in str(meta.get("source_policy") or "")
+        and str(audience or "").casefold() not in {
+            "public", "private_recipient", "school_community",
+        }
+    ):
         source_note = (
             "\n\n> Official-source check: REQUIRED - not yet completed. "
             "This draft does not claim that its procedural prompts are a "
@@ -3413,73 +3890,29 @@ class ContentSynthesizer:
                 for action in artifacts
             }
 
-            # Enforce the cross-file boundary over the merged pack, not merely
-            # inside each generation batch. Conflict repair is local and
-            # deterministic; it never creates a per-file remote retry.
-            conflicting: set[str] = set()
+            # Similarity is a usefulness signal, not evidence that either
+            # file is unsafe or factually wrong.  Preserve the independently
+            # governed live drafts and expose the exact pair for human review.
+            # Module 110 still evaluates required role coverage separately.
             for index, left in enumerate(artifacts):
                 for right in artifacts[index + 1:]:
-                    if artifact_similarity(
+                    score = artifact_similarity(
                         final_mapping[left.action_id],
                         final_mapping[right.action_id],
-                    ) >= 0.72:
-                        conflicting.update({
-                            left.action_id, right.action_id,
-                        })
-            for action in artifacts:
-                if action.action_id not in conflicting:
-                    continue
-                replacement = _school_response_pack_safe_fallback(
-                    action, source_by_id[action.action_id]
-                )
-                checked = validate_school_markdown(
-                    action, replacement, source_by_id[action.action_id]
-                )
-                flat = [
-                    f"{layer}:{item}"
-                    for layer, values in checked.items() for item in values
-                ]
-                if flat:
-                    action.metadata["school_generation_failed"] = True
-                    action.metadata["school_generation_validation"] = {
-                        "pass": False,
-                        "mode": "final_cross_artifact_similarity",
-                        "issues": flat[:20],
-                    }
-                    failed_ids.append(action.action_id)
-                    continue
-                final_mapping[action.action_id] = replacement
-                action.metadata["content"] = replacement
-                action.metadata["synthesis_skip"] = True
-                action.metadata["school_generation_failed"] = False
-                action.metadata["school_generation_validation"] = {
-                    "pass": True,
-                    "mode": "deterministic_response_pack_similarity_repair",
-                }
-
-            for index, left in enumerate(artifacts):
-                for right in artifacts[index + 1:]:
-                    if artifact_similarity(
-                        final_mapping[left.action_id],
-                        final_mapping[right.action_id],
-                    ) < 0.72:
+                    )
+                    if score < 0.72:
                         continue
+                    note = (
+                        f"cross_artifact_similarity:{left.action_id}:"
+                        f"{right.action_id}:{score:.3f}"
+                    )
                     for action in (left, right):
-                        action.metadata["school_generation_failed"] = True
-                        action.metadata["school_generation_validation"] = {
-                            "pass": False,
-                            "mode": "final_cross_artifact_similarity",
-                        }
-                        if action.action_id not in failed_ids:
-                            failed_ids.append(action.action_id)
-            if failed_ids:
-                return {
-                    "result": "bundle_rejected_per_action_fallback",
-                    "artifacts": len(artifacts),
-                    "batch_count": len(batches),
-                    "batches": batches,
-                    "fallback_action_ids": failed_ids,
-                }
+                        notes = list(action.metadata.get(
+                            "school_generation_review_notes"
+                        ) or [])
+                        if note not in notes:
+                            notes.append(note)
+                        action.metadata["school_generation_review_notes"] = notes
 
             # An outage already produced deterministic, safe-format fallbacks.
             # Do not call a provider again after the task-local circuit opens.
@@ -3728,18 +4161,22 @@ class ContentSynthesizer:
             "brackets, [Your Name], [Parent Name], TODO, TBD, sample, or other "
             "generic placeholders.\n\n"
             "QUALITY RULE: make each file usable by a first school operator, "
-            "not a token stub. Reports, plans, assessments and checklists should "
-            "contain at least 750 characters with role-appropriate sections; "
-            "short messages and call/handover scripts must contain at least 500 "
-            "characters. Keep facts TBC rather than padding or "
-            "inventing details.\n\n"
+            "not a token stub. For English or Malay, aim for 180-260 words for "
+            "reports, plans, assessments and checklists, and 120-180 words for "
+            "messages or call/handover scripts. For Chinese, provide equivalent "
+            "operational detail. Use role-appropriate sections for confirmed "
+            "facts, unknowns, proposed next steps, human decisions and records. "
+            "Keep facts TBC rather than padding or inventing details.\n\n"
             "SOURCE STATUS RULE: if source_policy says official verification "
             "is required and no cited official source appears in the supplied "
             "context, include a visible 'Official-source check: REQUIRED - not "
-            "yet completed' note. Give only case-fact fields and conservative "
-            "proposed steps; never imply the draft contains verified policy or "
-            "official medical instructions. Urgent human safety action must not "
-            "wait for this document or for web research.\n\n"
+            "yet completed' note in internal and operational agency drafts. Do "
+            "not place that internal control note inside public, parent or other "
+            "recipient-facing prose; the runtime records it separately. Give "
+            "only case-fact fields and conservative proposed steps; never imply "
+            "the draft contains verified policy or official medical instructions. "
+            "Urgent human safety action must not wait for this document or for "
+            "web research.\n\n"
             "HIGH-RISK INSTRUCTION CEILING: unless source_request itself "
             "contains a cited official source or a verified school SOP, do not "
             "invent treatment technique, medication, dosage, stinger removal, "
@@ -3789,9 +4226,14 @@ class ContentSynthesizer:
             "For a private parent notice, use only the minimum family-relevant "
             "facts and exclude internal investigation sections. For an internal "
             "incident report, do not include a parent-letter salutation or "
-            "sign-off, and do not add a Recommendations section unless the "
-            "source request explicitly asks for recommendations; fact-"
-            "verification next steps are allowed.\n\n"
+            "sign-off. It may include useful handling advice only under the exact "
+            "heading '## Recommended next steps — subject to human review'. Keep "
+            "that section separate from confirmed facts and phrase every item as "
+            "future, modal or imperative advice; never present it as completed or "
+            "authorised school action. A bare 'Recommendations' heading is not "
+            "allowed. A public_communication_draft is a public holding statement, "
+            "not a parent letter: never use 'Dear Parent', 'Dear Guardian', "
+            "'Yours sincerely' or a private-recipient sign-off.\n\n"
             "ACTION CONTRACT RULE: every descriptor contains its own source "
             "facts, languages, claim policy, exclusions and safe transformation. "
             "Obey those fields exactly. If requested_languages is non-empty, "
@@ -3900,6 +4342,11 @@ class ContentSynthesizer:
                     ).strip()
                     body = _repair_bracket_placeholders(body)
                     body = strip_internal_release_control(action, body)
+                    body = strip_recipient_facing_source_control(action, body)
+                    body = strip_ungrounded_preparation_boilerplate(
+                        body, source_by_id[action.action_id],
+                    )
+                    body = qualify_internal_proposal_headings(action, body)
                     mapping[action.action_id] = body
                     checked = validate_school_markdown(
                         action, body, source_by_id[action.action_id])
@@ -3956,6 +4403,21 @@ class ContentSynthesizer:
                 break
             if not issues:
                 for action in artifacts:
+                    action_review_notes = [
+                        note
+                        for note in [
+                            *similarity_notes,
+                            *disposition["review_note"],
+                            *(audit.get("review_notes") or []),
+                        ]
+                        if (
+                            action.action_id in str(note)
+                            or str(note).startswith((
+                                "grounding_provider_flag_",
+                                "goal_alignment_consistency_",
+                            ))
+                        )
+                    ]
                     body = str(mapping[action.action_id]).strip()
                     body = _resolve_relative_dates_in_body(
                         body, source_by_id[action.action_id])
@@ -3964,17 +4426,16 @@ class ContentSynthesizer:
                     action.metadata["school_generation_failed"] = False
                     action.metadata["school_generation_disposition"] = {
                         "tier": (
-                            "REVIEW_NOTE" if similarity_notes else "PASS"
+                            "REVIEW_NOTE" if action_review_notes else "PASS"
                         ),
                         "hard_block": [],
                         "repair_once": [],
-                        "review_note": similarity_notes,
+                        "review_note": action_review_notes,
                     }
-                    if similarity_notes:
-                        action.metadata["school_generation_review_notes"] = [
-                            note for note in similarity_notes
-                            if action.action_id in note
-                        ]
+                    if action_review_notes:
+                        action.metadata["school_generation_review_notes"] = (
+                            action_review_notes
+                        )
                     if _defer_semantic_audit:
                         action.metadata["school_generation_validation"] = {
                             "pass": False,
@@ -3992,8 +4453,13 @@ class ContentSynthesizer:
                             "pass": True, "attempt": attempt,
                             "mode": "plan_level_action_id_mapping",
                             "semantic_audit_passed": True,
-                            "goal_alignment_passed": True,
+                            "goal_alignment_passed": (
+                                audit.get("goal_alignment_passed") is True
+                            ),
                             "goal_alignment_score": audit.get("score", 100),
+                            "bundle_review_notes": (
+                                audit.get("review_notes") or []
+                            )[:20],
                         }
                 return {
                     "result": (
@@ -4025,6 +4491,19 @@ class ContentSynthesizer:
                 action_id for action_id, findings in audit_scope.items()
                 if findings
             )
+            if (
+                last_audit
+                and last_audit.get("grounding_passed") is True
+                and audit_bundle_issues
+                and not any(audit_scope.values())
+                and not scoped_ids
+            ):
+                # A bundle-only goal question cannot be repaired by rewriting
+                # an arbitrary file. Retain the grounded drafts, record that
+                # goal completeness is unresolved, and let Module 110 compare
+                # the canonical response-pack ledger. This also avoids paying
+                # for a second generation that has no file-scoped instruction.
+                break
             if audit_bundle_issues or not scoped_ids:
                 scoped_ids = set(expected_ids)
             accepted_mapping = {
@@ -4050,6 +4529,45 @@ class ContentSynthesizer:
                     indent=2,
                 )[:9000]
             )
+
+        # When the final repair attempt has only per-file mechanical issues,
+        # the semantic judge did not previously run. In a multi-file pack that
+        # made one short/ill-formatted file drag every clean sibling into the
+        # deterministic fallback. Judge the assembled mapping once so clean,
+        # independently grounded siblings can be retained; hard policy blocks,
+        # provider failures and action-id mismatches still fail closed.
+        if (
+            len(artifacts) > 1
+            and not _defer_semantic_audit
+            and not last_audit
+            and not provider_unavailable
+            and not last_disposition["hard_block"]
+            and set(mapping) == expected_ids
+            and not any(
+                issue.startswith("action_id_set_mismatch")
+                for issue in last_issues
+            )
+        ):
+            last_audit = self._school_bundle_semantic_audit(
+                artifacts, mapping, user_intent,
+            )
+            if last_audit.get("pass") is not True:
+                audit_findings = list(last_audit.get("issues") or [
+                    "semantic_grounding_audit_unavailable"
+                ])
+                last_issues = list(dict.fromkeys(
+                    [*last_issues, *audit_findings]
+                ))
+                if any(
+                    issue in {
+                        "semantic_grounding_audit_unavailable",
+                        "semantic_grounding_audit_unavailable_or_failed",
+                        "goal_alignment_audit_unavailable_or_failed",
+                    }
+                    for issue in audit_findings
+                ):
+                    provider_unavailable = True
+                    self._school_provider_unavailable = True
 
         audit_issues_by_action, bundle_audit_issues = _school_audit_issue_scope(
             last_audit,
@@ -4091,10 +4609,30 @@ class ContentSynthesizer:
                 and not hard_global_failure
                 and not action_issues
             ):
+                action_review_notes = [
+                    note for note in last_disposition["review_note"]
+                    if action.action_id in note
+                ]
+                action_review_notes.extend(
+                    str(note)
+                    for note in (last_audit.get("review_notes") or [])
+                    if str(note)
+                )
+                action_review_notes = list(dict.fromkeys(action_review_notes))
                 action.metadata["content"] = _resolve_relative_dates_in_body(
                     body, source_by_id[action.action_id])
                 action.metadata["synthesis_skip"] = True
                 action.metadata["school_generation_failed"] = False
+                action.metadata["school_generation_disposition"] = {
+                    "tier": "REVIEW_NOTE" if action_review_notes else "PASS",
+                    "hard_block": [],
+                    "repair_once": [],
+                    "review_note": action_review_notes,
+                }
+                if action_review_notes:
+                    action.metadata["school_generation_review_notes"] = (
+                        action_review_notes
+                    )
                 action.metadata["school_generation_validation"] = {
                     "pass": True,
                     "mode": "partial_bundle_retained",
@@ -4102,6 +4640,9 @@ class ContentSynthesizer:
                     "goal_alignment_passed": bundle_goal_complete,
                     "bundle_goal_alignment_passed": bundle_goal_complete,
                     "bundle_audit_issues": bundle_audit_issues[:20],
+                    "bundle_review_notes": (
+                        last_audit.get("review_notes") or []
+                    )[:20],
                 }
                 if _defer_semantic_audit:
                     action.metadata["school_generation_validation"][
@@ -4163,59 +4704,46 @@ class ContentSynthesizer:
             action.metadata["school_generation_failed"] = True
             failed_ids.append(action.action_id)
 
-        # A clean retained LLM draft can still duplicate a deterministic
-        # sibling after the two sets are merged. Re-run the cross-artifact
-        # invariant over the final bundle. Replace every conflict participant
-        # with its canonical role fallback, then fail closed if a same-role
-        # custom pair remains indistinguishable.
+        # A clean retained LLM draft can still resemble a sibling after live
+        # and deterministic files are merged.  Similar prose is not a safety,
+        # privacy, authority or grounding failure; record it for quality review
+        # without replacing useful live content with a generic template.
         if response_pack_owned and not failed_ids:
-            conflicting: set[str] = set()
             for index, left in enumerate(artifacts):
                 for right in artifacts[index + 1:]:
-                    if artifact_similarity(
+                    score = artifact_similarity(
                         str(left.metadata.get("content") or ""),
                         str(right.metadata.get("content") or ""),
-                    ) >= 0.72:
-                        conflicting.update({left.action_id, right.action_id})
-            for action in artifacts:
-                if action.action_id not in conflicting:
-                    continue
-                action_source = source_by_id[action.action_id]
-                replacement = _school_response_pack_safe_fallback(
-                    action, action_source)
-                checked = validate_school_markdown(
-                    action, replacement, action_source)
-                if any(checked.values()):
-                    action.metadata["school_generation_failed"] = True
-                    failed_ids.append(action.action_id)
-                    continue
-                action.metadata["content"] = replacement
-                action.metadata["synthesis_skip"] = True
-                action.metadata["school_generation_failed"] = False
-                action.metadata["school_generation_validation"] = {
-                    "pass": True,
-                    "mode": "deterministic_response_pack_similarity_repair",
-                }
-                if action.action_id not in safe_fallback_ids:
-                    safe_fallback_ids.append(action.action_id)
-                if action.action_id in retained:
-                    retained.remove(action.action_id)
-
-            for index, left in enumerate(artifacts):
-                for right in artifacts[index + 1:]:
-                    if artifact_similarity(
-                        str(left.metadata.get("content") or ""),
-                        str(right.metadata.get("content") or ""),
-                    ) < 0.72:
+                    )
+                    if score < 0.72:
                         continue
+                    note = (
+                        f"cross_artifact_similarity:{left.action_id}:"
+                        f"{right.action_id}:{score:.3f}"
+                    )
                     for action in (left, right):
-                        action.metadata["school_generation_failed"] = True
-                        action.metadata["school_generation_validation"] = {
-                            "pass": False,
-                            "mode": "final_cross_artifact_similarity",
-                        }
-                        if action.action_id not in failed_ids:
-                            failed_ids.append(action.action_id)
+                        notes = list(action.metadata.get(
+                            "school_generation_review_notes"
+                        ) or [])
+                        if note not in notes:
+                            notes.append(note)
+                        action.metadata["school_generation_review_notes"] = notes
+                        disposition = dict(action.metadata.get(
+                            "school_generation_disposition"
+                        ) or {})
+                        disposition.update({
+                            "tier": "REVIEW_NOTE",
+                            "hard_block": list(
+                                disposition.get("hard_block") or []
+                            ),
+                            "repair_once": list(
+                                disposition.get("repair_once") or []
+                            ),
+                            "review_note": notes,
+                        })
+                        action.metadata["school_generation_disposition"] = (
+                            disposition
+                        )
         return {
             "result": (
                 "partial_bundle_per_action_fallback" if retained
@@ -4293,6 +4821,7 @@ class ContentSynthesizer:
             action.action_id: {
                 "role": action.metadata.get("artifact_role"),
                 "audience": action.metadata.get("audience"),
+                "source_policy": action.metadata.get("source_policy") or "",
                 "content": str(mapping.get(action.action_id) or ""),
                 "source_request": _school_action_source_request(
                     action, source_request
@@ -4316,7 +4845,11 @@ class ContentSynthesizer:
             "already reported to administrators. A request to CONTACT a parent "
             "is not evidence that the school is already reviewing, verifying, "
             "gathering facts, taking action, or committed to future updates. "
-            "Those must be TBC or clearly proposed for human review. "
+            "Those must be TBC or clearly proposed for human review. A clearly "
+            "labelled recommendation is not a case fact when it uses future, "
+            "modal or imperative wording. A proposal label does NOT excuse past "
+            "or current wording such as 'was contacted', 'has completed' or 'is "
+            "reviewing'. "
             "Apply the same rule to operational planning. A request for a plan, "
             "checklist, briefing or schedule does not support invented fixed "
             "times, durations, deadlines, quantities, staff assignments, rooms, "
@@ -4328,7 +4861,11 @@ class ContentSynthesizer:
             "Reported facts must remain reported; do not allow stronger medical, "
             "injury, witness, police, blame, or response details than the source. "
             "Do not flag headings, DRAFT/NOT SENT labels, audience labels, TBC "
-            "fields, or clearly proposed/recommended verification steps. "
+            "fields, or clearly proposed/recommended verification steps. Do not "
+            "treat a role-consistent sentence describing the document's purpose "
+            "('This checklist is intended to support authorised staff') as a case "
+            "fact. Purpose framing must describe the artifact, not claim that the "
+            "school or another person already acted. "
             f"Today's real date is {_today_display_date()}: when the source "
             "contains a relative day phrase ('today', 'yesterday', 'N days "
             "ago'), the calendar date it resolves to is a SUPPORTED claim — "
@@ -4336,7 +4873,9 @@ class ContentSynthesizer:
             "remains unsupported. Return "
             "JSON only: {\"pass\": boolean, \"unsupported_claims\": "
             "[{\"action_id\": string, \"claim\": string, \"reason\": string}]}. "
-            "pass may be true only when unsupported_claims is empty."
+            "The pass flag MUST equal whether unsupported_claims is empty: "
+            "return pass=true for an empty list and pass=false for a non-empty "
+            "list. Never return pass=false without naming the claim."
         )
         if audit_data is None:
             data = self.chat_llm.chat_json(
@@ -4363,8 +4902,42 @@ class ContentSynthesizer:
         # result, and ``pass: true`` is contradictory when claims are present.
         if schema_clean:
             return {"pass": True, "issues": []}
+        combined_schema_complete = bool(
+            isinstance(data, dict)
+            and isinstance(raw_claims, list)
+            and all(
+                isinstance(data.get(key), list)
+                for key in (
+                    "missing_obligations",
+                    "irrelevant_artifacts",
+                    "audience_issues",
+                    "language_issues",
+                )
+            )
+            and isinstance(data.get("goal_alignment_passed"), bool)
+            and isinstance(data.get("score"), (int, float))
+            and not isinstance(data.get("score"), bool)
+            and isinstance(data.get("reason"), str)
+        )
+        if (
+            combined_schema_complete
+            and data.get("pass") is False
+            and not raw_claims
+        ):
+            # The one-call auditor sometimes lets its goal-alignment verdict
+            # leak into the independent grounding boolean.  A complete,
+            # explicit empty claim list contains no file-level factual finding;
+            # preserve that evidence and surface the contradictory flag as a
+            # review note.  Missing/truncated standalone schemas still fail
+            # closed below.
+            return {
+                "pass": True,
+                "issues": [],
+                "review_notes": ["grounding_provider_flag_inconsistent"],
+            }
         claims = raw_claims if isinstance(raw_claims, list) else []
         issues: list[str] = []
+        review_notes: list[str] = []
         for item in claims[:12]:
             if not isinstance(item, dict):
                 issues.append("semantic_grounding:malformed_claim")
@@ -4376,20 +4949,60 @@ class ContentSynthesizer:
                 (candidate for candidate in artifacts if candidate.action_id == aid),
                 None,
             )
-            if action is not None and _audit_claim_is_grounded_or_proposed(
+            resolved = bool(
+                action is not None and _audit_claim_is_grounded_or_proposed(
                 claim,
                 str(mapping.get(aid) or ""),
                 _school_action_source_request(action, source_request),
-            ):
-                continue
-            issues.append(
-                f"semantic_grounding:{aid}:{claim or reason or 'unsupported_claim'}"
+                action,
+                )
             )
+            if resolved:
+                disposition = "accepted_grounded_or_proposed"
+            else:
+                owned_source = (
+                    _school_action_source_request(action, source_request)
+                    if action is not None else source_request
+                )
+                disposition = _unresolved_audit_claim_disposition(
+                    claim, reason, owned_source
+                )
+
+            # Hidden machine-readable evidence record.  It is intentionally
+            # metadata rather than recipient-facing prose: the UI can explain
+            # why a finding was accepted, noted or blocked without teaching
+            # the verifier to trust the generator's own labels.
+            if action is not None:
+                ledger = list(action.metadata.get("school_claim_ledger") or [])
+                entry = {
+                    "claim": claim or reason or "unsupported_claim",
+                    "disposition": disposition,
+                    "source": "semantic_auditor",
+                }
+                if entry not in ledger:
+                    ledger.append(entry)
+                action.metadata["school_claim_ledger"] = ledger[-20:]
+
+            if resolved:
+                continue
+            finding = claim or reason or "unsupported_claim"
+            if disposition == "review_note":
+                review_notes.append(
+                    f"semantic_grounding_review:{aid}:{finding}"
+                )
+            else:
+                issues.append(f"semantic_grounding:{aid}:{finding}")
         if claims and not issues:
-            return {"pass": True, "issues": []}
+            result = {"pass": True, "issues": []}
+            if review_notes:
+                result["review_notes"] = list(dict.fromkeys(review_notes))
+            return result
         if not issues:
             issues.append("semantic_grounding_audit_unavailable_or_failed")
-        return {"pass": False, "issues": issues, "raw": data}
+        result = {"pass": False, "issues": issues, "raw": data}
+        if review_notes:
+            result["review_notes"] = list(dict.fromkeys(review_notes))
+        return result
 
 
     def _school_goal_alignment_audit(
@@ -4502,23 +5115,42 @@ class ContentSynthesizer:
         if not full_schema:
             return empty_result
 
+        required_issue_fields = {
+            "missing_obligations": ("obligation", "reason"),
+            "irrelevant_artifacts": ("action_id", "reason"),
+            "audience_issues": ("action_id", "issue"),
+            "language_issues": ("action_id", "issue"),
+        }
+        issue_schema_clean = all(
+            isinstance(item, dict)
+            and all(
+                isinstance(item.get(field), str)
+                and bool(str(item.get(field) or "").strip())
+                for field in required_issue_fields[key]
+            )
+            for key in required_lists
+            for item in data.get(key, [])
+        )
+        if not issue_schema_clean:
+            # A malformed provider finding is an unavailable audit, not proof
+            # that a concrete obligation is missing. Never manufacture an
+            # ``Unspecified issue`` that could be mistaken for a content flaw.
+            return {
+                **empty_result,
+                "malformed_issue_schema": True,
+            }
+
         def normalise_issues(key: str, label: str) -> list[dict[str, str]]:
             normalised: list[dict[str, str]] = []
             for item in data.get(key, [])[:20]:
-                if isinstance(item, dict):
-                    clean = {
-                        str(field)[:80]: re.sub(
-                            r"\s+", " ", str(value or "")
-                        ).strip()[:240]
-                        for field, value in item.items()
-                        if str(value or "").strip()
-                    }
-                    normalised.append(clean or {label: "Unspecified issue"})
-                else:
-                    issue = re.sub(
-                        r"\s+", " ", str(item or "")
+                clean = {
+                    str(field)[:80]: re.sub(
+                        r"\s+", " ", str(value or "")
                     ).strip()[:240]
-                    normalised.append({label: issue or "Unspecified issue"})
+                    for field, value in item.items()
+                    if str(value or "").strip()
+                }
+                normalised.append(clean)
             return normalised
 
         result = {
@@ -4536,20 +5168,20 @@ class ContentSynthesizer:
                 r"\s+", " ", str(data.get("reason") or "")
             ).strip()[:500],
         }
+        actionable_issues = any(result[key] for key in required_lists)
         clean = bool(
             result["goal_alignment_passed"]
-            and not any(result[key] for key in required_lists)
+            and not actionable_issues
             and result["score"] >= 80
         )
         result["goal_alignment_passed"] = clean
-        if not clean and not any(result[key] for key in required_lists):
-            result["missing_obligations"] = [{
-                "obligation": "complete and relevant response to the raw user goal",
-                "reason": (
-                    "The auditor did not provide an internally consistent clean "
-                    "goal-alignment result."
-                ),
-            }]
+        if not clean and not actionable_issues:
+            # Do not fabricate a concrete missing obligation when the provider
+            # supplied no actionable finding.  The generated files have still
+            # passed deterministic contracts and the independent grounding
+            # audit; retain them for Module 110's separate goal judge, while
+            # keeping this stage explicitly non-passing.
+            result["goal_alignment_consistency_uncertain"] = True
         return result
 
     def _school_bundle_semantic_audit(
@@ -4577,6 +5209,7 @@ class ContentSynthesizer:
                 "role": action.metadata.get("artifact_role"),
                 "audience": action.metadata.get("audience"),
                 "channel": action.metadata.get("channel") or "",
+                "source_policy": action.metadata.get("source_policy") or "",
                 "requested_languages": (
                     action.metadata.get("requested_languages") or []
                 ),
@@ -4608,10 +5241,18 @@ class ContentSynthesizer:
             "GROUNDING: list every factual, completed-action, current-process, "
             "institutional-process, or definite future-commitment claim not "
             "supported by that artifact's own source_request. Clearly marked "
-            "TBC, proposed, optional, recommended, or subject-to-approval items "
-            "Apply the same rule to operational planning, schedules, staffing, "
-            "facilities, channels and deadlines. "
-            "are not unsupported claims. Never use a sibling source as evidence.\n\n"
+            "TBC items are not factual claims. Clearly marked proposed, optional, "
+            "recommended or subject-to-approval items are not factual claims when "
+            "they use future, modal or imperative wording. A proposal label does "
+            "not excuse a past, current or completed-action assertion. Apply the "
+            "same rule to operational planning, schedules, staffing, facilities, "
+            "channels and deadlines. Never use a sibling source as evidence. "
+            "A role-consistent sentence that describes what the document is for "
+            "is purpose framing, not a case fact; this exception never covers a "
+            "claim that the school or another person already acted.\n\n"
+            "A visibly incomplete official-source check is artifact-control "
+            "metadata, not a claim that an event occurred, when that artifact's "
+            "source_policy says verification is required.\n\n"
             "DATE EXCEPTION: today's real date is "
             f"{_today_display_date()}. When source_request contains a relative "
             "day phrase ('today', 'yesterday', 'N days ago'), the artifact may "
@@ -4650,10 +5291,17 @@ class ContentSynthesizer:
             "\"reason\": string}], \"audience_issues\": [{\"action_id\": "
             "string, \"issue\": string}], \"language_issues\": "
             "[{\"action_id\": string, \"issue\": string}], \"score\": integer "
-            "0-100, \"reason\": string}. pass may be true only when "
-            "unsupported_claims is empty. goal_alignment_passed may be true "
-            "only when all four goal issue lists are empty and score is at "
-            "least 80."
+            "0-100, \"reason\": string}. The pass flag MUST equal whether "
+            "unsupported_claims is empty: return pass=true for an empty list "
+            "and pass=false for a non-empty list. Never return pass=false "
+            "without naming at least one unsupported claim. "
+            "goal_alignment_passed may be true only when all four goal issue "
+            "lists are empty and score is at least 80. The supplied artifact "
+            "contracts are the governed response-pack boundary: do not invent "
+            "an additional report, plan, notice, script, checklist or other "
+            "deliverable as a missing obligation. A missing obligation must "
+            "belong to one supplied action contract or be explicitly stated "
+            "in the raw user goal."
         )
         data = self.chat_llm.chat_json(
             system=system,
@@ -4682,6 +5330,7 @@ class ContentSynthesizer:
             audit_data=data if isinstance(data, dict) else {},
         )
         issues = list(grounding.get("issues") or [])
+        review_notes = list(grounding.get("review_notes") or [])
         issue_labels = (
             ("missing_obligations", "missing_obligation"),
             ("irrelevant_artifacts", "irrelevant_artifact"),
@@ -4697,7 +5346,11 @@ class ContentSynthesizer:
         if goal.get("goal_alignment_passed") is not True and not any(
             issue.startswith("goal_alignment:") for issue in issues
         ):
-            issues.append("goal_alignment_audit_unavailable_or_failed")
+            if goal.get("goal_alignment_consistency_uncertain") is True:
+                issues.append("goal_alignment_consistency_uncertain")
+                review_notes.append("goal_alignment_consistency_uncertain")
+            else:
+                issues.append("goal_alignment_audit_unavailable_or_failed")
         clean = bool(
             grounding.get("pass") is True
             and goal.get("goal_alignment_passed") is True
@@ -4714,6 +5367,7 @@ class ContentSynthesizer:
             "issues": issues,
             "grounding_passed": grounding.get("pass") is True,
             "unsupported_claims": raw_claims[:20],
+            "review_notes": list(dict.fromkeys(review_notes)),
             **goal,
         }
 
@@ -5211,9 +5865,10 @@ class ContentSynthesizer:
             "exactly one '# ' heading. The artifact role is " + role +
             "; audience is " + audience + ". Write only this artifact and "
             "exclude all sibling deliverables. Mark it DRAFT - NOT SENT. Use "
-            "enough role-appropriate sections to be operationally useful: "
-            "at least 750 characters for reports/plans/checklists and at least "
-            "500 characters for messages or contact scripts. Never pad with "
+            "enough role-appropriate sections to be operationally useful. For "
+            "English or Malay, aim for 180-260 words for reports, plans and "
+            "checklists, and 120-180 words for messages or contact scripts; for "
+            "Chinese, provide equivalent operational detail. Never pad with "
             "invented facts. "
             "only facts explicitly present in the source request. Missing or "
             "unverified facts must be TBC. Do not infer completed emergency, "
@@ -5239,9 +5894,14 @@ class ContentSynthesizer:
             "A private parent notice must not contain "
             "internal-report sections; an internal report must not contain a "
             "parent-letter salutation or sign-off. An internal incident report "
-            "must not add a Recommendations section unless the source request "
-            "explicitly asks for recommendations; fact-verification next steps "
-            "are allowed. "
+            "may include useful advice only under the exact heading "
+            "'## Recommended next steps — subject to human review'. Keep that "
+            "section separate from confirmed facts and use future, modal or "
+            "imperative wording; never describe advice as completed or authorised "
+            "school action. A bare 'Recommendations' heading is not allowed. "
+            "A public_communication_draft is a public holding statement, not a "
+            "parent letter; never use 'Dear Parent', 'Dear Guardian', 'Yours "
+            "sincerely' or a private-recipient sign-off. "
             "Without a cited official source or verified school SOP in the "
             "source request, do not invent treatment technique, medication, "
             "dosage, stinger removal, cold-pack instructions, or timed clinical "
@@ -5250,7 +5910,13 @@ class ContentSynthesizer:
             + (
                 "Include a visible 'Official-source check: REQUIRED - not yet "
                 "completed' note and do not claim verified official guidance."
-                if "verification_required" in str(meta.get("source_policy") or "")
+                if (
+                    "verification_required"
+                    in str(meta.get("source_policy") or "")
+                    and audience.casefold() not in {
+                        "public", "private_recipient", "school_community",
+                    }
+                )
                 else ""
             )
         )
@@ -5294,6 +5960,11 @@ class ContentSynthesizer:
                 max_tokens=3500,
             ) or "").strip()
             body = strip_internal_release_control(action, body)
+            body = strip_recipient_facing_source_control(action, body)
+            body = strip_ungrounded_preparation_boilerplate(
+                body, source_request,
+            )
+            body = qualify_internal_proposal_headings(action, body)
             body = _repair_bracket_placeholders(body)
             if not body and _is_live_chat_backend(backend):
                 # Task-local outage circuit: one failed provider call is
@@ -5302,8 +5973,12 @@ class ContentSynthesizer:
                 self._school_provider_unavailable = True
                 break
             last = validate_school_markdown(action, body, source_request)
-            flat = [f"{layer}:{item}" for layer, values in last.items()
-                    for item in values]
+            disposition = classify_school_validation_issues(action, last)
+            flat = [
+                *disposition["hard_block"],
+                *disposition["repair_once"],
+            ]
+            review_notes = list(disposition["review_note"])
             # Every live school artifact is fact-audited, including low-risk
             # internal/private repairs.  Risk affects authorisation, not
             # whether generated prose may invent process or completed actions.
@@ -5315,14 +5990,33 @@ class ContentSynthesizer:
                         "semantic_grounding_audit_unavailable"
                     ])
             if body and not flat:
+                review_notes.extend(
+                    str(note)
+                    for note in (audit.get("review_notes") or [])
+                    if str(note)
+                )
+                review_notes = list(dict.fromkeys(review_notes))
                 meta["content"] = body
                 meta["school_generation_failed"] = False
+                meta["school_generation_disposition"] = {
+                    "tier": "REVIEW_NOTE" if review_notes else "PASS",
+                    "hard_block": [],
+                    "repair_once": [],
+                    "review_note": review_notes,
+                }
+                if review_notes:
+                    meta["school_generation_review_notes"] = review_notes
                 meta["school_generation_validation"] = {
                     "pass": True, "attempt": attempt,
                     "mode": "per_action_scoped_fallback",
                     "semantic_audit_passed": True,
-                    "goal_alignment_passed": True,
+                    "goal_alignment_passed": (
+                        audit.get("goal_alignment_passed") is True
+                    ),
                     "goal_alignment_score": audit.get("score", 100),
+                    "bundle_review_notes": (
+                        audit.get("review_notes") or []
+                    )[:20],
                 }
                 return self._status(
                     action, "school_markdown_synthesized_verified",

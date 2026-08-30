@@ -19,8 +19,11 @@ from teow_agl.modules.module_school_artifact_guard import (
     classify_school_validation_issues,
     infer_artifact_role,
     normalize_school_markdown_plan,
+    qualify_internal_proposal_headings,
     school_artifact_verification_checks,
     strip_internal_release_control,
+    strip_recipient_facing_source_control,
+    strip_ungrounded_preparation_boilerplate,
     validate_school_markdown,
 )
 from teow_agl.modules.module_school_input_semantics import SchoolInputSemantics
@@ -334,6 +337,38 @@ def test_plan_level_bundle_maps_exact_action_ids_without_crossing(tmp_path: Path
     assert parent.metadata["synthesis_skip"] is True
 
 
+def test_similarity_is_reviewed_without_replacing_verified_live_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    envelope = _envelope(tmp_path)
+    plan = _raw_plan(envelope)
+    normalize_school_markdown_plan(plan, envelope)
+    monkeypatch.setattr(
+        "teow_agl.modules.module_102b_synthesizer.artifact_similarity",
+        lambda _left, _right: 0.91,
+    )
+
+    diag = ContentSynthesizer(chat_llm=_BundleLLM()).enrich_school_plan(
+        plan.actions, user_intent=GOAL,
+    )
+
+    assert diag["result"] == "synthesized_verified_action_bundle"
+    internal = next(a for a in plan.actions if a.action_id == "internal1")
+    parent = next(a for a in plan.actions if a.action_id == "parent1")
+    assert "Emergency-response status" in internal.metadata["content"]
+    assert "Private Notification Draft for Ali's Parent" in parent.metadata["content"]
+    assert any(
+        note.startswith("cross_artifact_similarity:")
+        for note in internal.metadata["school_generation_review_notes"]
+    )
+    assert all(
+        action.metadata["school_generation_validation"]["mode"]
+        != "deterministic_response_pack_similarity_repair"
+        for action in (internal, parent)
+    )
+
+
 def test_school_verifier_passes_clean_independent_markdown(tmp_path: Path):
     envelope = _envelope(tmp_path)
     plan = _raw_plan(envelope)
@@ -354,6 +389,42 @@ def test_school_verifier_passes_clean_independent_markdown(tmp_path: Path):
 
     assert checks
     assert all(check["pass"] for check in checks), checks
+
+
+def test_school_verifier_requires_explicit_semantic_provenance_for_live_files(
+    tmp_path: Path,
+) -> None:
+    envelope = _envelope(tmp_path)
+    plan = _raw_plan(envelope)
+    normalize_school_markdown_plan(plan, envelope)
+    contents = {"internal1": INTERNAL, "parent1": PARENT}
+    executions: list[ExecutionResult] = []
+    for action in plan.actions:
+        if action.tool == "chat":
+            executions.append(_exec(action))
+            continue
+        action.metadata["content"] = contents[action.action_id]
+        action.metadata["school_generation_failed"] = False
+        action.metadata["school_generation_validation"] = {
+            "pass": True,
+            "mode": "plan_level_action_id_mapping",
+            "semantic_audit_passed": False,
+            "goal_alignment_passed": True,
+        }
+        Path(action.target).write_text(contents[action.action_id], encoding="utf-8")
+        executions.append(_exec(action, [action.target]))
+
+    checks = school_artifact_verification_checks(
+        envelope, plan.actions, executions,
+    )
+    contract = next(
+        check for check in checks if check["name"] == "school.artifact_contract"
+    )
+    assert contract["pass"] is False
+    assert all(
+        error.startswith("live_semantic_audit_not_verified:")
+        for error in contract["details"]["errors"]
+    )
 
 
 def test_mixed_bundle_and_unsupported_facts_cannot_verify(tmp_path: Path):
@@ -406,10 +477,29 @@ def test_mixed_bundle_and_unsupported_facts_cannot_verify(tmp_path: Path):
     assert "information_gathering_already_underway" in issues["grounding"]
     over_scoped = INTERNAL + "\n## Recommendations\n\n- Contact authorities.\n"
     issues = validate_school_markdown(internal, over_scoped, GOAL)
-    assert "unrequested_recommendations_section" in issues["role"]
+    assert "unqualified_recommendations_section" in issues["role"]
     bold_recommendations = INTERNAL + "\n**Recommendations:**\n\nNone at this stage.\n"
     issues = validate_school_markdown(internal, bold_recommendations, GOAL)
-    assert "unrequested_recommendations_section" in issues["role"]
+    assert "unqualified_recommendations_section" in issues["role"]
+    qualified_recommendations = (
+        INTERNAL
+        + "\n## Recommended next steps — subject to human review\n\n"
+        + "- The school should preserve the factual chronology for review.\n"
+    )
+    issues = validate_school_markdown(
+        internal, qualified_recommendations, GOAL)
+    assert "unqualified_recommendations_section" not in issues["role"]
+    assert "information_gathering_already_underway" not in issues["grounding"]
+
+    completed_fact_under_qualified_heading = (
+        INTERNAL
+        + "\n## Recommended next steps — subject to human approval\n\n"
+        + "- Recommended: Emergency services were contacted.\n"
+    )
+    issues = validate_school_markdown(
+        internal, completed_fact_under_qualified_heading, GOAL)
+    assert "unqualified_recommendations_section" not in issues["role"]
+    assert "emergency_services_contacted_or_arrived" in issues["grounding"]
     medical_specificity = PARENT.replace(
         "receiving appropriate care", "receiving appropriate medical care")
     issues = validate_school_markdown(parent, medical_specificity, GOAL)
@@ -530,6 +620,163 @@ def test_similarity_is_visible_review_note_not_a_privacy_bypass() -> None:
     assert disposition == {
         "hard_block": [], "repair_once": [], "review_note": [marker],
     }
+
+
+def test_below_target_length_is_review_note_but_absolute_floor_still_repairs() -> None:
+    action = CandidateAction(
+        action_id="a_length", tool="fs", operation="save_under_outputs",
+        target="draft.md", metadata={"artifact_role": "internal_incident_report"},
+    )
+    target = "hygiene:response_pack_artifact_too_short:700<750"
+    absolute = "hygiene:artifact_too_short"
+    disposition = classify_school_validation_issues(action, [target, absolute])
+    assert disposition["review_note"] == [target]
+    assert disposition["repair_once"] == [absolute]
+
+
+def test_ungrounded_current_preparation_boilerplate_is_deleted_not_trusted() -> None:
+    body = (
+        "# Internal response\n\n"
+        "The school is currently preparing an appropriate response to this incident.\n\n"
+        "## Confirmed facts\n\n- The bus broke down.\n"
+    )
+    cleaned = strip_ungrounded_preparation_boilerplate(
+        body,
+        "The bus broke down. Prepare the appropriate response.",
+    )
+    assert "currently preparing" not in cleaned.casefold()
+    assert "The bus broke down" in cleaned
+
+
+def test_ungrounded_preparation_boilerplate_without_currently_is_deleted() -> None:
+    body = (
+        "# Parent notice\n\n"
+        "We are preparing an appropriate school response.\n\n"
+        "The pupils are safe and supervised.\n"
+    )
+    cleaned = strip_ungrounded_preparation_boilerplate(
+        body,
+        "The pupils are safe and supervised. Prepare a parent notice.",
+    )
+    assert "we are preparing" not in cleaned.casefold()
+    assert "The pupils are safe and supervised" in cleaned
+
+
+def test_markdown_wrapped_preparation_boilerplate_is_deleted() -> None:
+    body = (
+        "# Transport response\n\n"
+        "- **We are currently preparing the appropriate response to ensure "
+        "their safe return.**\n\n"
+        "## Reported fact\n\n- The bus broke down.\n"
+    )
+    cleaned = strip_ungrounded_preparation_boilerplate(
+        body,
+        "The bus broke down. Prepare a transport response plan.",
+    )
+    assert "currently preparing" not in cleaned.casefold()
+    assert "The bus broke down" in cleaned
+
+
+def test_source_owned_preparation_status_is_not_deleted() -> None:
+    sentence = "The school is preparing an appropriate response."
+    body = f"# Internal update\n\n{sentence}\n"
+    assert strip_ungrounded_preparation_boilerplate(
+        body,
+        f"{sentence} Draft an internal update.",
+    ) == body
+
+
+def test_recipient_facing_draft_strips_internal_source_control_line() -> None:
+    action = CandidateAction(
+        action_id="public_control", tool="fs",
+        operation="save_under_outputs", target="public.md",
+        metadata={
+            "artifact_role": "public_communication_draft",
+            "audience": "public",
+        },
+    )
+    body = (
+        "# Public statement\n\n"
+        "> Official-source check: REQUIRED - not yet completed.\n\n"
+        "This is a draft holding statement.\n"
+    )
+    cleaned = strip_recipient_facing_source_control(action, body)
+    assert "Official-source check" not in cleaned
+    assert "draft holding statement" in cleaned
+
+
+def test_source_unknown_accepts_plain_language_not_confirmed_without_literal_tbc() -> None:
+    action = CandidateAction(
+        action_id="finance_unknown", tool="fs",
+        operation="save_under_outputs", target="finance.md",
+        metadata={
+            "artifact_role": "finance_procurement_memo",
+            "audience": "internal",
+        },
+    )
+    issues = validate_school_markdown(
+        action,
+        (
+            "# Finance decision memo\n\n> DRAFT - NOT SENT\n\n"
+            "Budget approval is not confirmed. No supplier is selected.\n"
+        ),
+        (
+            "Budget approval is not confirmed. Prepare decision support "
+            "without choosing a supplier."
+        ),
+    )
+    assert "source_requires_tbc_but_artifact_has_none" not in issues["hygiene"]
+
+
+def test_source_unknown_still_requires_visible_unknown_status_in_artifact() -> None:
+    action = CandidateAction(
+        action_id="finance_missing_unknown", tool="fs",
+        operation="save_under_outputs", target="finance.md",
+        metadata={
+            "artifact_role": "finance_procurement_memo",
+            "audience": "internal",
+        },
+    )
+    issues = validate_school_markdown(
+        action,
+        "# Finance decision memo\n\n> DRAFT - NOT SENT\n\nCompare the quotations.\n",
+        "Budget approval is not confirmed. Prepare decision support.",
+    )
+    assert "source_requires_tbc_but_artifact_has_none" in issues["hygiene"]
+
+
+def test_internal_proposal_heading_is_qualified_without_relabelling_actions_taken() -> None:
+    action = CandidateAction(
+        action_id="a_report", tool="fs", operation="save_under_outputs",
+        target="report.md", metadata={"artifact_role": "internal_incident_report"},
+    )
+    body = (
+        "# Internal report\n\n"
+        "## Actions taken\n\n- The room was closed.\n\n"
+        "## Proposed actions\n\n- Review the factual chronology.\n"
+    )
+    repaired = qualify_internal_proposal_headings(action, body)
+    assert "## Actions taken" in repaired
+    assert "## Recommended next steps — subject to human review" in repaired
+
+
+@pytest.mark.parametrize(
+    "heading",
+    ["# Recommendations:", "### Proposed actions:", "**Recommendations:**"],
+)
+def test_internal_proposal_heading_repairs_validator_supported_shapes(
+    heading: str,
+) -> None:
+    action = CandidateAction(
+        action_id="a_report_heading", tool="fs",
+        operation="save_under_outputs", target="report.md",
+        metadata={"artifact_role": "internal_incident_report"},
+    )
+    repaired = qualify_internal_proposal_headings(
+        action,
+        f"# Internal report\n\n{heading}\n\n- Review the chronology.\n",
+    )
+    assert "## Recommended next steps — subject to human review" in repaired
 
 
 @pytest.mark.parametrize(

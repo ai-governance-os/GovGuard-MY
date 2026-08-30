@@ -176,11 +176,17 @@ def test_zero_key_unseen_school_case_runs_full_http_path(monkeypatch):
         item.get("artifact_role")
         for item in pack.get("deliverables") or [] if item.get("selected")
     }
+    # The helper above explicitly confirms that the scene is now stable. The
+    # current human answer therefore removes the immediate-danger expansion,
+    # while the injury record, guardian draft and medical handover remain.
     assert {
         "internal_incident_report", "private_parent_notice",
-        "medical_handover_script", "site_safety_checklist",
-        "emergency_contact_script", "fire_rescue_contact_script",
+        "medical_handover_script",
     }.issubset(selected)
+    assert not {
+        "site_safety_checklist", "emergency_contact_script",
+        "fire_rescue_contact_script", "student_accountability_checklist",
+    }.intersection(selected)
 
 
 def test_zero_key_out_of_domain_runs_truthful_http_boundary(monkeypatch):

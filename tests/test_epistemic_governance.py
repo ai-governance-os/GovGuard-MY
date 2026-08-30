@@ -239,7 +239,7 @@ def test_live_writer_repairs_unsupported_decisions_before_acceptance() -> None:
     )
     repaired = _long_operational_body(
         "## Proposed arrangements - subject to school approval\n\n"
-        "Proposed: staff report at 7:30 a.m.\n\n"
+        "Proposed staff arrival: 7:30 a.m.\n\n"
         "Proposed communication option: WhatsApp, subject to approval.\n\n"
         "Proposed reporting target: within two working days."
     )
@@ -283,6 +283,17 @@ def test_nested_subsections_in_proposed_plan_keep_proposal_status() -> None:
     )
     issues = validate_school_markdown(_action(source), content, source)["grounding"]
     assert not any(item.startswith("unsupported_operational_") for item in issues)
+
+
+def test_proposal_heading_does_not_hide_settled_operational_assertion() -> None:
+    source = "Prepare an operations plan for a school visitor day."
+    content = _body(
+        "## Proposed arrangements - subject to school approval\n\n"
+        "The senior assistant is to lead registration at 7:45 a.m."
+    )
+    issues = validate_school_markdown(_action(source), content, source)["grounding"]
+    assert any(item.startswith("unsupported_operational_time") for item in issues)
+    assert any(item.startswith("unsupported_operational_assignment") for item in issues)
 
 
 def test_time_abbreviation_is_allowed_but_meridiem_conflict_is_rejected() -> None:
@@ -395,7 +406,7 @@ def test_fast_path_uses_one_bounded_bundle_repair_without_per_file_fanout() -> N
     )
 
 
-def test_fast_path_goal_miss_uses_honest_local_fallback_without_fanout() -> None:
+def test_fast_path_bundle_goal_question_retains_grounded_live_without_regeneration() -> None:
     action = _action(
         "Prepare a school operations record from the facts supplied."
     )
@@ -442,12 +453,15 @@ def test_fast_path_goal_miss_uses_honest_local_fallback_without_fanout() -> None
         [action], user_intent=action.metadata["source_request"]
     )
 
-    assert len(llm.calls) == 4
+    assert len(llm.calls) == 2
     assert result["fallback_action_ids"] == []
+    assert result["safe_fallback_action_ids"] == []
+    assert result["retained_action_ids"] == [action.action_id]
     assert action.metadata["synthesis_skip"] is True
     validation = action.metadata["school_generation_validation"]
     assert validation["pass"] is True
-    assert validation["mode"].startswith("deterministic_")
+    assert validation["mode"] == "partial_bundle_retained"
+    assert validation["goal_alignment_passed"] is False
 
 
 def test_fast_path_merges_bundle_audit_without_second_llm_judge() -> None:

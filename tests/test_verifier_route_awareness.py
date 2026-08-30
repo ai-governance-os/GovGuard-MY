@@ -459,9 +459,11 @@ class _JudgeLLM:
     backend = "test"
 
     def __init__(self) -> None:
+        self.system_prompt = ""
         self.user_prompt = ""
 
     def chat_json(self, *, system: str, user: str, max_tokens: int) -> dict:
+        self.system_prompt = system
         self.user_prompt = user
         return {
             "score": 95, "issues": [], "suggestions": [],
@@ -513,6 +515,9 @@ def test_llm_judge_scores_safe_sibling_on_mixed_red_route(tmp_path: Path) -> Non
     assert "BLOCKED MATERIAL" not in llm.user_prompt
     assert "AUTHORITATIVE GOVERNED OBJECTIVE" in llm.user_prompt
     assert "Use TBC for facts the user did not supply" in llm.user_prompt
+    assert "Clearly labelled recommendations and proposals" in llm.system_prompt
+    assert "role-consistent wording" in llm.system_prompt
+    assert "past, current or completed-action assertion" in llm.system_prompt
 
 
 def test_llm_judge_skips_pure_governed_safe_stop(tmp_path: Path) -> None:

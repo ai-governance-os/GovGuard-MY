@@ -158,6 +158,33 @@ def test_malay_fallback_localises_official_source_note_and_cover():
     assert "Tiada kandungan telah dihantar" in cover
 
 
+def test_public_fallback_keeps_internal_source_control_out_of_public_prose():
+    from teow_agl.models import CandidateAction
+    from teow_agl.modules.module_102b_synthesizer import (
+        _school_response_pack_safe_fallback,
+    )
+
+    action = CandidateAction(
+        action_id="public-source-control", tool="fs",
+        operation="save_under_outputs",
+        target="public_communication_draft.md",
+        purpose="Prepare a privacy-safe public holding statement",
+        metadata={
+            "artifact_role": "public_communication_draft",
+            "audience": "public",
+            "source_policy": "official_verification_required",
+            "school_known_facts": [],
+            "school_unknowns": [],
+        },
+    )
+    body = _school_response_pack_safe_fallback(
+        action,
+        "A false social-media rumour concerns the school. Draft only.",
+    )
+    assert "Official-source check" not in body
+    assert "DRAFT - NOT SENT" in body
+
+
 def test_specific_injury_parent_draft_cannot_expand_to_school_community():
     semantics = _semantic_payload()
     semantics["situation"]["requested_outputs"] = [{
