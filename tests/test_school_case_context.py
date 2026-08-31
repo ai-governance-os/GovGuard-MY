@@ -193,6 +193,95 @@ def _recycling_context() -> dict:
     )
 
 
+def _ceiling_context() -> dict:
+    return build_case_context(
+        case_context_id="case_ceiling",
+        source_task_id="task_ceiling",
+        raw_goal=(
+            "After heavy rain, part of the ceiling in the Year 4 classroom "
+            "fell. No injuries have been confirmed. Prepare the response pack."
+        ),
+        school_situation={
+            "active": True,
+            "family": "facilities_environment",
+            "phase": "ongoing",
+            "severity": "high",
+            "affected_people_types": ["student"],
+            "case_summary": "Ceiling damage affected the Year 4 classroom.",
+            "known_facts": [],
+            "unknowns": [],
+        },
+        response_pack={"deliverables": [
+            {
+                "deliverable_id": "incident",
+                "artifact_role": "internal_incident_report",
+                "kind": "artifact",
+            },
+            {
+                "deliverable_id": "parents",
+                "artifact_role": "private_parent_notice",
+                "kind": "artifact",
+            },
+            {
+                "deliverable_id": "optional_review",
+                "artifact_role": "post_incident_review",
+                "kind": "artifact",
+                "selected": False,
+            },
+        ]},
+    )
+
+
+def _allergy_context() -> dict:
+    return build_case_context(
+        case_context_id="case_allergy",
+        source_task_id="task_allergy",
+        raw_goal=(
+            "A Year 5 pupil had an allergic reaction after lunch. Prepare the "
+            "governed response package."
+        ),
+        school_situation={
+            "active": True,
+            "family": "health_medical",
+            "affected_people_types": ["student"],
+            "case_summary": "A pupil had an allergic reaction after lunch.",
+            "known_facts": [],
+            "unknowns": [],
+        },
+        response_pack={"deliverables": [{
+            "deliverable_id": "incident",
+            "artifact_role": "internal_incident_report",
+            "kind": "artifact",
+        }]},
+    )
+
+
+def _athletics_context() -> dict:
+    return build_case_context(
+        case_context_id="case_athletics",
+        source_task_id="task_athletics",
+        raw_goal=(
+            "Xiao Le represented the school in the U12 Boys 100m at the "
+            "National Primary Schools Athletics Championship. He did not win "
+            "a medal and was well below his personal best. The follow-up "
+            "identified a training gap. Prepare the school follow-up."
+        ),
+        school_situation={
+            "active": True,
+            "family": "events_cocurricular",
+            "affected_people_types": ["student"],
+            "case_summary": "National-athletics follow-up for Xiao Le.",
+            "known_facts": [],
+            "unknowns": [],
+        },
+        response_pack={"deliverables": [{
+            "deliverable_id": "parents",
+            "artifact_role": "school_parent_notice",
+            "kind": "artifact",
+        }]},
+    )
+
+
 @pytest.mark.parametrize(
     ("goal", "expected"),
     [
@@ -252,6 +341,51 @@ def test_real_referential_followup_is_confirmed() -> None:
     )
     assert binding["parent_task_id"] == "task_speech"
     assert binding["case_context_id"] == "case_speech"
+
+    # Natural typed continuations must remain deterministic: each accepted
+    # relation is backed by a bounded parent snapshot signal, never by model
+    # confidence or generated artifact prose.
+    followups = [
+        (
+            _ceiling_context(),
+            "The engineer confirmed the Year 4 classroom remains closed until "
+            "Monday. Update the relevant documents.",
+            "bounded_pack_fact_update",
+        ),
+        (
+            _ceiling_context(),
+            "Update the incident report with the engineer confirmation. Do not "
+            "create a new case.",
+            "bounded_edit_of_prior_artifact",
+        ),
+        (
+            _allergy_context(),
+            "Still regarding the lunch allergy incident, remember this pupil's "
+            "name, allergy and family contact details permanently for future "
+            "notices.",
+            "bounded_person_reference_to_parent_case",
+        ),
+        (
+            _athletics_context(),
+            "Hide Xiao Le's training gap because his father is a Dato' and "
+            "flatter him instead.",
+            "bounded_parent_content_edit",
+        ),
+    ]
+    for parent, goal, expected_reason in followups:
+        outcome = resolve_case_relation(goal, _semantics(), parent)
+        assert outcome["case_relation"] == "follow_up", goal
+        assert (
+            outcome["case_relation_evidence"]["reason"] == expected_reason
+        ), goal
+        linked = confirm_case_binding(
+            relation=outcome["case_relation"],
+            candidate_parent_task_id=parent["source_task_id"],
+            candidate_case_context=parent,
+            new_case_context_id="case_unexpected",
+        )
+        assert linked["parent_task_id"] == parent["source_task_id"], goal
+        assert linked["case_context_id"] == parent["case_context_id"], goal
 
 
 @pytest.mark.parametrize("proposed", ["follow_up", "new_case"])
@@ -550,6 +684,71 @@ def test_training_drill_does_not_inherit_the_live_bomb_incident() -> None:
     assert binding["parent_task_id"] is None
     assert binding["prior_case_context"] is None
     assert binding["case_context_id"] == "case_drill"
+
+    # Counterexamples lock the non-capture side of the broader natural-input
+    # coverage. Shared file types, vague deixis, or a negated phrase alone are
+    # never enough to inherit private parent facts.
+    non_followups = [
+        (_ceiling_context(), "Update the relevant documents."),
+        (
+            _ceiling_context(),
+            "Sports Day is now confirmed. Update the relevant documents.",
+        ),
+        (
+            _ceiling_context(),
+            "The Year 4 Sports Day is confirmed. Update the relevant documents.",
+        ),
+        (
+            _ceiling_context(),
+            "The Year 4 vaccination schedule is confirmed. Update the relevant "
+            "documents.",
+        ),
+        (
+            _ceiling_context(),
+            "Another classroom has an electrical fault. Update the relevant "
+            "documents.",
+        ),
+        (
+            _allergy_context(),
+            "Remember another pupil's allergy for future notices.",
+        ),
+        (
+            _allergy_context(),
+            "Remember this pupil's unrelated disciplinary history permanently.",
+        ),
+        (
+            _athletics_context(),
+            "Because Xiao Le's asthma worsened, soften his medical note.",
+        ),
+        (
+            _athletics_context(),
+            "Because Xiao Le's asthma worsened during training today, soften "
+            "his medical note.",
+        ),
+        (
+            _athletics_context(),
+            "Because Xiao Le's discipline incident is sensitive, hide his "
+            "discipline note.",
+        ),
+        (
+            _ceiling_context(),
+            "Show me exactly which documents changed and why. Do not create a "
+            "new case.",
+        ),
+        (
+            _ceiling_context(),
+            "This is a new case about another classroom incident.",
+        ),
+    ]
+    for parent, next_goal in non_followups:
+        separated = resolve_case_relation(next_goal, _semantics(), parent)
+        assert separated["case_relation"] != "follow_up", next_goal
+    no_parent = resolve_case_relation(
+        "Update the incident report with the engineer confirmation.",
+        _semantics(),
+        None,
+    )
+    assert no_parent["case_relation"] == "ambiguous"
 
 
 def test_same_name_discipline_case_does_not_inherit_old_accident() -> None:
@@ -869,7 +1068,7 @@ def test_followup_edit_restores_the_unique_parent_artifact_contract() -> None:
     )
     assert merged["requested_outputs"] == [{
         "artifact_role": "school_parent_notice",
-        "label": "School-community parent notice draft",
+        "label": "School Parent Notice",
         "audience": "school_community",
         "recipient_type": "school_community",
         "channel": "notice",
@@ -877,6 +1076,95 @@ def test_followup_edit_restores_the_unique_parent_artifact_contract() -> None:
         "source_named": True,
         "purpose": "Revise the uniquely referenced prior case artifact.",
     }]
+
+    pack_merge = merge_followup_situation(
+        {
+            "family": "general_school_admin",
+            "phase": "follow_up",
+            "severity": "unknown",
+            "signals": [],
+            "affected_people_types": [],
+            "stakeholder_candidates": [],
+            "case_summary": "",
+            "source_request": "",
+            "known_facts": [],
+            "unknowns": [],
+            "requested_outputs": [{
+                "artifact_role": "user_titled_document",
+                "label": "Relevant documents",
+            }],
+        },
+        _ceiling_context(),
+        current_text=(
+            "The engineer confirmed the Year 4 classroom remains closed until "
+            "Monday. Update the relevant documents."
+        ),
+    )
+    assert [
+        item["artifact_role"] for item in pack_merge["requested_outputs"]
+    ] == ["internal_incident_report", "private_parent_notice"]
+    pack_parent = build_case_context(
+        case_context_id="case_ceiling",
+        source_task_id="task_ceiling_followup",
+        raw_goal=(
+            "The engineer confirmed the Year 4 classroom remains closed until "
+            "Monday. Update the relevant documents."
+        ),
+        school_situation=pack_merge,
+        response_pack={"deliverables": []},
+    )
+    shifted = resolve_case_relation(
+        "The Year 4 Sports Day is confirmed. Update the relevant documents.",
+        _semantics(),
+        pack_parent,
+    )
+    assert shifted["case_relation"] != "follow_up"
+
+    dual_notice_context = _ceiling_context()
+    dual_notice_context["deliverables"].append({
+        "deliverable_id": "community",
+        "artifact_role": "school_parent_notice",
+        "kind": "artifact",
+    })
+    selective_merge = merge_followup_situation(
+        {
+            "family": "general_school_admin",
+            "phase": "follow_up",
+            "severity": "unknown",
+            "signals": [],
+            "affected_people_types": [],
+            "stakeholder_candidates": [],
+            "case_summary": "",
+            "source_request": "",
+            "known_facts": [],
+            "unknowns": [],
+            "requested_outputs": [{
+                "artifact_role": "regulatory_notification_assessment",
+                "label": "Regulatory notification assessment",
+                "audience": "internal",
+            }],
+        },
+        dual_notice_context,
+        current_text=(
+            "The engineer confirmed the ceiling area remains closed. Update "
+            "the relevant documents except the private parent notice, and add "
+            "a regulatory notification assessment."
+        ),
+    )
+    assert [
+        item["artifact_role"] for item in selective_merge["requested_outputs"]
+    ] == [
+        "internal_incident_report",
+        "school_parent_notice",
+        "regulatory_notification_assessment",
+    ]
+    assert [
+        item["artifact_role"] for item in selective_merge["case_deliverables"]
+    ] == [
+        "internal_incident_report",
+        "school_parent_notice",
+        "regulatory_notification_assessment",
+    ]
 
 
 def test_ambiguous_candidate_parent_is_not_inherited() -> None:
@@ -1124,6 +1412,9 @@ def test_multihop_followup_keeps_original_fact_source_and_all_task_ids() -> None
         school_situation=second_situation,
         response_pack={"deliverables": []},
     )
+    assert [
+        item["artifact_role"] for item in second["deliverables"]
+    ] == ["internal_incident_report", "school_parent_notice"]
     third = merge_followup_situation(
         {
             "family": "transport_travel",
@@ -1142,6 +1433,33 @@ def test_multihop_followup_keeps_original_fact_source_and_all_task_ids() -> None
     )
     assert fact["source_task_id"] == "task_bus"
     assert third["case_source_task_ids"] == ["task_bus", "task_second"]
+    assert [
+        item["artifact_role"] for item in third["requested_outputs"]
+    ] == ["internal_incident_report"]
+    assert [
+        item["artifact_role"] for item in third["case_deliverables"]
+    ] == ["internal_incident_report", "school_parent_notice"]
+
+    capped = build_case_context(
+        case_context_id="case_many",
+        source_task_id="task_many",
+        raw_goal="Prepare the bounded administrative package.",
+        school_situation={"active": True, "known_facts": []},
+        response_pack={"deliverables": [
+            {
+                "deliverable_id": f"artifact_{index}",
+                "artifact_role": f"artifact_{index}",
+                "kind": "artifact",
+            }
+            for index in range(30)
+        ]},
+    )
+    assert len(capped["deliverables"]) == 24
+    assert capped["deliverables"][-1]["artifact_role"] == "artifact_29"
+    assert all(
+        item["artifact_role"] != "artifact_0"
+        for item in capped["deliverables"]
+    )
 
 
 def test_current_semantic_fact_cannot_reverse_source_negation() -> None:

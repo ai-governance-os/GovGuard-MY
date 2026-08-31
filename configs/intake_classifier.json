@@ -207,7 +207,7 @@
       "block": "red",
       "_doc": "Personal student/guardian data + a learn/remember-for-future intent -> RED (governance<->learning boundary).",
       "require_all": [
-        ["student names", "student identifiers", "mykid", "ic number", "no kp", "phone number", "parent phone", "guardian contact", "home address", "alamat", "attendance", "discipline record", "health record", "household income", "family income", "occupation", "family background", "apdm", "weak memorisation", "weak memorization", "weak speaker", "weak speakers", "struggling speaker", "easier script", "easier scripts", "need easier", "背不出", "背诵困难", "学生姓名", "身份证", "收入", "职业", "家庭背景", "考勤", "纪律", "健康"],
+        ["student names", "student's name", "pupil name", "pupil's name", "student identifiers", "mykid", "ic number", "no kp", "phone number", "parent phone", "guardian contact", "this pupil's family contact", "this student's family contact", "the pupil's family contact", "the student's family contact", "pupil's family contact", "student's family contact", "home address", "alamat", "attendance", "discipline record", "health record", "health details", "medical details", "allergy details", "household income", "family income", "occupation", "family background", "apdm", "weak memorisation", "weak memorization", "weak speaker", "weak speakers", "struggling speaker", "easier script", "easier scripts", "need easier", "背不出", "背诵困难", "学生姓名", "身份证", "收入", "职业", "家庭背景", "考勤", "纪律", "健康"],
         ["remember", "store", "memorise", "memorize", "learn from", "train on", "for future", "future automatic", "future automatic notices", "improve future", "personalise future", "personalize future", "build a profile", "记住", "训练", "以后自动", "未来自动", "用来个性化", "改进未来"]
       ]
     },

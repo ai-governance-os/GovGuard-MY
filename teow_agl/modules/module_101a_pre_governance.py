@@ -230,7 +230,10 @@ class PreGovernanceModule:
         """Return the first `risk_rules` entry whose every concept group has
         at least one phrase present in `text` (concept × intent). Deterministic,
         offline, case-insensitive. Config-driven — no vocabulary in code."""
-        low = (text or "").lower()
+        # Normalise smart quotes produced by Word/mobile keyboards before the
+        # deterministic phrase rules run. Otherwise ``pupil's`` is governed
+        # while the visually equivalent ``pupil’s`` silently bypasses it.
+        low = (text or "").lower().replace("\u2018", "'").replace("\u2019", "'")
         for rule in self.classifier.get("risk_rules", []) or []:
             groups = rule.get("require_all") or []
             if not groups:

@@ -14,15 +14,22 @@ import re
 from typing import Any
 
 
+_MAX_CASE_DELIVERABLES = 24
+
 _GENERIC_TOPIC_TOKENS = {
     "a", "an", "and", "are", "as", "at", "be", "been", "by", "do",
     "for", "from", "has", "have", "help", "how", "i", "in", "is",
     "it", "of", "on", "or", "our", "please", "prepare", "school",
     "student", "students", "pupil", "pupils", "parent", "parents",
-    "teacher", "teachers", "the", "their", "them", "they", "this",
+    "teacher", "teachers", "the", "he", "him", "his", "she", "her",
+    "hers", "their", "theirs", "them", "they", "this",
     "that", "to", "us", "we", "what", "when", "with", "write",
-    "draft", "document", "report", "notice", "post", "plan", "message",
-    "day", "days",
+    "draft", "drafts", "document", "documents", "file", "files", "material",
+    "materials", "output", "outputs", "report", "notice", "post", "plan",
+    "message", "relevant", "affected", "related", "existing", "current",
+    "day", "days", "year", "years", "term", "terms", "week", "weeks",
+    "month", "months", "class", "grade", "confirmed", "confirmation",
+    "unknown", "placeholder",
     "internal", "public", "private", "send", "publish", "make",
     "revise", "update", "edit", "shorten", "rewrite", "translate",
     "reword", "correct", "remove", "replace", "keep", "new",
@@ -50,10 +57,27 @@ _EXPLICIT_NEW = re.compile(
     r"\b(?:new|another|separate|different|unrelated)\s+(?:case|matter|incident|request)\b",
     re.IGNORECASE,
 )
+_NEGATED_NEW_CASE = re.compile(
+    r"\b(?:"
+    r"(?:do\s+not|don['\u2019]?t|never)\s+(?:"
+    r"(?:create|open|start|make|raise)\s+|"
+    r"treat\s+(?:this|it)\s+as\s+"
+    r")(?:a\s+)?(?:new|another|separate|different|unrelated)\s+"
+    r"(?:case|matter|incident|request)|"
+    r"(?:this|it)\s+(?:is\s+not|isn['\u2019]?t)\s+(?:a\s+)?"
+    r"(?:new|another|separate|different|unrelated)\s+"
+    r"(?:case|matter|incident|request)|"
+    r"without\s+(?:creating|opening|starting|making|raising)\s+(?:a\s+)?"
+    r"(?:new|another|separate|different|unrelated)\s+"
+    r"(?:case|matter|incident|request)"
+    r")\b",
+    re.IGNORECASE,
+)
 _CLEAR_CONTEXT_SHIFT = re.compile(
     r"\b(?:another|different|unrelated|separate)\s+"
     r"(?:school|site|campus|building|block|case|matter|incident|event|"
-    r"request|issue|situation)\b",
+    r"request|issue|situation|classroom|room|pupil|student|child|parent|"
+    r"guardian|teacher|vehicle)\b",
     re.IGNORECASE,
 )
 _STRONG_EDIT = re.compile(
@@ -167,6 +191,43 @@ _FACT_STATUS_EDIT = re.compile(
     r"placeholder)\b|(?:\u5f85\u786e\u8ba4|\u5f85\u78ba\u8a8d|\u672a\u786e\u8ba4|\u672a\u78ba\u8a8d)",
     re.IGNORECASE,
 )
+_PACK_WIDE_EDIT = re.compile(
+    r"\b(?:update|revise|edit|amend|correct)\s+"
+    r"(?:(?:all|the)\s+)?"
+    r"(?:(?:relevant|affected|related|existing|current|previous)\s+)?"
+    r"(?:documents|files|drafts|materials|outputs)\b",
+    re.IGNORECASE,
+)
+_DEFINITE_CASE_TOKEN = re.compile(
+    r"\b(?:the|this|that|same)\s+"
+    r"(?P<phrase>(?:[^\W_]+)(?:\s+[^\W_]+){0,5})",
+    re.IGNORECASE | re.UNICODE,
+)
+_PERSON_CASE_REFERENCE = re.compile(
+    r"\b(?:remember|store|retain|save|record|update)\b"
+    r"[^.!?\r\n]{0,160}\b(?:this|that|the\s+same)\s+"
+    r"(?P<entity>pupil|student|child|parent|guardian|teacher|staff(?:\s+member)?)\b",
+    re.IGNORECASE,
+)
+_PERSON_TYPE_ALIASES = {
+    "pupil": "student",
+    "student": "student",
+    "child": "student",
+    "parent": "guardian",
+    "guardian": "guardian",
+    "teacher": "staff",
+    "staff": "staff",
+    "staff member": "staff",
+}
+_BOUNDED_CASE_CONTENT_EDIT = re.compile(
+    r"\b(?:drop|omit|remove|hide|soften|change|rewrite|reword|flatter|"
+    r"prioriti[sz]e)\b",
+    re.IGNORECASE,
+)
+_POSSESSIVE_CASE_REFERENCE = re.compile(
+    r"\b(?:his|her|their)\b|\b[^\W\d_]+['\u2019]s\b",
+    re.IGNORECASE | re.UNICODE,
+)
 _GENERIC_FOLLOWUP = re.compile(
     r"\b(?:what\s+next|what\s+(?:should|do)\s+we\s+do(?:\s+now)?|"
     r"tell\s+(?:the\s+)?parents\s+now|apa\s+(?:langkah\s+)?seterusnya|"
@@ -237,6 +298,71 @@ def _artifact_kind(role: str) -> str:
     return ""
 
 
+def _definite_parent_token_refs(
+    value: str,
+    parent_tokens: set[str],
+) -> set[str]:
+    """Return only definite noun references already grounded in the parent."""
+    return {
+        token
+        for match in _DEFINITE_CASE_TOKEN.finditer(value or "")
+        for token in re.findall(
+            r"[^\W_]+", match.group("phrase").casefold(), re.UNICODE,
+        )
+        if token in parent_tokens and token not in _GENERIC_TOPIC_TOKENS
+    }
+
+
+def _topic_bigrams(value: str) -> set[tuple[str, str]]:
+    """Return adjacent, non-generic phrase anchors from case evidence."""
+    tokens = re.findall(r"[^\W_]+", (value or "").casefold(), re.UNICODE)
+    return {
+        (left, right)
+        for left, right in zip(tokens, tokens[1:])
+        if len(left) > 1
+        and len(right) > 1
+        and left not in _GENERIC_TOPIC_TOKENS
+        and right not in _GENERIC_TOPIC_TOKENS
+    }
+
+
+def _safe_metadata_identifier(value: Any, *, limit: int) -> str:
+    """Return only compiler-style identifiers, never free-form case prose."""
+    candidate = str(value or "").strip().casefold()[:limit]
+    return candidate if re.fullmatch(r"[a-z][a-z0-9_]*", candidate) else ""
+
+
+def _snapshot_deliverable(item: dict) -> dict | None:
+    """Keep only non-content metadata needed to refer to a case artifact."""
+    if not isinstance(item, dict) or item.get("kind", "artifact") != "artifact":
+        return None
+    role = _safe_metadata_identifier(
+        item.get("artifact_role") or item.get("deliverable_id"), limit=120,
+    )
+    if not role:
+        return None
+    return {
+        "deliverable_id": role,
+        "artifact_role": role,
+        # A response-pack label may contain a user-supplied person or incident
+        # name. Derive the carry-forward label from the bounded role instead.
+        "label": role.replace("_", " ").strip().title(),
+        "kind": "artifact",
+        "audience": _safe_metadata_identifier(item.get("audience"), limit=40),
+        "recipient_type": _safe_metadata_identifier(
+            item.get("recipient_type"), limit=80,
+        ),
+        "channel": _safe_metadata_identifier(item.get("channel"), limit=40),
+        "requested_languages": [
+            str(language).strip().lower()
+            for language in (
+                item.get("requested_languages") or item.get("languages") or []
+            )
+            if str(language).strip().lower() in {"en", "ms", "zh"}
+        ],
+    }
+
+
 def build_case_context(
     *,
     case_context_id: str | None,
@@ -265,24 +391,27 @@ def build_case_context(
             fact.setdefault("source_case_context_id", case_context_id)
     situation["case_source_task_ids"] = source_task_ids
     pack = deepcopy(response_pack or {})
-    deliverables = [
-        {
-            "deliverable_id": str(item.get("deliverable_id") or "")[:120],
-            "artifact_role": str(item.get("artifact_role") or "")[:120],
-            "label": str(item.get("label") or "")[:160],
-            "kind": str(item.get("kind") or "artifact")[:40],
-            "audience": str(item.get("audience") or "")[:40],
-            "recipient_type": str(item.get("recipient_type") or "")[:80],
-            "channel": str(item.get("channel") or "")[:40],
-            "requested_languages": [
-                str(language).strip().lower()
-                for language in (item.get("requested_languages") or [])
-                if str(language).strip().lower() in {"en", "ms", "zh"}
-            ],
-        }
-        for item in (pack.get("deliverables") or [])
-        if isinstance(item, dict) and item.get("kind", "artifact") == "artifact"
+    deliverables_by_key: dict[str, dict] = {}
+    candidates = [
+        *(
+            item for item in (situation.get("case_deliverables") or [])
+            if isinstance(item, dict)
+        ),
+        *(
+            item for item in (pack.get("deliverables") or [])
+            if isinstance(item, dict) and item.get("selected") is not False
+        ),
     ]
+    for item in candidates:
+        snapshot = _snapshot_deliverable(item)
+        if snapshot is None:
+            continue
+        key = str(
+            snapshot.get("artifact_role") or snapshot.get("deliverable_id") or ""
+        )
+        if key:
+            deliverables_by_key[key] = snapshot
+    deliverables = list(deliverables_by_key.values())[-_MAX_CASE_DELIVERABLES:]
     evidence_parts = [
         str(situation.get("case_summary") or ""),
         str(raw_goal or ""),
@@ -335,7 +464,15 @@ def resolve_case_relation(
         }
         return result
 
-    if _EXPLICIT_NEW.search(text or "") or _CLEAR_CONTEXT_SHIFT.search(text or ""):
+    raw_text = text or ""
+    negated_new_case = bool(_NEGATED_NEW_CASE.search(raw_text))
+    # Mask only bounded negated-new spans. A later positive shift remains
+    # visible (for example: "do not duplicate this; another incident...").
+    new_case_signal_text = _NEGATED_NEW_CASE.sub("", raw_text)
+    if (
+        _EXPLICIT_NEW.search(new_case_signal_text)
+        or _CLEAR_CONTEXT_SHIFT.search(new_case_signal_text)
+    ):
         validated = "new_case"
         reason = "explicit_new_case"
         shared: list[str] = []
@@ -352,9 +489,12 @@ def resolve_case_relation(
                 f"{match.group('verb')} {match.group('artifact')} to"
                 f"{match.group('recipient')}:"
             ),
-            text or "",
+            new_case_signal_text,
         )
-        current_tokens = _topic_tokens(text)
+        # A bounded "do not create a new case" qualifier is relation metadata,
+        # not a new topic. Keep it as a continuity cue, but do not let its
+        # generic words make a compact edit appear unrelated or overlong.
+        current_tokens = _topic_tokens(new_case_signal_text)
         parent_tokens = set(active_case_context.get("topic_tokens") or [])
         shared = sorted(
             current_tokens.intersection(parent_tokens)
@@ -404,7 +544,7 @@ def resolve_case_relation(
             and not referenced
             and (strong_edit or referential_artifact)
         )
-        continuation = bool(_CONTINUATION.search(text or ""))
+        continuation = bool(_CONTINUATION.search(text or "")) or negated_new_case
         reference_text = re.sub(
             r"\bthis\s+(?:year|term|week|month|morning|afternoon|evening|"
             r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
@@ -438,6 +578,46 @@ def resolve_case_relation(
         )
         generic_followup = bool(_GENERIC_FOLLOWUP.search(text or ""))
         fact_status_edit = bool(_FACT_STATUS_EDIT.search(text or ""))
+        pack_wide_edit = bool(_PACK_WIDE_EDIT.search(text or ""))
+        definite_parent_refs = _definite_parent_token_refs(
+            text or "", parent_tokens,
+        )
+        person_match = _PERSON_CASE_REFERENCE.search(text or "")
+        referenced_person_type = (
+            _PERSON_TYPE_ALIASES.get(person_match.group("entity").casefold(), "")
+            if person_match else ""
+        )
+        parent_person_types = {
+            str(item).strip().casefold()
+            for item in (
+                (active_case_context.get("situation") or {}).get(
+                    "affected_people_types",
+                ) or []
+            )
+            if str(item).strip()
+        }
+        bounded_person_reference = bool(
+            referenced_person_type
+            and referenced_person_type in parent_person_types
+            and continuation
+            and shared
+        )
+        bounded_case_content_edit = bool(
+            len(
+                _topic_bigrams(text or "").intersection(
+                    _topic_bigrams(" ".join((
+                        str(active_case_context.get("raw_goal") or ""),
+                        str(
+                            (active_case_context.get("situation") or {}).get(
+                                "case_summary",
+                            ) or ""
+                        ),
+                    )))
+                )
+            ) >= 2
+            and _BOUNDED_CASE_CONTENT_EDIT.search(text or "")
+            and _POSSESSIVE_CASE_REFERENCE.search(text or "")
+        )
         introduced_artifact_subject = bool(
             _INTRODUCED_ARTIFACT_SUBJECT.search(text or "")
         ) and not shared
@@ -504,6 +684,21 @@ def resolve_case_relation(
             validated, reason = "follow_up", "attributed_pronoun_to_parent_entity"
         elif bounded_object_reference:
             validated, reason = "follow_up", "bounded_object_reference"
+        elif (
+            pack_wide_edit
+            and fact_status_edit
+            and prior_roles
+            and definite_parent_refs
+            and not introduced_artifact_subject
+            and not novel_artifact_subject
+        ):
+            validated, reason = "follow_up", "bounded_pack_fact_update"
+        elif bounded_person_reference:
+            validated, reason = (
+                "follow_up", "bounded_person_reference_to_parent_case"
+            )
+        elif bounded_case_content_edit:
+            validated, reason = "follow_up", "bounded_parent_content_edit"
         elif continuation and compact_pronoun_reference and shared:
             validated, reason = "follow_up", "pronoun_continuation_with_topic_overlap"
         elif continuation and len(shared) >= 2:
@@ -901,12 +1096,46 @@ def _artifact_reference_is_negated(text: str, pattern: re.Pattern) -> bool:
         if re.search(
             r"\b(?:do\s+not|don't|never)\s+(?:repeat|recreate|revise|update|"
             r"include|prepare|draft|write|produce|generate)\b[^.!?;\n]{0,60}$|"
-            r"\b(?:without|exclude|omit)\b[^.!?;\n]{0,45}$",
+            r"\b(?:without|except|exclude|omit)\b[^.!?;\n]{0,45}$",
             prefix,
             re.IGNORECASE,
         ):
             return True
     return False
+
+
+def _artifact_exclusions(
+    text: str,
+    items: list[dict],
+) -> tuple[set[str], set[str]]:
+    """Resolve explicit role exclusions before conservative kind exclusions."""
+    excluded_roles: set[str] = set()
+    for item in items:
+        role = str(item.get("artifact_role") or "").strip().casefold()
+        if not role:
+            continue
+        phrase = re.escape(role.replace("_", " ")).replace(r"\ ", r"\s+")
+        role_exclusion = re.compile(
+            r"\b(?:"
+            r"(?:do\s+not|don['\u2019]?t|never)\s+"
+            r"(?:repeat|recreate|revise|update|include|prepare|draft|write|"
+            r"produce|generate)\s+|"
+            r"(?:without|except|exclude|omit)\s+"
+            r")(?:(?:the|a|an|any)\s+)?"
+            rf"{phrase}\b",
+            re.IGNORECASE,
+        )
+        if role_exclusion.search(text or ""):
+            excluded_roles.add(role)
+    specifically_excluded_kinds = {
+        _artifact_kind(role) for role in excluded_roles if _artifact_kind(role)
+    }
+    excluded_kinds = {
+        kind for kind, pattern in _ARTIFACT_TERMS.items()
+        if kind not in specifically_excluded_kinds
+        and _artifact_reference_is_negated(text, pattern)
+    }
+    return excluded_roles, excluded_kinds
 
 
 def _restore_referenced_artifact_outputs(
@@ -977,6 +1206,90 @@ def _restore_referenced_artifact_outputs(
         existing_roles.add(role)
 
 
+def _restore_pack_wide_artifact_outputs(
+    situation: dict,
+    context: dict,
+    *,
+    current_text: str,
+) -> None:
+    """Keep the selected parent file contract for a bounded whole-pack edit."""
+    if not _PACK_WIDE_EDIT.search(current_text or ""):
+        return
+    prior = [
+        item for item in (context.get("deliverables") or [])
+        if isinstance(item, dict) and item.get("kind", "artifact") == "artifact"
+    ]
+    if not prior:
+        return
+    current_outputs = [
+        item for item in (situation.get("requested_outputs") or [])
+        if isinstance(item, dict)
+    ]
+    current_by_role = {
+        str(item.get("artifact_role") or ""): item
+        for item in current_outputs
+        if str(item.get("artifact_role") or "")
+    }
+    excluded_roles, excluded_kinds = _artifact_exclusions(
+        current_text, [*prior, *current_outputs],
+    )
+    restored: list[dict] = []
+    restored_roles: set[str] = set()
+    for item in prior:
+        role = str(item.get("artifact_role") or "")
+        if (
+            not role
+            or role.casefold() in excluded_roles
+            or _artifact_kind(role) in excluded_kinds
+        ):
+            continue
+        current = current_by_role.get(role) or {}
+        output = {
+            "artifact_role": role,
+            "label": str(item.get("label") or current.get("label") or "")[:160],
+            "audience": str(item.get("audience") or current.get("audience") or "")[:40],
+            "recipient_type": str(
+                item.get("recipient_type") or current.get("recipient_type") or ""
+            )[:80],
+            "channel": str(item.get("channel") or current.get("channel") or "")[:40],
+            "languages": [
+                str(language).strip().lower()
+                for language in (
+                    current.get("languages")
+                    or item.get("requested_languages")
+                    or []
+                )
+                if str(language).strip().lower() in {"en", "ms", "zh"}
+            ],
+            "source_named": True,
+            "purpose": (
+                str(current.get("purpose") or "")
+                or "Revise the selected artifacts from the confirmed parent case."
+            )[:240],
+        }
+        restored.append({
+            key: value for key, value in output.items()
+            if value is not None and value != "" and value != []
+        })
+        restored_roles.add(role)
+    # Keep genuinely new, explicitly requested outputs. A generic compiler
+    # placeholder is replaced by the prior pack; an excluded artifact kind is
+    # not resurrected from either the current extraction or the prior registry.
+    for item in current_outputs:
+        role = str(item.get("artifact_role") or "")
+        if (
+            not role
+            or role == "user_titled_document"
+            or role in restored_roles
+            or role.casefold() in excluded_roles
+            or _artifact_kind(role) in excluded_kinds
+        ):
+            continue
+        restored.append(deepcopy(item))
+        restored_roles.add(role)
+    situation["requested_outputs"] = restored
+
+
 def merge_followup_situation(
     current_situation: dict,
     active_case_context: dict,
@@ -1041,12 +1354,51 @@ def merge_followup_situation(
         }
     current["unknowns"] = [unknowns[key] for key in sorted(unknowns)]
 
+    _restore_pack_wide_artifact_outputs(
+        current,
+        active_case_context,
+        current_text=current_text,
+    )
     _resolve_generic_report_role(current, active_case_context)
     _restore_referenced_artifact_outputs(
         current,
         active_case_context,
         current_text=current_text,
     )
+    # Preserve a bounded case-level artifact registry across turns. This is
+    # metadata only (role, label, audience and language), never generated file
+    # content. A third turn can therefore name a first-turn file even when the
+    # second turn revised only one sibling artifact.
+    registry_candidates = [
+        *(active_case_context.get("deliverables") or []),
+        *(current.get("requested_outputs") or []),
+    ]
+    if _PACK_WIDE_EDIT.search(current_text or ""):
+        excluded_registry_roles, excluded_registry_kinds = _artifact_exclusions(
+            current_text,
+            [item for item in registry_candidates if isinstance(item, dict)],
+        )
+    else:
+        excluded_registry_roles, excluded_registry_kinds = set(), set()
+    case_deliverables_by_key: dict[str, dict] = {}
+    for item in registry_candidates:
+        snapshot = _snapshot_deliverable(item) if isinstance(item, dict) else None
+        if snapshot is None:
+            continue
+        snapshot_role = str(snapshot.get("artifact_role") or "")
+        if (
+            snapshot_role.casefold() in excluded_registry_roles
+            or _artifact_kind(snapshot_role) in excluded_registry_kinds
+        ):
+            continue
+        key = str(
+            snapshot.get("artifact_role") or snapshot.get("deliverable_id") or ""
+        )
+        if key:
+            case_deliverables_by_key[key] = snapshot
+    current["case_deliverables"] = list(
+        case_deliverables_by_key.values()
+    )[-_MAX_CASE_DELIVERABLES:]
     parent_summary = str(parent.get("case_summary") or "").strip()
     instruction = str(current_text or "").strip()
     parent_case_narrative = (
